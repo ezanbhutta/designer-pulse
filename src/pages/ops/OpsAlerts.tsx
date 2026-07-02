@@ -9,7 +9,7 @@ import { useToast } from '../../components/ui/ToastProvider'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { presentAlert } from '../../lib/alertPresentation'
 import { STALE_LIVE, fetchAlerts, qk, setAlertStatus } from '../../lib/queries'
-import { fmtDateTime } from '../../lib/format'
+import { fmtDateTime, fmtTime } from '../../lib/format'
 import type { Alert, AlertType } from '../../../shared/types'
 import { useDesigners } from './opsData'
 
@@ -193,6 +193,11 @@ export default function OpsAlerts() {
       {alertsQ.error && (
         <ErrorBanner
           message="Couldn't refresh alerts — showing the last loaded inbox."
+          asOf={
+            alertsQ.dataUpdatedAt > 0
+              ? fmtTime(new Date(alertsQ.dataUpdatedAt).toISOString())
+              : null
+          }
           onRetry={() => void alertsQ.refetch()}
         />
       )}

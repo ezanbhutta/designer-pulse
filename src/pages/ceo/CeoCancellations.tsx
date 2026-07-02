@@ -17,7 +17,6 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { TaskTrail } from '../../components/shared/TaskTrail'
-import { priorPeriod } from '../../../shared/aggregate'
 import { pktDateOf, pktToday } from '../../../shared/pkt'
 import type { Designer, TaskState } from '../../../shared/types'
 import { clickupTaskUrl } from '../../lib/queries'
@@ -27,6 +26,7 @@ import {
   cancelledInPeriod,
   firstName,
   mergeTasks,
+  sameWindowLastWeek,
   thisWeekRange,
   useCancelledTasks,
   useDesigners,
@@ -45,7 +45,8 @@ interface Group {
 export default function CeoCancellations() {
   const today = pktToday()
   const week = thisWeekRange(today)
-  const prior = priorPeriod(week.start, week.end)
+  // Week-to-date vs the SAME window last week (Mon..same weekday) — §20.4.
+  const prior = sameWindowLastWeek(week)
   const windowStart = weekBuckets(12, today)[0].start
 
   const designersQ = useDesigners()
@@ -66,7 +67,7 @@ export default function CeoCancellations() {
     const activeIds = new Set(activeDesigners(designers).map((d) => d.id))
     const allIds = new Set(designers.map((d) => d.id))
 
-    // Trend: this week vs the prior equal window (§20.4 — CEO default).
+    // Trend: this week vs the same window last week (§20.4 — CEO default).
     const nowCount = cancelledInPeriod(allTasks, activeIds, week).length
     const prevCount = cancelledInPeriod(allTasks, activeIds, prior).length
 
@@ -111,8 +112,8 @@ export default function CeoCancellations() {
         severity: nowCount > 0 ? (nowCount > prevCount ? 'critical' : 'warning') : 'info',
         text:
           nowCount > 0
-            ? `${nowCount} cancellation${nowCount === 1 ? '' : 's'} this week vs ${prevCount} in the prior window — ${direction}${top ? `; ${firstName(top[0])} accounts for ${top[1]}` : ''}.`
-            : `No cancellations this week (${prevCount} in the prior window) — the trend is what matters, and it's clean.`,
+            ? `${nowCount} cancellation${nowCount === 1 ? '' : 's'} this week vs ${prevCount} at this point last week — ${direction}${top ? `; ${firstName(top[0])} accounts for ${top[1]}` : ''}.`
+            : `No cancellations this week (${prevCount} at this point last week) — the trend is what matters, and it's clean.`,
         detail:
           'Cancelled = designer-fault terminal loss by definition; complete ≠ business win (§2). Review the trails below before acting.',
       })

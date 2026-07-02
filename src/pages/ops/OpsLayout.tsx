@@ -14,6 +14,7 @@ import type { Command } from '../../components/ui/CommandPalette'
 import { Drawer } from '../../components/ui/Drawer'
 import { ToastProvider } from '../../components/ui/ToastProvider'
 import { DesignerDetail } from '../../components/shared/DesignerDetail'
+import { clickupListUrl } from '../../lib/queries'
 import { activeDesigners, useDesigners, useOpenAlerts } from './opsData'
 
 /**
@@ -63,6 +64,16 @@ export default function OpsLayout() {
       { id: 'nav-alerts', label: 'Go to Alerts', hint: openAlertCount ? `${openAlertCount} open` : 'inbox zero', keywords: 'alerts inbox acknowledge resolve', run: go('/ops/alerts') },
       { id: 'nav-reports', label: 'Go to Reports', hint: 'per-designer summaries + PDF', keywords: 'reports weekly pdf export attainment', run: go('/ops/reports') },
     ]
+    // Frequent actions, one keystroke away (§20.6 / §21.6).
+    const actions: Command[] = [
+      {
+        id: 'action-log-leave',
+        label: 'Log leave',
+        hint: 'opens the add-leave drawer',
+        keywords: 'leave log record add time off holiday absence',
+        run: go('/ops/leave?new=leave'),
+      },
+    ]
     const jumps: Command[] = active.map((d) => ({
       id: `designer-${d.id}`,
       label: `Jump to ${d.name}`,
@@ -74,7 +85,24 @@ export default function OpsLayout() {
         setSearchParams(next)
       },
     }))
-    return [...pages, ...jumps]
+    // The §21.6 'assign' verb, worded per §22.1: the tool never assigns —
+    // it opens the designer's list in ClickUp for the PM/CSR to act.
+    const lists: Command[] = active.flatMap((d) => {
+      const url = clickupListUrl(d.clickup_list_id)
+      if (!url) return []
+      return [
+        {
+          id: `list-${d.id}`,
+          label: `Open ${d.name}'s list in ClickUp`,
+          hint: `${d.team} · new tab`,
+          keywords: `clickup list open ${d.name} ${d.team} ${d.specialty ?? ''}`,
+          run: () => {
+            window.open(url, '_blank', 'noopener,noreferrer')
+          },
+        },
+      ]
+    })
+    return [...pages, ...actions, ...jumps, ...lists]
   }, [active, navigate, openAlertCount, setSearchParams])
 
   return (

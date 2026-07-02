@@ -7,6 +7,7 @@
  */
 
 import { useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Flame, TrendingUp } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
@@ -14,6 +15,7 @@ import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { StatTile } from '../../components/ui/StatTile'
 import { TrendLine, type TrendPoint } from '../../components/ui/TrendLine'
+import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import {
   priorPeriod,
@@ -53,6 +55,7 @@ const mean = (values: number[]): number | null =>
   values.length ? Math.round((values.reduce((s, v) => s + v, 0) / values.length) * 10) / 10 : null
 
 export default function CeoTrends() {
+  const navigate = useNavigate()
   const today = pktToday()
   const buckets = weekBuckets(12, today)
   const windowStart = buckets[0].start
@@ -165,7 +168,65 @@ export default function CeoTrends() {
     format: (v) => fmtDuration(v),
     noun: 'production median',
   })
-  const flaggedCount = model?.risks.filter((r) => r.flagged).length ?? 0
+  const flaggedRisks = model?.risks.filter((r) => r.flagged) ?? []
+  const flaggedCount = flaggedRisks.length
+
+  // ── Page verdict (§20.1): synthesize the per-card reads into 2–4 calls ────
+  const scopeLabel = scope === 'All' ? 'Studio-wide' : `${scope} team`
+  const scrollTo = (id: string) => () =>
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const verdictItems: VerdictItem[] = []
+  if (!loading && model) {
+    if (qualityRead) {
+      verdictItems.push({
+        id: 'quality-trend',
+        severity: qualityRead.tone === 'worse' ? 'warning' : 'info',
+        text: `${scopeLabel} quality: ${qualityRead.text}`,
+        detail: 'Latest weekly first-pass quality vs its own 12-week average (§22.5).',
+        action:
+          qualityRead.tone === 'worse'
+            ? { label: 'Open teams', onClick: () => navigate('/ceo/teams') }
+            : { label: 'See the chart', onClick: scrollTo('quality-trend-card') },
+      })
+    }
+    if (speedRead) {
+      verdictItems.push({
+        id: 'speed-trend',
+        severity: speedRead.tone === 'worse' ? 'warning' : 'info',
+        text: `${scopeLabel} speed: ${speedRead.text}`,
+        detail:
+          'Median assignment → first delivery, designer-owned spans only — a slow creep up is an early burnout signal.',
+        action: { label: 'See the chart', onClick: scrollTo('speed-trend-card') },
+      })
+    }
+    if ((model.risks.length ?? 0) > 0) {
+      verdictItems.push({
+        id: 'burnout-watch',
+        severity: flaggedCount > 0 ? 'warning' : 'info',
+        text:
+          flaggedCount > 0
+            ? `${flaggedCount} designer${flaggedCount === 1 ? '' : 's'} over the burnout threshold (${flaggedRisks
+                .map((r) => r.name)
+                .join(', ')}) — check in before it becomes attrition.`
+            : `${model.risks.length} on the burnout watch-list, none over threshold ${cfg.burnout_score} — worth a glance, not an intervention.`,
+        detail: 'A leading indicator, not a verdict — private to this surface (§22.10).',
+        action: { label: 'See the board', onClick: scrollTo('burnout-board') },
+      })
+    }
+    if (model.forecast.inflowPerDay > model.forecast.completionPerDay) {
+      const breach = model.forecast.projectedBacklog > cfg.forecast_threshold
+      verdictItems.push({
+        id: 'forecast',
+        severity: breach ? 'warning' : 'info',
+        text: `Inflow ${model.forecast.inflowPerDay}/day vs completion ${model.forecast.completionPerDay}/day — projected backlog ${model.forecast.projectedBacklog} within ${model.forecast.horizonDays} days${breach ? '. Rebalance or add capacity before it lands.' : ' — under the alert threshold, keep watching.'}`,
+        action: { label: 'See the forecast', onClick: scrollTo('workload-forecast') },
+      })
+    }
+  }
+  const severityRank = { critical: 0, warning: 1, info: 2 } as const
+  const sortedVerdicts = verdictItems
+    .sort((a, b) => severityRank[a.severity] - severityRank[b.severity])
+    .slice(0, 4)
 
   return (
     <div className="space-y-6">
@@ -190,6 +251,13 @@ export default function CeoTrends() {
         />
       )}
 
+      <VerdictBlock
+        title={`The trend read — ${scope === 'All' ? 'overall' : scope}`}
+        items={sortedVerdicts}
+        emptyMessage="Quality, speed, burnout and the forecast are all steady — nothing needs a decision."
+        loading={loading}
+      />
+
       <SegmentedControl<Scope>
         options={SCOPE_OPTIONS}
         value={scope}
@@ -198,10 +266,12 @@ export default function CeoTrends() {
       />
 
       <section className="grid gap-4 xl:grid-cols-2">
-        <div className="card p-6">
+        <div id="quality-trend-card" className="card p-6">
           <h2 className="eyebrow">Quality trend — {scope === 'All' ? 'overall' : scope}</h2>
           <p className="mt-2 text-sm font-medium text-fg">
-            {loading ? '' : (qualityRead ?? 'Not enough delivered work yet for a quality trend.')}
+            {loading
+              ? ''
+              : (qualityRead?.text ?? 'Not enough delivered work yet for a quality trend.')}
           </p>
           <div className="mt-4">
             {loading ? (
@@ -222,10 +292,10 @@ export default function CeoTrends() {
           </p>
         </div>
 
-        <div className="card p-6">
+        <div id="speed-trend-card" className="card p-6">
           <h2 className="eyebrow">Speed trend — {scope === 'All' ? 'overall' : scope}</h2>
           <p className="mt-2 text-sm font-medium text-fg">
-            {loading ? '' : (speedRead ?? 'Not enough delivered work yet for a speed trend.')}
+            {loading ? '' : (speedRead?.text ?? 'Not enough delivered work yet for a speed trend.')}
           </p>
           <div className="mt-4">
             {loading ? (
@@ -249,7 +319,7 @@ export default function CeoTrends() {
       </section>
 
       {/* ── Burnout Risk board — private watch-list (§22.10) ────────────────── */}
-      <section className="card p-6" aria-label="Burnout risk board">
+      <section id="burnout-board" className="card p-6" aria-label="Burnout risk board">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Flame className="h-4 w-4 text-muted" aria-hidden="true" />
@@ -295,7 +365,11 @@ export default function CeoTrends() {
       </section>
 
       {/* ── Workload Forecast — the rebalance-ahead signal (§11 T4) ─────────── */}
-      <section className="grid gap-4 xl:grid-cols-[minmax(18rem,24rem),1fr]" aria-label="Workload forecast">
+      <section
+        id="workload-forecast"
+        className="grid gap-4 xl:grid-cols-[minmax(18rem,24rem),1fr]"
+        aria-label="Workload forecast"
+      >
         <StatTile
           eyebrow="Projected backlog"
           icon={TrendingUp}
@@ -371,11 +445,16 @@ function readVsBaseline(
   points: TrendPoint[] | undefined,
   baseline: number | null | undefined,
   opts: { goodWhen: 'up' | 'down'; format: (v: number) => string; noun: string },
-): string | null {
+): { text: string; tone: 'better' | 'worse' | 'steady' } | null {
   if (!points || points.length === 0 || baseline == null) return null
   const latest = points[points.length - 1].value
   const diff = latest - baseline
-  if (Math.abs(diff) < 0.5) return `Holding at its 12-week baseline — ${opts.noun} steady.`
+  if (Math.abs(diff) < 0.5) {
+    return { text: `Holding at its 12-week baseline — ${opts.noun} steady.`, tone: 'steady' }
+  }
   const better = opts.goodWhen === 'up' ? diff > 0 : diff < 0
-  return `${opts.format(Math.abs(diff))} ${diff > 0 ? 'above' : 'below'} its own 12-week baseline — ${opts.noun} is ${better ? 'better than usual' : 'worse than usual; watch the next two weeks'}.`
+  return {
+    text: `${opts.format(Math.abs(diff))} ${diff > 0 ? 'above' : 'below'} its own 12-week baseline — ${opts.noun} is ${better ? 'better than usual' : 'worse than usual; watch the next two weeks'}.`,
+    tone: better ? 'better' : 'worse',
+  }
 }

@@ -29,7 +29,7 @@ import {
   upsertDesigner,
   upsertQuotaException,
 } from '../../lib/queries'
-import { DOW_LABELS, fmtDate, fmtShiftTime } from '../../lib/format'
+import { DOW_LABELS, fmtDate, fmtShiftTime, fmtTime } from '../../lib/format'
 import { pktToday } from '../../../shared/pkt'
 import { scheduleFor } from '../../../shared/aggregate'
 import type { Designer, QuotaException, Team } from '../../../shared/types'
@@ -208,6 +208,11 @@ export default function OpsRoster() {
       {designersQ.error && (
         <ErrorBanner
           message="Couldn't load the roster — showing the last loaded designers."
+          asOf={
+            designersQ.dataUpdatedAt > 0
+              ? fmtTime(new Date(designersQ.dataUpdatedAt).toISOString())
+              : null
+          }
           onRetry={() => void designersQ.refetch()}
         />
       )}
@@ -270,7 +275,19 @@ export default function OpsRoster() {
                       <tr
                         key={d.id}
                         onClick={() => openDesigner(d.id)}
-                        className={`cursor-pointer border-b border-border/40 last:border-0 hover:bg-surface-2 ${
+                        // Keyboard-operable drill-down (§20.10): the row itself
+                        // is focusable; inner controls keep their own handlers.
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`Open ${d.name}'s details`}
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            openDesigner(d.id)
+                          }
+                        }}
+                        className={`cursor-pointer border-b border-border/40 last:border-0 hover:bg-surface-2 focus-visible:bg-surface-2 ${
                           archived ? 'opacity-60' : ''
                         }`}
                       >

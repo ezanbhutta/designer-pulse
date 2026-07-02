@@ -18,7 +18,6 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import {
   ageMinutes,
   pipelineBottleneck,
-  priorPeriod,
   summarizeDesigner,
   workloadForecast,
   type DesignerPeriodSummary,
@@ -39,6 +38,7 @@ import {
   clientWaitMedianInPeriod,
   mergeTasks,
   metricDelta,
+  sameWindowLastWeek,
   thisWeekRange,
   useConfigValues,
   useDesigners,
@@ -60,7 +60,8 @@ export default function CeoOverview() {
   const navigate = useNavigate()
   const today = pktToday()
   const week = thisWeekRange(today)
-  const prior = priorPeriod(week.start, week.end)
+  // Week-to-date vs the SAME window last week (Mon..same weekday) — §20.4.
+  const prior = sameWindowLastWeek(week)
   const buckets = weekBuckets(8, today)
   const windowStart = buckets[0].start
 
@@ -89,7 +90,7 @@ export default function CeoOverview() {
     const metrics = metricsQ.data
     const now = new Date()
 
-    // Per-designer summaries, this week vs the prior equal-length window.
+    // Per-designer summaries, this week vs the same elapsed window last week.
     const cur = new Map<string, DesignerPeriodSummary>()
     const prev = new Map<string, DesignerPeriodSummary>()
     for (const d of active) {
@@ -155,7 +156,7 @@ export default function CeoOverview() {
         id: 'cancellations',
         severity: 'critical',
         text: `${cancelledNow.length} cancellation${cancelledNow.length === 1 ? '' : 's'} this week (${names}) — designer-fault terminal losses by definition.`,
-        detail: `${cancelledPrev.length} in the prior window. Fault is CSR-judged at close — review each trail, act on the trend (§4.4).`,
+        detail: `${cancelledPrev.length} at this point last week. Fault is CSR-judged at close — review each trail, act on the trend (§4.4).`,
         action: { label: 'Review trails', onClick: () => navigate('/ceo/cancellations') },
       })
     }
@@ -253,7 +254,7 @@ export default function CeoOverview() {
         verdicts.push({
           id: 'positive-throughput',
           severity: 'info',
-          text: `${completionsNow} completion${completionsNow === 1 ? '' : 's'} so far this week (${completionsPrev} in the prior window) with no cancellations or quality flags. Calm week.`,
+          text: `${completionsNow} completion${completionsNow === 1 ? '' : 's'} so far this week (${completionsPrev} at this point last week) with no cancellations or quality flags. Calm week.`,
           detail: 'No quality decay, no forecast breach, no aging pile-up.',
           action: { label: 'See teams', onClick: () => navigate('/ceo/teams') },
         })
@@ -333,8 +334,8 @@ export default function CeoOverview() {
       <header>
         <h1 className="text-3xl font-semibold text-fg">Overview</h1>
         <p className="mt-1 text-sm text-muted">
-          Week of {fmtDate(week.start)} vs the prior window · all times PKT · read-only decision
-          cockpit — assignment happens in ClickUp
+          Week of {fmtDate(week.start)} vs the same point last week · all times PKT · read-only
+          decision cockpit — assignment happens in ClickUp
         </p>
       </header>
 

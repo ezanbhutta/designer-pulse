@@ -15,7 +15,7 @@ import { StatTile } from '../../components/ui/StatTile'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { generateWeeklyReportPdf } from '../../lib/reportPdf'
-import { fmtDate, fmtDuration, fmtPct } from '../../lib/format'
+import { fmtDate, fmtDuration, fmtPct, fmtTime } from '../../lib/format'
 import { pktToday } from '../../../shared/pkt'
 import {
   priorPeriod,
@@ -204,6 +204,10 @@ export default function OpsReports() {
       {(tasksQ.error || metricsQ.error) && (
         <ErrorBanner
           message="Couldn't refresh period data — showing the last computed summaries."
+          asOf={(() => {
+            const lastGood = Math.max(tasksQ.dataUpdatedAt, metricsQ.dataUpdatedAt)
+            return lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null
+          })()}
           onRetry={() => {
             void tasksQ.refetch()
             void metricsQ.refetch()
@@ -302,7 +306,18 @@ export default function OpsReports() {
                       <tr
                         key={designer.id}
                         onClick={() => openDesigner(designer.id)}
-                        className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-surface-2/60"
+                        // Keyboard-operable drill-down (§20.10).
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`Open ${designer.name}'s details`}
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            openDesigner(designer.id)
+                          }
+                        }}
+                        className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-surface-2/60 focus-visible:bg-surface-2/60"
                       >
                         <td className="px-3 py-2.5">
                           {flagged ? (

@@ -18,7 +18,6 @@ import { TrendLine, type TrendPoint } from '../../components/ui/TrendLine'
 import {
   activeLoad,
   expectedQuotaOn,
-  priorPeriod,
   summarizeDesigner,
   type DesignerPeriodSummary,
 } from '../../../shared/aggregate'
@@ -34,6 +33,7 @@ import {
   mergeTasks,
   metricDelta,
   revisionTurnaroundMedianInPeriod,
+  sameWindowLastWeek,
   thisWeekRange,
   useConfigValues,
   useDesigners,
@@ -72,7 +72,8 @@ interface TeamModel {
 export default function CeoTeams() {
   const today = pktToday()
   const week = thisWeekRange(today)
-  const prior = priorPeriod(week.start, week.end)
+  // Week-to-date vs the SAME window last week (Mon..same weekday) — §20.4.
+  const prior = sameWindowLastWeek(week)
   const buckets = weekBuckets(8, today)
   const windowStart = buckets[0].start
 
@@ -193,8 +194,9 @@ export default function CeoTeams() {
       <header>
         <h1 className="text-3xl font-semibold text-fg">Teams</h1>
         <p className="mt-1 text-sm text-muted">
-          Week of {fmtDate(week.start)} vs prior · grouped by team — a logo, a brand guide, and an
-          animation are different units, so only attainment crosses team lines (§2)
+          Week of {fmtDate(week.start)} vs the same point last week · grouped by team — a logo, a
+          brand guide, and an animation are different units, so only attainment crosses team lines
+          (§2)
         </p>
       </header>
 

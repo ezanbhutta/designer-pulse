@@ -1,19 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarDays,
   CircleCheck,
   Clock,
   ExternalLink,
-  Gauge,
   Inbox,
   LogIn,
   LogOut,
   Moon,
-  RotateCcw,
-  Sparkles,
   Sun,
-  Target,
   UserRound,
 } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
@@ -35,19 +31,24 @@ import {
   fetchTasksSince,
   insertShiftMark,
   qk,
+  requestLeave,
 } from '../../lib/queries'
 import { ToastProvider, useToast } from '../../components/ui/ToastProvider'
-import { StatTile } from '../../components/ui/StatTile'
 import { StatusBadge } from '../../components/ui/StatusBadge'
+import {
+  DesignerMetricsPanel,
+  type MetricsPeriod,
+} from '../../components/shared/DesignerDetail'
 import { Badge, type BadgeProps } from '../../components/ui/Badge'
 import { TrendLine, type TrendPoint } from '../../components/ui/TrendLine'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { Skeleton } from '../../components/ui/Skeleton'
-import { fmtDate, fmtDuration, fmtPct, fmtShiftTime, fmtTime } from '../../lib/format'
+import { fmtDate, fmtDuration, fmtShiftTime, fmtTime } from '../../lib/format'
 import {
   addDays,
   collectionWindow,
+  dateRange,
   dowOf,
   minutesBetween,
   pktDateOf,
@@ -58,7 +59,6 @@ import {
 import {
   ageMinutes,
   expectedQuotaOn,
-  priorPeriod,
   scheduleFor,
   summarizeDesigner,
   type DesignerPeriodSummary,
@@ -80,9 +80,6 @@ import type {
 
 const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-/** Slightly beyond the 5s toast so Undo always wins the race. */
-const UNDO_COMMIT_MS = 5200
-
 const PKT_DATELINE = new Intl.DateTimeFormat('en-GB', {
   weekday: 'long',
   day: 'numeric',
@@ -99,32 +96,6 @@ function greetingFor(now: Date): string {
   if (h < 12) return 'Good morning'
   if (h < 17) return 'Good afternoon'
   return 'Good evening'
-}
-
-type Delta = { label: string; direction: 'up' | 'down' | 'flat'; good: boolean } | null
-
-/** Delta vs OWN prior week only (§22.10) — percentage-point metrics. */
-function pctPointDelta(cur: number | null, prev: number | null, higherIsBetter: boolean): Delta {
-  if (cur == null || prev == null) return null
-  const diff = cur - prev
-  if (diff === 0) return { label: 'level with last week', direction: 'flat', good: true }
-  return {
-    label: `${Math.abs(diff)} pts vs your last week`,
-    direction: diff > 0 ? 'up' : 'down',
-    good: diff > 0 === higherIsBetter,
-  }
-}
-
-/** Duration metrics — down is good, and the label says so in plain language. */
-function durationDelta(curMin: number | null, prevMin: number | null): Delta {
-  if (curMin == null || prevMin == null) return null
-  const diff = curMin - prevMin
-  if (diff === 0) return { label: 'level with last week', direction: 'flat', good: true }
-  return {
-    label: `${fmtDuration(Math.abs(diff))} ${diff < 0 ? 'faster' : 'slower'} than last week`,
-    direction: diff < 0 ? 'down' : 'up',
-    good: diff < 0,
-  }
 }
 
 /** Attendance tones per §21.2 — off states are calm, never alarming. */
@@ -217,8 +188,10 @@ function SelfViewBody() {
   const dates = useMemo(() => {
     const dow = dowOf(today)
     const weekStart = addDays(today, -((dow + 6) % 7)) // Monday of this PKT week
-    const weekEnd = addDays(weekStart, 6)
-    const prior = priorPeriod(weekStart, weekEnd)
+    // Week-to-date (§20.4): Monday..today, compared against the SAME elapsed
+    // window last week — never a partial week vs a complete prior one.
+    const weekEnd = today
+    const prior = { start: addDays(weekStart, -7), end: addDays(today, -7) }
     const trendStart = addDays(weekStart, -49) // 8 weeks including this one
     return {
       weekStart,
@@ -336,66 +309,12 @@ function SelfViewBody() {
     }
   }, [active, cfg.overnight_window_buffer_hours])
 
-  // ── Optimistic check-in/out with a real Undo window (§20.6) ────────────────
-  // shift_marks is append-only (designers cannot delete a mark), so "undo" is
-  // implemented by DEFERRING the insert until the 5s toast expires; undo simply
-  // cancels the pending write. Pending marks flush immediately on unmount.
+  // ── Optimistic check-in/out — insert IMMEDIATELY (§20.6 optimistic UI) ─────
+  // shift_marks is append-only, so there is no undo: the write fires the
+  // moment the button is tapped (a deferred write would be silently lost if
+  // the tab closes — this view lives on phones). The local mark reflects the
+  // state instantly; a failed insert rolls back visibly with a retry hint.
   const [localMarks, setLocalMarks] = useState<LocalMark[]>([])
-  const localMarksRef = useRef<LocalMark[]>([])
-  const pendingTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
-  const designerIdRef = useRef(designerId)
-  useEffect(() => {
-    localMarksRef.current = localMarks
-  }, [localMarks])
-  useEffect(() => {
-    designerIdRef.current = designerId
-  }, [designerId])
-
-  const commitMark = useCallback(
-    async (local: LocalMark) => {
-      pendingTimers.current.delete(local.id)
-      const id = designerIdRef.current
-      if (!id) return
-      try {
-        await insertShiftMark({
-          designer_id: id,
-          mark_type: local.mark_type,
-          source: 'self',
-          marked_at: local.marked_at,
-        })
-        void queryClient.invalidateQueries({ queryKey: ['shift-marks'] })
-        void queryClient.invalidateQueries({ queryKey: ['attendance'] })
-      } catch {
-        // Roll back visibly (§20.6) — the button returns to its prior state.
-        setLocalMarks((prev) => prev.filter((m) => m.id !== local.id))
-        toast({
-          message: `Couldn't save your ${local.mark_type === 'check_in' ? 'check-in' : 'check-out'} — check your connection and try again`,
-        })
-      }
-    },
-    [queryClient, toast],
-  )
-
-  // Flush any still-pending marks on unmount so nothing is silently lost.
-  useEffect(() => {
-    const timers = pendingTimers.current
-    return () => {
-      for (const [id, timer] of timers) {
-        clearTimeout(timer)
-        const m = localMarksRef.current.find((x) => x.id === id)
-        const did = designerIdRef.current
-        if (m && did) {
-          void insertShiftMark({
-            designer_id: did,
-            mark_type: m.mark_type,
-            source: 'self',
-            marked_at: m.marked_at,
-          }).catch(() => undefined)
-        }
-      }
-      timers.clear()
-    }
-  }, [])
 
   const mark = useCallback(
     (mark_type: 'check_in' | 'check_out') => {
@@ -407,24 +326,31 @@ function SelfViewBody() {
         marked_at: markedAt,
       }
       setLocalMarks((prev) => [...prev, local])
-      pendingTimers.current.set(
-        local.id,
-        setTimeout(() => void commitMark(local), UNDO_COMMIT_MS),
-      )
-      toast({
-        message:
-          mark_type === 'check_in'
-            ? `Checked in at ${fmtTime(markedAt)} — have a good shift`
-            : `Checked out at ${fmtTime(markedAt)} — see you next shift`,
-        undo: () => {
-          const timer = pendingTimers.current.get(local.id)
-          if (timer) clearTimeout(timer)
-          pendingTimers.current.delete(local.id)
-          setLocalMarks((prev) => prev.filter((m) => m.id !== local.id))
-        },
+      insertShiftMark({
+        designer_id: designerId,
+        mark_type,
+        source: 'self',
+        marked_at: markedAt,
       })
+        .then(() => {
+          void queryClient.invalidateQueries({ queryKey: ['shift-marks'] })
+          void queryClient.invalidateQueries({ queryKey: ['attendance'] })
+          toast({
+            message:
+              mark_type === 'check_in'
+                ? `Checked in at ${fmtTime(markedAt)}`
+                : 'Checked out — see you tomorrow',
+          })
+        })
+        .catch(() => {
+          // Roll back visibly (§20.6) — the button returns to its prior state.
+          setLocalMarks((prev) => prev.filter((m) => m.id !== local.id))
+          toast({
+            message: `Couldn't save your ${mark_type === 'check_in' ? 'check-in' : 'check-out'} — check your connection and try again`,
+          })
+        })
     },
-    [designerId, commitMark, toast],
+    [designerId, queryClient, toast],
   )
 
   // ── Check-in state machine from today's shift marks ────────────────────────
@@ -508,6 +434,20 @@ function SelfViewBody() {
   )
   const expectedToday = designerId ? expectedQuotaOn(designerId, active.workDate, quota) : 0
 
+  // Week-to-date window for the shared metrics panel (§22.3) — deltas compare
+  // Monday..today against the same elapsed window last week (§22.10: own past only).
+  const metricsPeriod: MetricsPeriod = useMemo(
+    () => ({
+      start: dates.weekStart,
+      end: dates.weekEnd,
+      priorStart: dates.prior.start,
+      priorEnd: dates.prior.end,
+      label: 'this week',
+      vs: 'vs same point last week',
+    }),
+    [dates],
+  )
+
   const dayOffReason: 'holiday' | 'leave' | 'weekly_off' | 'none' | null = useMemo(() => {
     if (!designerId || expectedToday > 0) return null
     const isHoliday = holidays.some((h) => h.the_date === active.workDate)
@@ -572,6 +512,7 @@ function SelfViewBody() {
     marksQ,
   ]
   const errored = allQueries.filter((q) => q.isError)
+  const lastGood = Math.max(...allQueries.map((q) => q.dataUpdatedAt))
   const checkInLoading = marksQ.isLoading || schedulesQ.isLoading
   const analyticsLoading = tasksQ.isLoading || metricsQ.isLoading || schedulesQ.isLoading
 
@@ -620,6 +561,7 @@ function SelfViewBody() {
         <div className="mt-4">
           <ErrorBanner
             message="Couldn't load some of your data — check your connection."
+            asOf={lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null}
             onRetry={() => errored.forEach((q) => void q.refetch())}
           />
         </div>
@@ -662,11 +604,11 @@ function SelfViewBody() {
           agingDaysClientResponse={cfg.aging_days_client_response}
         />
 
-        {/* ── 5. My week — deltas vs OWN prior week only (§22.10) ─────────── */}
+        {/* ── 5. My week — deltas vs OWN past only (§22.10) ────────────────── */}
         <WeekSection
-          loading={analyticsLoading}
-          weekSum={weekSum}
-          prevSum={prevSum}
+          designerId={designerId}
+          period={metricsPeriod}
+          trendLoading={analyticsLoading}
           trendPoints={trend.points}
           trendBaseline={trend.baseline}
         />
@@ -686,6 +628,7 @@ function SelfViewBody() {
           leaves={myLeaves}
           holidays={holidays}
           today={today}
+          designerId={designerId}
         />
       </div>
     </main>
@@ -709,8 +652,8 @@ function PageHeader({
     <header className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <p className="eyebrow">Studio Pulse</p>
-        <h1 className="mt-1 truncate text-2xl font-semibold leading-tight text-fg">
-          {greeting}, {name}
+        <h1 className="mt-1 text-2xl font-semibold leading-tight text-fg">
+          {greeting}, {name.split(' ')[0]}
         </h1>
         <p className="mt-1 text-sm text-muted">{dateline}</p>
       </div>
@@ -1083,90 +1026,36 @@ function TodayTasks({
 // ── 5. My week ────────────────────────────────────────────────────────────────
 
 function WeekSection({
-  loading,
-  weekSum,
-  prevSum,
+  designerId,
+  period,
+  trendLoading,
   trendPoints,
   trendBaseline,
 }: {
-  loading: boolean
-  weekSum: DesignerPeriodSummary | null
-  prevSum: DesignerPeriodSummary | null
+  designerId: string
+  period: MetricsPeriod
+  trendLoading: boolean
   trendPoints: TrendPoint[]
   trendBaseline: number | null
 }) {
-  const w = weekSum
-  const p = prevSum
   return (
     <section aria-labelledby="my-week-h">
       <div className="flex items-baseline justify-between gap-2 px-1">
         <h2 id="my-week-h" className="eyebrow">
           My week
         </h2>
-        <p className="text-xs text-muted">vs your own last week</p>
+        <p className="text-xs text-muted">vs same point last week</p>
       </div>
-      {/* No `reference` props here on purpose — the self-view compares a
-          designer only to their own past, never to peers (§22.10). */}
-      <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <StatTile
-          eyebrow="Quota attainment"
-          icon={Target}
-          value={w ? fmtPct(w.attainmentPct) : '—'}
-          delta={w && p ? pctPointDelta(w.attainmentPct, p.attainmentPct, true) : null}
-          cause={
-            w
-              ? w.expectedQuota > 0
-                ? `${w.completed} of ${w.expectedQuota} expected completed`
-                : 'no quota scheduled this week'
-              : null
-          }
-          loading={loading}
-        />
-        <StatTile
-          eyebrow="First-pass quality"
-          icon={Sparkles}
-          value={w ? fmtPct(w.firstPassQualityPct) : '—'}
-          delta={w && p ? pctPointDelta(w.firstPassQualityPct, p.firstPassQualityPct, true) : null}
-          cause={
-            w
-              ? w.delivered > 0
-                ? `${w.firstPassClean} of ${w.delivered} delivered clean`
-                : 'no deliveries yet this week'
-              : null
-          }
-          loading={loading}
-        />
-        <StatTile
-          eyebrow="Production speed"
-          icon={Gauge}
-          value={w ? fmtDuration(w.productionMedianMin) : '—'}
-          delta={w && p ? durationDelta(w.productionMedianMin, p.productionMedianMin) : null}
-          cause="median first-pass time — client wait never counts against you"
-          loading={loading}
-        />
-        <StatTile
-          eyebrow="Revision turnaround"
-          icon={RotateCcw}
-          value={w ? fmtDuration(w.revisionTurnaroundMedianMin) : '—'}
-          delta={
-            w && p
-              ? durationDelta(w.revisionTurnaroundMedianMin, p.revisionTurnaroundMedianMin)
-              : null
-          }
-          cause={
-            w
-              ? w.revisionRounds > 0
-                ? `${w.revisionRounds} revision round${w.revisionRounds === 1 ? '' : 's'} this week`
-                : 'no revisions this week — nothing to fix'
-              : null
-          }
-          loading={loading}
-        />
+      {/* Shared metrics panel (§22.3) — scope='self' omits every team-median
+          reference and all peer data; deltas are vs the designer's own past
+          only (§22.10). Single-column-friendly for mobile (§20.10). */}
+      <div className="mt-2">
+        <DesignerMetricsPanel designerId={designerId} scope="self" period={period} />
       </div>
 
       <div className="card mt-3 p-5">
         <p className="eyebrow">First-pass quality — last 8 weeks</p>
-        {loading ? (
+        {trendLoading ? (
           <Skeleton className="mt-3 h-24 w-full" />
         ) : trendPoints.length >= 2 ? (
           <>
@@ -1280,14 +1169,65 @@ function TimeOffSection({
   leaves,
   holidays,
   today,
+  designerId,
 }: {
   loading: boolean
   leaves: Leave[]
   holidays: Holiday[]
   today: string
+  designerId: string | null
 }) {
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const [requesting, setRequesting] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [leaveType, setLeaveType] = useState('annual')
+  const [startDate, setStartDate] = useState(today)
+  const [endDate, setEndDate] = useState('')
+  const [reason, setReason] = useState('')
+
+  // §22.7 "request own": lands as status='pending' (RLS-pinned server-side);
+  // only your PM/HR can approve it.
+  const submitRequest = async () => {
+    if (!designerId || !startDate) return
+    setSubmitting(true)
+    try {
+      await requestLeave({
+        designer_id: designerId,
+        leave_type: leaveType,
+        start_date: startDate,
+        end_date: endDate && endDate !== startDate ? endDate : null,
+        reason: reason.trim() || null,
+      })
+      await queryClient.invalidateQueries({ queryKey: qk.leaves })
+      toast({ message: 'Leave request sent — pending your PM’s approval' })
+      setRequesting(false)
+      setEndDate('')
+      setReason('')
+    } catch (err) {
+      toast({
+        message: `Couldn’t send the request — ${err instanceof Error ? err.message : 'try again'}`,
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const upcoming = holidays.filter((h) => h.the_date >= today).slice(0, 4)
   const history = [...leaves].sort((a, b) => b.start_date.localeCompare(a.start_date)).slice(0, 8)
+
+  // Honest count only — the schema holds no leave allowance, so no "N of M
+  // remaining" balance is ever invented here.
+  const yearStart = `${today.slice(0, 4)}-01-01`
+  const yearEnd = `${today.slice(0, 4)}-12-31`
+  const leaveDaysThisYear = leaves
+    .filter((l) => l.status === 'approved')
+    .reduce((sum, l) => {
+      const start = l.start_date > yearStart ? l.start_date : yearStart
+      const rawEnd = l.end_date ?? l.start_date
+      const end = rawEnd < yearEnd ? rawEnd : yearEnd
+      return end < start ? sum : sum + dateRange(start, end).length
+    }, 0)
 
   return (
     <section aria-labelledby="time-off-h">
@@ -1302,7 +1242,98 @@ function TimeOffSection({
           </div>
         ) : (
           <>
-            <h3 className="text-sm font-semibold text-fg">My leave</h3>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-fg">My leave</h3>
+                <p className="mt-1 text-xs text-muted">
+                  {leaveDaysThisYear} leave day{leaveDaysThisYear === 1 ? '' : 's'} recorded this
+                  year
+                </p>
+              </div>
+              {designerId && !requesting && (
+                <button
+                  type="button"
+                  onClick={() => setRequesting(true)}
+                  className="min-h-11 shrink-0 rounded-xl border border-border px-3 text-sm font-medium text-fg hover:bg-surface-2"
+                >
+                  Request leave
+                </button>
+              )}
+            </div>
+            {requesting && (
+              <form
+                className="mt-3 flex flex-col gap-3 rounded-xl bg-surface-2 p-4"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void submitRequest()
+                }}
+              >
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+                    Type
+                    <select
+                      value={leaveType}
+                      onChange={(e) => setLeaveType(e.target.value)}
+                      className="min-h-11 rounded-xl border border-border bg-surface px-3 text-sm text-fg"
+                    >
+                      <option value="annual">Annual</option>
+                      <option value="sick">Sick</option>
+                      <option value="casual">Casual</option>
+                      <option value="unpaid">Unpaid</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+                    From
+                    <input
+                      type="date"
+                      required
+                      min={today}
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="min-h-11 rounded-xl border border-border bg-surface px-3 text-sm text-fg"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+                    To (optional)
+                    <input
+                      type="date"
+                      min={startDate}
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="min-h-11 rounded-xl border border-border bg-surface px-3 text-sm text-fg"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+                    Reason (optional)
+                    <input
+                      type="text"
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder="e.g. family event"
+                      className="min-h-11 rounded-xl border border-border bg-surface px-3 text-sm text-fg"
+                    />
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="min-h-11 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg disabled:opacity-60"
+                  >
+                    {submitting ? 'Sending…' : 'Send request'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRequesting(false)}
+                    className="min-h-11 rounded-xl px-3 text-sm font-medium text-muted hover:text-fg"
+                  >
+                    Cancel
+                  </button>
+                  <span className="text-xs text-muted">Goes to your PM as pending.</span>
+                </div>
+              </form>
+            )}
             {history.length === 0 ? (
               <p className="mt-2 text-sm text-muted">
                 No leave on record — anything your PM logs for you shows up here.

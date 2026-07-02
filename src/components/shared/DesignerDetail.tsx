@@ -43,7 +43,7 @@ import {
   insertShiftMark,
   qk,
 } from '../../lib/queries'
-import { DOW_LABELS, fmtDate, fmtDuration, fmtPct, fmtShiftTime } from '../../lib/format'
+import { DOW_LABELS, fmtDate, fmtDuration, fmtPct, fmtShiftTime, fmtTime } from '../../lib/format'
 import { addDays, dateRange, pktInstant, pktToday } from '../../../shared/pkt'
 import {
   ageMinutes,
@@ -97,11 +97,286 @@ const ATTENDANCE_CHIP: Record<AttendanceStatus, { letter: string; className: str
   Incomplete: { letter: 'I', className: 'bg-warning-soft text-warning' },
 }
 
+// ── Shared metrics panel (§22.3 — same component, different scope) ────────────
+
+export interface MetricsPeriod {
+  /** Current window, PKT dates inclusive. */
+  start: string
+  end: string
+  /** Prior comparison window (same elapsed span for week-to-date views). */
+  priorStart: string
+  priorEnd: string
+  /** Plain-language period name, e.g. "last 7 days" / "this week". */
+  label: string
+  /** Delta wording, e.g. "vs prior" / "vs same point last week". */
+  vs: string
+}
+
+export interface DesignerMetricsPanelProps {
+  designerId: string
+  /** 'ops' shows team-median reference points; 'self' NEVER sees peers (§22.10). */
+  scope: 'ops' | 'self'
+  period: MetricsPeriod
+}
+
+/**
+ * The metric StatTile grid + defect-source split for one designer, shared by
+ * the Ops drill-down drawer and the Designer self-view (spec §22.3). Every
+ * metric ships with delta + cause (§20.2). scope='ops' adds team-median
+ * reference points (§22.5); scope='self' omits all peer data and compares the
+ * designer only to their own past (§22.10). Single-column on small screens —
+ * the self-view is mobile-first (§20.10).
+ */
+export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetricsPanelProps) {
+  const sinceIso = pktInstant(period.priorStart, '00:00').toISOString()
+
+  const designersQ = useQuery({ queryKey: qk.designers, queryFn: fetchDesigners, staleTime: STALE_ANALYTICS })
+  const schedulesQ = useQuery({ queryKey: qk.schedules, queryFn: fetchSchedules, staleTime: STALE_ANALYTICS })
+  const exceptionsQ = useQuery({ queryKey: qk.quotaExceptions, queryFn: fetchQuotaExceptions, staleTime: STALE_ANALYTICS })
+  const leavesQ = useQuery({ queryKey: qk.leaves, queryFn: fetchLeaves, staleTime: STALE_ANALYTICS })
+  const holidaysQ = useQuery({ queryKey: qk.holidays, queryFn: fetchHolidays, staleTime: STALE_ANALYTICS })
+  const workersQ = useQuery({ queryKey: qk.holidayWorkers, queryFn: fetchHolidayWorkers, staleTime: STALE_ANALYTICS })
+  const tasksQ = useQuery({
+    queryKey: ['tasks', 'since', period.priorStart] as const,
+    queryFn: () => fetchTasksSince(sinceIso),
+    staleTime: STALE_LIVE,
+  })
+  const metricsQ = useQuery({
+    queryKey: qk.taskMetrics(period.priorStart, period.end),
+    queryFn: () => fetchTaskMetricsSince(sinceIso),
+    staleTime: STALE_ANALYTICS,
+  })
+  const attendanceQ = useQuery({
+    queryKey: qk.attendance(period.priorStart, period.end),
+    queryFn: () => fetchAttendance(period.priorStart, period.end),
+    staleTime: STALE_LIVE,
+  })
+
+  const quota: QuotaContext = useMemo(
+    () => ({
+      schedules: schedulesQ.data ?? [],
+      exceptions: exceptionsQ.data ?? [],
+      leaves: leavesQ.data ?? [],
+      holidays: holidaysQ.data ?? [],
+      holidayWorkers: workersQ.data ?? [],
+    }),
+    [schedulesQ.data, exceptionsQ.data, leavesQ.data, holidaysQ.data, workersQ.data],
+  )
+
+  const summaries = useMemo(() => {
+    const tasks = tasksQ.data ?? []
+    const metrics = metricsQ.data ?? []
+    const cur = summarizeDesigner(designerId, { start: period.start, end: period.end, tasks, metrics, quota })
+    const prev = summarizeDesigner(designerId, {
+      start: period.priorStart,
+      end: period.priorEnd,
+      tasks,
+      metrics,
+      quota,
+    })
+    return { cur, prev }
+  }, [designerId, tasksQ.data, metricsQ.data, quota, period])
+
+  /** Team reference points (§22.5) — ops scope only; the self view never sees peers (§22.10). */
+  const teamRef = useMemo(() => {
+    if (scope !== 'ops') return null
+    const designer = (designersQ.data ?? []).find((d) => d.id === designerId)
+    if (!designer) return null
+    const peers = (designersQ.data ?? []).filter(
+      (d) => d.team === designer.team && d.status === 'active',
+    )
+    if (peers.length < 2) return null
+    const tasks = tasksQ.data ?? []
+    const metrics = metricsQ.data ?? []
+    const rows: DesignerPeriodSummary[] = peers.map((p) =>
+      summarizeDesigner(p.id, { start: period.start, end: period.end, tasks, metrics, quota }),
+    )
+    return {
+      attainment: median(rows.map((r) => r.attainmentPct).filter((v): v is number => v != null)),
+      fpq: median(rows.map((r) => r.firstPassQualityPct).filter((v): v is number => v != null)),
+      production: median(rows.map((r) => r.productionMedianMin).filter((v): v is number => v != null)),
+      revision: median(
+        rows.map((r) => r.revisionTurnaroundMedianMin).filter((v): v is number => v != null),
+      ),
+    }
+  }, [scope, designerId, designersQ.data, tasksQ.data, metricsQ.data, quota, period])
+
+  const warmup = useMemo(() => {
+    const mine = (attendanceQ.data ?? []).filter((a) => a.designer_id === designerId)
+    const inRange = (a: AttendanceDaily, s: string, e: string) => a.work_date >= s && a.work_date <= e
+    const gap = (s: string, e: string) =>
+      median(
+        mine
+          .filter((a) => inRange(a, s, e))
+          .map((a) => a.warmup_gap_min)
+          .filter((v): v is number => v != null),
+      )
+    return { cur: gap(period.start, period.end), prev: gap(period.priorStart, period.priorEnd) }
+  }, [attendanceQ.data, designerId, period])
+
+  const s = summaries.cur
+  const p = summaries.prev
+  const vs = period.vs
+  const pts = (abs: number) => `${abs} pts`
+  const metricsLoading = tasksQ.isLoading || metricsQ.isLoading
+
+  const defectTotal = s.csrCaughtRounds + s.clientCaughtRounds
+  const defectDiagnosis =
+    defectTotal === 0
+      ? `No revision rounds in the ${period.label} — nothing to diagnose.`
+      : s.csrCaughtRounds >= s.clientCaughtRounds
+        ? scope === 'ops'
+          ? 'Mostly CSR-caught — internal quality misses. Coach the designer (§4.2).'
+          : 'Mostly CSR-caught — fixed internally before the client ever saw them.'
+        : scope === 'ops'
+          ? 'Mostly client-caught with a quieter CSR gate — tighten the gate or the brief (§4.2).'
+          : 'Mostly client-caught — worth a closer look before delivery next time.'
+
+  const lastGood = Math.max(tasksQ.dataUpdatedAt, metricsQ.dataUpdatedAt)
+
+  return (
+    <div className="space-y-6">
+      {(tasksQ.error || metricsQ.error) && (
+        <ErrorBanner
+          message="Couldn't refresh production data — showing the last loaded numbers."
+          asOf={lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null}
+          onRetry={() => {
+            void tasksQ.refetch()
+            void metricsQ.refetch()
+          }}
+        />
+      )}
+
+      {/* ── Metric grid (§20.2: delta + cause on every number) ── */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <StatTile
+          eyebrow="Quota attainment"
+          icon={Gauge}
+          value={fmtPct(s.attainmentPct)}
+          delta={metricDelta(s.attainmentPct, p.attainmentPct, 'up', pts, vs)}
+          cause={`${s.completed} completed of ${s.expectedQuota} expected`}
+          reference={teamRef?.attainment != null ? `team median ${teamRef.attainment}%` : null}
+          state={
+            s.attainmentPct == null
+              ? null
+              : s.attainmentPct >= 85
+                ? 'ok'
+                : s.attainmentPct >= 60
+                  ? 'watch'
+                  : 'flag'
+          }
+          loading={metricsLoading}
+        />
+        <StatTile
+          eyebrow="First-pass quality"
+          icon={ShieldCheck}
+          value={fmtPct(s.firstPassQualityPct)}
+          delta={metricDelta(s.firstPassQualityPct, p.firstPassQualityPct, 'up', pts, vs)}
+          cause={
+            s.delivered > 0
+              ? `${s.firstPassClean} of ${s.delivered} delivered clean`
+              : 'Nothing delivered in this period yet'
+          }
+          reference={teamRef?.fpq != null ? `team median ${teamRef.fpq}%` : null}
+          state={
+            s.firstPassQualityPct == null
+              ? null
+              : s.firstPassQualityPct >= 80
+                ? 'ok'
+                : s.firstPassQualityPct >= 60
+                  ? 'watch'
+                  : 'flag'
+          }
+          loading={metricsLoading}
+        />
+        <StatTile
+          eyebrow="Production speed"
+          icon={Timer}
+          value={fmtDuration(s.productionMedianMin)}
+          delta={metricDelta(s.productionMedianMin, p.productionMedianMin, 'down', fmtDuration, vs)}
+          cause={
+            scope === 'ops'
+              ? `median over ${s.delivered} first deliveries — client wait excluded (§4.1)`
+              : 'median first-pass time — client wait never counts against you'
+          }
+          reference={teamRef?.production != null ? `team median ${fmtDuration(teamRef.production)}` : null}
+          loading={metricsLoading}
+        />
+        <StatTile
+          eyebrow="Revision turnaround"
+          icon={RotateCcw}
+          value={fmtDuration(s.revisionTurnaroundMedianMin)}
+          delta={metricDelta(
+            s.revisionTurnaroundMedianMin,
+            p.revisionTurnaroundMedianMin,
+            'down',
+            fmtDuration,
+            vs,
+          )}
+          cause={`${s.revisionRounds} revision round${s.revisionRounds === 1 ? '' : 's'} on tasks assigned in period`}
+          reference={teamRef?.revision != null ? `team median ${fmtDuration(teamRef.revision)}` : null}
+          loading={metricsLoading}
+        />
+        <StatTile
+          eyebrow="Cancellations"
+          icon={XCircle}
+          value={String(s.cancelled)}
+          delta={metricDelta(s.cancelled, p.cancelled, 'down', String, vs)}
+          cause={
+            s.cancelled > 0
+              ? scope === 'ops'
+                ? `${fmtPct(s.cancellationRatePct)} of ${s.assigned} assigned — investigate the trail, don't verdict (§4.4)`
+                : `${fmtPct(s.cancellationRatePct)} of ${s.assigned} assigned in this period`
+              : `0 of ${s.assigned} assigned — no terminal losses`
+          }
+          state={s.cancelled > 0 ? 'flag' : 'ok'}
+          loading={metricsLoading}
+        />
+        <StatTile
+          eyebrow="Warm-up gap"
+          icon={LogIn}
+          value={fmtDuration(warmup.cur)}
+          delta={metricDelta(warmup.cur, warmup.prev, 'down', fmtDuration, vs)}
+          cause="median check-in → first ClickUp activity (§9.3)"
+          state={warmup.cur == null ? null : warmup.cur > 60 ? 'flag' : warmup.cur > 30 ? 'watch' : 'ok'}
+          loading={attendanceQ.isLoading}
+        />
+      </div>
+
+      {/* ── Defect source split (§4.2) ── */}
+      <section className="card p-5">
+        <h4 className="eyebrow">Defect source — {period.label}</h4>
+        <div className="mt-3">
+          <HBar
+            rows={[
+              {
+                label: 'CSR-caught',
+                value: s.csrCaughtRounds,
+                tone: 'warning',
+                secondary: 'internal reject — never reached the client',
+              },
+              {
+                label: 'Client-caught',
+                value: s.clientCaughtRounds,
+                tone: 'danger',
+                secondary: 'client saw it and wanted changes',
+              },
+            ]}
+            formatValue={(v) => `${v} round${v === 1 ? '' : 's'}`}
+            ariaLabel="Revision rounds by who caught the defect"
+          />
+        </div>
+        <p className="mt-3 text-sm text-muted">{defectDiagnosis}</p>
+      </section>
+    </div>
+  )
+}
+
 /**
  * One shared, RLS-scoped designer drill-down (spec §22.3) used by the Ops
- * drawer and the Designer self-view. Every metric ships with delta + cause
- * (§20.2); the self scope compares only to the designer's own past (§22.10) —
- * the reads themselves are already scoped server-side.
+ * drawer and the Designer self-view. The metric grid + defect split render
+ * via DesignerMetricsPanel; the self scope compares only to the designer's
+ * own past (§22.10) — the reads themselves are already scoped server-side.
  */
 export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
   const toast = useToast()
@@ -115,90 +390,36 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
     return { start: addDays(today, -(days - 1)), end: today }
   }, [period, today])
   const prior = useMemo(() => priorPeriod(range.start, range.end), [range])
-  const sinceIso = pktInstant(prior.start, '00:00').toISOString()
+  const periodLabel = period === 'week' ? 'last 7 days' : 'last 30 days'
+  const metricsPeriod: MetricsPeriod = useMemo(
+    () => ({
+      start: range.start,
+      end: range.end,
+      priorStart: prior.start,
+      priorEnd: prior.end,
+      label: periodLabel,
+      vs: 'vs prior',
+    }),
+    [range, prior, periodLabel],
+  )
 
   const designersQ = useQuery({ queryKey: qk.designers, queryFn: fetchDesigners, staleTime: STALE_ANALYTICS })
   const schedulesQ = useQuery({ queryKey: qk.schedules, queryFn: fetchSchedules, staleTime: STALE_ANALYTICS })
-  const exceptionsQ = useQuery({ queryKey: qk.quotaExceptions, queryFn: fetchQuotaExceptions, staleTime: STALE_ANALYTICS })
-  const leavesQ = useQuery({ queryKey: qk.leaves, queryFn: fetchLeaves, staleTime: STALE_ANALYTICS })
-  const holidaysQ = useQuery({ queryKey: qk.holidays, queryFn: fetchHolidays, staleTime: STALE_ANALYTICS })
-  const workersQ = useQuery({ queryKey: qk.holidayWorkers, queryFn: fetchHolidayWorkers, staleTime: STALE_ANALYTICS })
-  const tasksQ = useQuery({
-    queryKey: ['tasks', 'since', prior.start] as const,
-    queryFn: () => fetchTasksSince(sinceIso),
-    staleTime: STALE_LIVE,
-  })
-  const metricsQ = useQuery({
-    queryKey: qk.taskMetrics(prior.start, range.end),
-    queryFn: () => fetchTaskMetricsSince(sinceIso),
-    staleTime: STALE_ANALYTICS,
-  })
   const openTasksQ = useQuery({ queryKey: qk.openTasks, queryFn: fetchOpenTasks, staleTime: STALE_LIVE })
+  const stripStart = addDays(today, -6)
   const attendanceQ = useQuery({
-    queryKey: qk.attendance(prior.start, range.end),
-    queryFn: () => fetchAttendance(prior.start, range.end),
+    queryKey: qk.attendance(stripStart, today),
+    queryFn: () => fetchAttendance(stripStart, today),
     staleTime: STALE_LIVE,
   })
 
   const designer = (designersQ.data ?? []).find((d) => d.id === designerId)
-  const quota: QuotaContext = useMemo(
-    () => ({
-      schedules: schedulesQ.data ?? [],
-      exceptions: exceptionsQ.data ?? [],
-      leaves: leavesQ.data ?? [],
-      holidays: holidaysQ.data ?? [],
-      holidayWorkers: workersQ.data ?? [],
-    }),
-    [schedulesQ.data, exceptionsQ.data, leavesQ.data, holidaysQ.data, workersQ.data],
-  )
-  const schedule = scheduleFor(quota.schedules, designerId, today)
-
-  const summaries = useMemo(() => {
-    const tasks = tasksQ.data ?? []
-    const metrics = metricsQ.data ?? []
-    const cur = summarizeDesigner(designerId, { start: range.start, end: range.end, tasks, metrics, quota })
-    const prev = summarizeDesigner(designerId, { start: prior.start, end: prior.end, tasks, metrics, quota })
-    return { cur, prev }
-  }, [designerId, tasksQ.data, metricsQ.data, quota, range, prior])
-
-  /** Team reference points (§22.5) — ops scope only; the self view never sees peers. */
-  const teamRef = useMemo(() => {
-    if (scope !== 'ops' || !designer) return null
-    const peers = (designersQ.data ?? []).filter(
-      (d) => d.team === designer.team && d.status === 'active',
-    )
-    if (peers.length < 2) return null
-    const tasks = tasksQ.data ?? []
-    const metrics = metricsQ.data ?? []
-    const rows: DesignerPeriodSummary[] = peers.map((p) =>
-      summarizeDesigner(p.id, { start: range.start, end: range.end, tasks, metrics, quota }),
-    )
-    return {
-      attainment: median(rows.map((r) => r.attainmentPct).filter((v): v is number => v != null)),
-      fpq: median(rows.map((r) => r.firstPassQualityPct).filter((v): v is number => v != null)),
-    }
-  }, [scope, designer, designersQ.data, tasksQ.data, metricsQ.data, quota, range])
+  const schedule = scheduleFor(schedulesQ.data ?? [], designerId, today)
 
   const myAttendance = useMemo(
     () => (attendanceQ.data ?? []).filter((a) => a.designer_id === designerId),
     [attendanceQ.data, designerId],
   )
-  const warmup = useMemo(() => {
-    const inRange = (a: AttendanceDaily, s: string, e: string) => a.work_date >= s && a.work_date <= e
-    const cur = median(
-      myAttendance
-        .filter((a) => inRange(a, range.start, range.end))
-        .map((a) => a.warmup_gap_min)
-        .filter((v): v is number => v != null),
-    )
-    const prev = median(
-      myAttendance
-        .filter((a) => inRange(a, prior.start, prior.end))
-        .map((a) => a.warmup_gap_min)
-        .filter((v): v is number => v != null),
-    )
-    return { cur, prev }
-  }, [myAttendance, range, prior])
 
   const myOpenTasks = useMemo(
     () =>
@@ -248,36 +469,12 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
   }
 
   const listUrl = clickupListUrl(designer.clickup_list_id)
-  const s = summaries.cur
-  const p = summaries.prev
-  const periodLabel = period === 'week' ? 'last 7 days' : 'last 30 days'
-  const vs = 'vs prior'
-  const pts = (abs: number) => `${abs} pts`
-
-  const defectTotal = s.csrCaughtRounds + s.clientCaughtRounds
-  const defectDiagnosis =
-    defectTotal === 0
-      ? `No revision rounds in the ${periodLabel} — nothing to diagnose.`
-      : s.csrCaughtRounds >= s.clientCaughtRounds
-        ? 'Mostly CSR-caught — internal quality misses. Coach the designer (§4.2).'
-        : 'Mostly client-caught with a quieter CSR gate — tighten the gate or the brief (§4.2).'
-
   const trailTask = trailTaskId ? myOpenTasks.find((t) => t.task_id === trailTaskId) : undefined
-  const stripDates = dateRange(addDays(today, -6), today)
+  const stripDates = dateRange(stripStart, today)
   const attendanceByDate = new Map(myAttendance.map((a) => [a.work_date, a]))
 
   return (
     <div className="space-y-6">
-      {(tasksQ.error || metricsQ.error) && (
-        <ErrorBanner
-          message="Couldn't refresh production data — showing the last loaded numbers."
-          onRetry={() => {
-            void tasksQ.refetch()
-            void metricsQ.refetch()
-          }}
-        />
-      )}
-
       {/* ── Header ── */}
       <header>
         <div className="flex flex-wrap items-center gap-2">
@@ -356,121 +553,8 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
         />
       </div>
 
-      {/* ── Metric grid (§20.2: delta + cause on every number) ── */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <StatTile
-          eyebrow="Quota attainment"
-          icon={Gauge}
-          value={fmtPct(s.attainmentPct)}
-          delta={metricDelta(s.attainmentPct, p.attainmentPct, 'up', pts, vs)}
-          cause={`${s.completed} completed of ${s.expectedQuota} expected`}
-          reference={
-            teamRef?.attainment != null ? `team median ${teamRef.attainment}%` : null
-          }
-          state={
-            s.attainmentPct == null
-              ? null
-              : s.attainmentPct >= 85
-                ? 'ok'
-                : s.attainmentPct >= 60
-                  ? 'watch'
-                  : 'flag'
-          }
-          loading={tasksQ.isLoading || metricsQ.isLoading}
-        />
-        <StatTile
-          eyebrow="First-pass quality"
-          icon={ShieldCheck}
-          value={fmtPct(s.firstPassQualityPct)}
-          delta={metricDelta(s.firstPassQualityPct, p.firstPassQualityPct, 'up', pts, vs)}
-          cause={
-            s.delivered > 0
-              ? `${s.firstPassClean} of ${s.delivered} delivered clean`
-              : 'Nothing delivered in this period yet'
-          }
-          reference={teamRef?.fpq != null ? `team median ${teamRef.fpq}%` : null}
-          state={
-            s.firstPassQualityPct == null
-              ? null
-              : s.firstPassQualityPct >= 80
-                ? 'ok'
-                : s.firstPassQualityPct >= 60
-                  ? 'watch'
-                  : 'flag'
-          }
-          loading={tasksQ.isLoading || metricsQ.isLoading}
-        />
-        <StatTile
-          eyebrow="Production speed"
-          icon={Timer}
-          value={fmtDuration(s.productionMedianMin)}
-          delta={metricDelta(s.productionMedianMin, p.productionMedianMin, 'down', fmtDuration, vs)}
-          cause={`median over ${s.delivered} first deliveries — client wait excluded (§4.1)`}
-          loading={tasksQ.isLoading || metricsQ.isLoading}
-        />
-        <StatTile
-          eyebrow="Revision turnaround"
-          icon={RotateCcw}
-          value={fmtDuration(s.revisionTurnaroundMedianMin)}
-          delta={metricDelta(
-            s.revisionTurnaroundMedianMin,
-            p.revisionTurnaroundMedianMin,
-            'down',
-            fmtDuration,
-            vs,
-          )}
-          cause={`${s.revisionRounds} revision round${s.revisionRounds === 1 ? '' : 's'} on tasks assigned in period`}
-          loading={tasksQ.isLoading || metricsQ.isLoading}
-        />
-        <StatTile
-          eyebrow="Cancellations"
-          icon={XCircle}
-          value={String(s.cancelled)}
-          delta={metricDelta(s.cancelled, p.cancelled, 'down', String, vs)}
-          cause={
-            s.cancelled > 0
-              ? `${fmtPct(s.cancellationRatePct)} of ${s.assigned} assigned — investigate the trail, don't verdict (§4.4)`
-              : `0 of ${s.assigned} assigned — no terminal losses`
-          }
-          state={s.cancelled > 0 ? 'flag' : 'ok'}
-          loading={tasksQ.isLoading || metricsQ.isLoading}
-        />
-        <StatTile
-          eyebrow="Warm-up gap"
-          icon={LogIn}
-          value={fmtDuration(warmup.cur)}
-          delta={metricDelta(warmup.cur, warmup.prev, 'down', fmtDuration, vs)}
-          cause="median check-in → first ClickUp activity (§9.3)"
-          state={warmup.cur == null ? null : warmup.cur > 60 ? 'flag' : warmup.cur > 30 ? 'watch' : 'ok'}
-          loading={attendanceQ.isLoading}
-        />
-      </div>
-
-      {/* ── Defect source split (§4.2) ── */}
-      <section className="card p-5">
-        <h4 className="eyebrow">Defect source — {periodLabel}</h4>
-        <div className="mt-3">
-          <HBar
-            rows={[
-              {
-                label: 'CSR-caught',
-                value: s.csrCaughtRounds,
-                tone: 'warning',
-                secondary: 'internal reject — never reached the client',
-              },
-              {
-                label: 'Client-caught',
-                value: s.clientCaughtRounds,
-                tone: 'danger',
-                secondary: 'client saw it and wanted changes',
-              },
-            ]}
-            formatValue={(v) => `${v} round${v === 1 ? '' : 's'}`}
-            ariaLabel="Revision rounds by who caught the defect"
-          />
-        </div>
-        <p className="mt-3 text-sm text-muted">{defectDiagnosis}</p>
-      </section>
+      {/* ── Shared metric grid + defect split (§22.3) ── */}
+      <DesignerMetricsPanel designerId={designerId} scope={scope} period={metricsPeriod} />
 
       {/* ── Open tasks ── */}
       <section>

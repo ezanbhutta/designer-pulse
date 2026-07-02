@@ -24,8 +24,8 @@ import {
   fetchCancelledTasks,
   qk,
 } from '../../lib/queries'
-import { fmtDate, fmtDuration, fmtPct, fmtShiftTime } from '../../lib/format'
-import { addDays, pktToday } from '../../../shared/pkt'
+import { fmtDate, fmtDuration, fmtPct, fmtShiftTime, fmtTime } from '../../lib/format'
+import { addDays, pktInstant, pktToday } from '../../../shared/pkt'
 import {
   activeLoad,
   ageMinutes,
@@ -74,11 +74,13 @@ export default function OpsHome() {
   const attendanceQ = useAttendanceRange(today, today)
   const tasksQ = useTasksSince(yesterday)
   const metricsQ = useMetricsSince(yesterday, today)
+  // Standard limit from the query fn; this surface only needs the newest 50.
   const cancelledQ = useQuery({
     queryKey: qk.cancelledTasks,
-    queryFn: () => fetchCancelledTasks(50),
+    queryFn: () => fetchCancelledTasks(),
     staleTime: STALE_LIVE,
   })
+  const recentCancelled = useMemo(() => (cancelledQ.data ?? []).slice(0, 50), [cancelledQ.data])
 
   const [trailTask, setTrailTask] = useState<TaskState | null>(null)
 
@@ -197,7 +199,7 @@ export default function OpsHome() {
 
     // 3. Fresh cancellations — designer-fault terminal loss (last 24h).
     const dayAgo = Date.now() - 24 * 3600_000
-    for (const t of (cancelledQ.data ?? []).filter((x) => {
+    for (const t of recentCancelled.filter((x) => {
       const at = x.closed_at ?? x.last_event_at
       return at != null && new Date(at).getTime() >= dayAgo
     })) {
@@ -249,7 +251,7 @@ export default function OpsHome() {
 
     const rank = { critical: 0, warning: 1, info: 2 } as const
     return items.sort((a, b) => rank[a.severity] - rank[b.severity])
-  }, [alertsQ.data, cancelledQ.data, attendanceQ.data, derived, designerById, cfg, navigate])
+  }, [alertsQ.data, recentCancelled, attendanceQ.data, derived, designerById, cfg, navigate])
 
   // ── Today's tiles ───────────────────────────────────────────────────────────
   const underQuotaCount = derived.rows.filter(
@@ -266,6 +268,14 @@ export default function OpsHome() {
   ).length
 
   const openRevisions = openTasks.filter((t) => t.current_status === 'revision')
+  // Prior-day reference: revisions still open that ENTERED revision before
+  // today's PKT day started — the carry-over the team woke up to. Historical
+  // open counts aren't stored, so this is the honest available comparison.
+  const dayStartMs = pktInstant(today, '00:00').getTime()
+  const revisionsAtDayStart = openRevisions.filter((t) => {
+    const at = t.last_event_at ?? t.created_at
+    return at != null && new Date(at).getTime() < dayStartMs
+  }).length
   const revisionIds = new Set(openRevisions.map((t) => t.task_id))
   const revMetrics = (metricsQ.data ?? []).filter((m) => revisionIds.has(m.task_id))
   const csrRounds = revMetrics.reduce((s, m) => s + m.csr_caught_rounds, 0)
@@ -296,6 +306,11 @@ export default function OpsHome() {
       {openTasksQ.error && (
         <ErrorBanner
           message="Couldn't refresh the live board — showing the last loaded tasks."
+          asOf={
+            openTasksQ.dataUpdatedAt > 0
+              ? fmtTime(new Date(openTasksQ.dataUpdatedAt).toISOString())
+              : null
+          }
           onRetry={() => void openTasksQ.refetch()}
         />
       )}
@@ -344,6 +359,10 @@ export default function OpsHome() {
           eyebrow="Open revisions"
           icon={RotateCcw}
           value={String(openRevisions.length)}
+          delta={metricDelta(openRevisions.length, revisionsAtDayStart, {
+            goodWhen: 'down',
+            vs: 'vs carried in from yesterday',
+          })}
           cause={
             openRevisions.length > 0
               ? `${csrRounds} CSR-caught · ${clientRounds} client-caught rounds on these tasks — designer clock running`

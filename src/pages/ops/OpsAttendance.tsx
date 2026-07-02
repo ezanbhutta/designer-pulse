@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarX,
@@ -119,6 +119,16 @@ export default function OpsAttendance() {
       .sort((a, b) => score(a.row) - score(b.row))
   }, [designers, rowsByKey, ctx, date])
 
+  // Grouped by team (§20.4) — dayRows is already worst-first globally, so each
+  // team's list inherits worst-first order and the worst team leads.
+  const dayGroups = useMemo(() => {
+    const grouped = new Map<string, DayRow[]>()
+    for (const r of dayRows) {
+      grouped.set(r.designer.team, [...(grouped.get(r.designer.team) ?? []), r])
+    }
+    return [...grouped.entries()]
+  }, [dayRows])
+
   // ── Tiles: today vs prior day ──
   const prevDate = addDays(date, -1)
   const warmups = (which: string) =>
@@ -132,6 +142,46 @@ export default function OpsAttendance() {
   const scheduledCount = dayRows.filter((r) => r.expected > 0).length
   const needsReview = dayRows.filter((r) => r.row?.needs_review).length
   const lateCount = dayRows.filter((r) => (r.row?.late_minutes ?? 0) > 0).length
+
+  // Prior-day values for the tile deltas — same week-range query, no extra fetch.
+  const prevStats = useMemo(() => {
+    let checked = 0
+    let late = 0
+    let review = 0
+    for (const d of designers) {
+      const r = rowsByKey.get(`${d.id}|${prevDate}`)
+      if (r?.declared_in != null) checked++
+      if ((r?.late_minutes ?? 0) > 0) late++
+      if (r?.needs_review) review++
+    }
+    return { checked, late, review }
+  }, [designers, rowsByKey, prevDate])
+
+  // Week grid grouping (§20.4): by team, worst week first within each team.
+  const weekGroups = useMemo(() => {
+    const days = dateRange(weekStart, date)
+    const badness = (id: string) => {
+      let score = 0
+      for (const wd of days) {
+        const r = rowsByKey.get(`${id}|${wd}`)
+        if (!r) continue
+        if (r.needs_review) score += 3
+        if (r.status === 'Absent') score += 2
+        if (r.status === 'Incomplete') score += 2
+        if (r.late_minutes > 0) score += 1
+        if ((r.warmup_gap_min ?? 0) > 60) score += 1
+      }
+      return score
+    }
+    const grouped = new Map<string, Designer[]>()
+    for (const d of designers) {
+      grouped.set(d.team, [...(grouped.get(d.team) ?? []), d])
+    }
+    return [...grouped.entries()].map(([team, members]) => ({
+      team,
+      members: [...members].sort((a, b) => badness(b.id) - badness(a.id)),
+    }))
+  }, [designers, rowsByKey, weekStart, date])
 
   // ── Verdict (§20.1 / §20.3) ──
   const verdictItems = useMemo(() => {
@@ -195,7 +245,15 @@ export default function OpsAttendance() {
       toast({
         message: `Manual ${label} recorded at ${fmtTime(vars.markedAt)}`,
         undo: async () => {
-          await deleteManualShiftMark(vars.designerId, vars.markedAt)
+          // The delete works server-side for ops roles — but a failure must be
+          // seen, never swallowed (§20.6): surface the exact error and leave
+          // the recorded mark standing.
+          try {
+            await deleteManualShiftMark(vars.designerId, vars.markedAt)
+          } catch (e) {
+            toast({ message: `Couldn't undo the manual ${label} — ${(e as Error).message}` })
+            return
+          }
           void queryClient.invalidateQueries({ queryKey: ['attendance'] })
           void queryClient.invalidateQueries({ queryKey: ['shift-marks'] })
         },
@@ -269,6 +327,11 @@ export default function OpsAttendance() {
       {attendanceQ.error && (
         <ErrorBanner
           message="Couldn't refresh attendance — showing the last loaded days."
+          asOf={
+            attendanceQ.dataUpdatedAt > 0
+              ? fmtTime(new Date(attendanceQ.dataUpdatedAt).toISOString())
+              : null
+          }
           onRetry={() => void attendanceQ.refetch()}
         />
       )}
@@ -299,6 +362,7 @@ export default function OpsAttendance() {
           eyebrow="Checked in"
           icon={UserCheck}
           value={`${checkedIn} of ${scheduledCount}`}
+          delta={metricDelta(checkedIn, prevStats.checked, { goodWhen: 'up', vs: 'vs prior day' })}
           cause={
             scheduledCount - checkedIn > 0
               ? `${scheduledCount - checkedIn} scheduled designer${scheduledCount - checkedIn === 1 ? '' : 's'} yet to mark in`
@@ -311,6 +375,7 @@ export default function OpsAttendance() {
           eyebrow="Needs review"
           icon={TriangleAlert}
           value={String(needsReview)}
+          delta={metricDelta(needsReview, prevStats.review, { goodWhen: 'down', vs: 'vs prior day' })}
           cause="auto-closed at shift end with nothing corroborating work — verify"
           state={needsReview > 0 ? 'flag' : 'ok'}
           loading={attendanceQ.isLoading}
@@ -319,6 +384,7 @@ export default function OpsAttendance() {
           eyebrow="Late arrivals"
           icon={LogIn}
           value={String(lateCount)}
+          delta={metricDelta(lateCount, prevStats.late, { goodWhen: 'down', vs: 'vs prior day' })}
           cause="checked in past their shift start + grace"
           state={lateCount > 0 ? 'watch' : 'ok'}
           loading={attendanceQ.isLoading}
@@ -358,7 +424,15 @@ export default function OpsAttendance() {
               </tr>
             </thead>
             <tbody>
-              {dayRows.map(({ designer, row, expected, shiftLabel }) => {
+              {/* Team section headers, worst-first within each team (§20.4). */}
+              {dayGroups.map(([team, rows]) => (
+                <Fragment key={team}>
+                  <tr className="border-b border-border/40 bg-surface-2/40">
+                    <th scope="colgroup" colSpan={isToday ? 8 : 7} className="px-3 py-2 text-left">
+                      <span className="eyebrow">{team}</span>
+                    </th>
+                  </tr>
+                  {rows.map(({ designer, row, expected, shiftLabel }) => {
                 const meta = row?.status ? STATUS_META[row.status] : null
                 const warmup = row?.warmup_gap_min ?? null
                 const warmupFlagged = warmup != null && warmup > 60
@@ -466,6 +540,8 @@ export default function OpsAttendance() {
                   </tr>
                 )
               })}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         </div>
@@ -485,37 +561,51 @@ export default function OpsAttendance() {
               </tr>
             </thead>
             <tbody>
-              {designers.map((d) => (
-                <tr key={d.id} className="border-t border-border/40">
-                  <td className="px-2 py-2">
-                    <button
-                      type="button"
-                      onClick={() => openDesigner(d.id)}
-                      className="min-h-[2.75rem] text-left font-medium text-fg hover:text-brand"
+              {/* Team section headers, worst week first within each team (§20.4). */}
+              {weekGroups.map(({ team, members }) => (
+                <Fragment key={team}>
+                  <tr className="border-t border-border/40 bg-surface-2/40">
+                    <th
+                      scope="colgroup"
+                      colSpan={weekDates.length + 1}
+                      className="px-2 py-2 text-left"
                     >
-                      {d.name}
-                    </button>
-                  </td>
-                  {weekDates.map((wd) => {
-                    const r = rowsByKey.get(`${d.id}|${wd}`)
-                    const meta = r?.status ? STATUS_META[r.status] : null
-                    return (
-                      <td key={wd} className="px-2 py-2 text-center">
-                        <span
-                          className={`tnum inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg px-1 text-xs font-semibold ${
-                            meta ? meta.cell : 'bg-surface-2/50 text-muted/50'
-                          }`}
-                          title={`${fmtDate(wd)}: ${r?.status ?? 'no record'}${
-                            r?.warmup_gap_min != null ? ` · warm-up ${fmtDuration(r.warmup_gap_min)}` : ''
-                          }${r?.needs_review ? ' · needs review' : ''}`}
+                      <span className="eyebrow">{team}</span>
+                    </th>
+                  </tr>
+                  {members.map((d) => (
+                    <tr key={d.id} className="border-t border-border/40">
+                      <td className="px-2 py-2">
+                        <button
+                          type="button"
+                          onClick={() => openDesigner(d.id)}
+                          className="min-h-[2.75rem] text-left font-medium text-fg hover:text-brand"
                         >
-                          {meta ? meta.letter : '·'}
-                          {r?.needs_review ? '!' : ''}
-                        </span>
+                          {d.name}
+                        </button>
                       </td>
-                    )
-                  })}
-                </tr>
+                      {weekDates.map((wd) => {
+                        const r = rowsByKey.get(`${d.id}|${wd}`)
+                        const meta = r?.status ? STATUS_META[r.status] : null
+                        return (
+                          <td key={wd} className="px-2 py-2 text-center">
+                            <span
+                              className={`tnum inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg px-1 text-xs font-semibold ${
+                                meta ? meta.cell : 'bg-surface-2/50 text-muted/50'
+                              }`}
+                              title={`${fmtDate(wd)}: ${r?.status ?? 'no record'}${
+                                r?.warmup_gap_min != null ? ` · warm-up ${fmtDuration(r.warmup_gap_min)}` : ''
+                              }${r?.needs_review ? ' · needs review' : ''}`}
+                            >
+                              {meta ? meta.letter : '·'}
+                              {r?.needs_review ? '!' : ''}
+                            </span>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </Fragment>
               ))}
             </tbody>
           </table>

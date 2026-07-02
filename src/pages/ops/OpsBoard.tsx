@@ -10,7 +10,7 @@ import { TaskCard } from '../../components/shared/TaskCard'
 import { TaskTrail } from '../../components/shared/TaskTrail'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { clickupListUrl, clickupTaskUrl } from '../../lib/queries'
-import { fmtDate, fmtDateTime, fmtDuration } from '../../lib/format'
+import { fmtDate, fmtDateTime, fmtDuration, fmtTime } from '../../lib/format'
 import { pktToday } from '../../../shared/pkt'
 import { ageMinutes, expectedQuotaOn, scheduleFor } from '../../../shared/aggregate'
 import {
@@ -78,13 +78,18 @@ export default function OpsBoard() {
     const now = new Date()
     const byStatus = new Map<CanonicalStatus, TaskState[]>()
     for (const s of STATUSES) byStatus.set(s, [])
+    // Tasks with a null current_status (unmapped ClickUp status name) get
+    // their own clearly-marked bucket — never silently invisible to Ops.
+    const unmapped: TaskState[] = []
     for (const t of openTasks) {
       if (t.current_status) byStatus.get(t.current_status)?.push(t)
+      else unmapped.push(t)
     }
     for (const t of closedToday) {
       if (t.current_status) byStatus.get(t.current_status)?.push(t)
     }
     for (const list of byStatus.values()) list.sort((a, b) => ageMinutes(b, now) - ageMinutes(a, now))
+    unmapped.sort((a, b) => ageMinutes(b, now) - ageMinutes(a, now))
 
     const assignedToday = new Map<string, number>()
     for (const t of todayTasksQ.data ?? []) {
@@ -107,7 +112,7 @@ export default function OpsBoard() {
     ).length
     const clientWait = openTasks.filter((t) => t.current_status === 'client response').length
 
-    return { byStatus, assignedToday, gapRows, agingCount, clientWait }
+    return { byStatus, unmapped, assignedToday, gapRows, agingCount, clientWait }
   }, [openTasks, closedToday, todayTasksQ.data, designers, ctx, cfg, today])
 
   const underQuota = derived.gapRows.filter((r) => r.gapLive)
@@ -142,7 +147,8 @@ export default function OpsBoard() {
     return grouped
   }, [designers])
 
-  const healthy = derived.agingCount === 0 && underQuota.length === 0
+  const healthy =
+    derived.agingCount === 0 && underQuota.length === 0 && derived.unmapped.length === 0
 
   return (
     <div className="space-y-6">
@@ -169,6 +175,12 @@ export default function OpsBoard() {
                 {underQuota.length > 0 && (
                   <Badge tone="warning" icon={TriangleAlert}>
                     {underQuota.length} designer{underQuota.length === 1 ? '' : 's'} under quota
+                  </Badge>
+                )}
+                {derived.unmapped.length > 0 && (
+                  <Badge tone="warning" icon={TriangleAlert}>
+                    {derived.unmapped.length} task{derived.unmapped.length === 1 ? '' : 's'} with an
+                    unmapped status
                   </Badge>
                 )}
               </>
@@ -204,6 +216,11 @@ export default function OpsBoard() {
       {openTasksQ.error && (
         <ErrorBanner
           message="Couldn't refresh the board — showing the last loaded tasks."
+          asOf={
+            openTasksQ.dataUpdatedAt > 0
+              ? fmtTime(new Date(openTasksQ.dataUpdatedAt).toISOString())
+              : null
+          }
           onRetry={() => void openTasksQ.refetch()}
         />
       )}
@@ -261,6 +278,37 @@ export default function OpsBoard() {
               </section>
             )
           })}
+          {/* ── Unmapped-status bucket — never invisible to Ops ── */}
+          {derived.unmapped.length > 0 && (
+            <section className="w-64 shrink-0" aria-label="Unmapped status">
+              <div className="flex items-center justify-between gap-2 px-1">
+                <Badge tone="warning" icon={TriangleAlert}>
+                  Unmapped status
+                </Badge>
+                <span className="tnum text-sm text-muted">{derived.unmapped.length}</span>
+              </div>
+              <p className="mt-2 rounded-xl bg-warning-soft px-3 py-2 text-xs leading-snug text-warning">
+                Status name not recognized — check the list's statuses in ClickUp.
+              </p>
+              <div className="mt-2 space-y-2">
+                {derived.unmapped.slice(0, COLUMN_CAP).map((t) => (
+                  <TaskCard
+                    key={t.task_id}
+                    task={t}
+                    designerName={
+                      t.designer_id ? designerById.get(t.designer_id)?.name : undefined
+                    }
+                    onOpen={() => setTrailTask(t)}
+                  />
+                ))}
+                {derived.unmapped.length > COLUMN_CAP && (
+                  <p className="text-center text-xs text-muted">
+                    +{derived.unmapped.length - COLUMN_CAP} more with unrecognized statuses
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
         </div>
       ) : (
         // ── Grouped by designer (teams first — cross-team raw counts aren't comparable, §2) ──

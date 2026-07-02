@@ -3,8 +3,10 @@
  *
  * The CEO surface is READ-ONLY on operations (§13.2, §22.1): every hook here
  * is a fetch; there are no mutations in this module. Default decision window
- * is this week vs last (§20.4), computed via `priorPeriod` so deltas compare
- * equal-length spans. All day math is PKT (§22.2).
+ * is this week vs last (§20.4): week-to-date views compare against
+ * `sameWindowLastWeek` (the same elapsed span shifted back 7 days) so deltas
+ * are like-for-like; generic periods use `priorPeriod`. All day math is PKT
+ * (§22.2).
  *
  * Cache tiers follow §5.1: open tasks read live (realtime invalidation via
  * hooks/useRealtime keeps them pushed); analytic aggregates use the 5-minute
@@ -164,6 +166,17 @@ export function startOfWeek(date: string): string {
 /** CEO decision window default: this week so far (Mon → today, §20.4). */
 export function thisWeekRange(today: string = pktToday()): PeriodRange {
   return { start: startOfWeek(today), end: today }
+}
+
+/**
+ * The prior week's SAME window — both bounds shifted back exactly 7 days.
+ * Week-to-date deltas (Mon..today) must compare like-for-like elapsed spans:
+ * a trailing equal-length window (`priorPeriod`) would mostly be last weekend
+ * and skew every "vs last week" read. Use `priorPeriod` only for generic
+ * (non-week-anchored) periods.
+ */
+export function sameWindowLastWeek(range: PeriodRange): PeriodRange {
+  return { start: addDays(range.start, -7), end: addDays(range.end, -7) }
 }
 
 /** The most recent COMPLETE Mon–Sun week — the weekly report default (§13.2). */

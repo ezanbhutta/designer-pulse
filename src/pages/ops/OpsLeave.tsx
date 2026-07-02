@@ -1,4 +1,5 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarDays,
@@ -28,7 +29,7 @@ import {
   upsertHoliday,
   upsertLeave,
 } from '../../lib/queries'
-import { fmtDate, fmtShiftTime } from '../../lib/format'
+import { fmtDate, fmtShiftTime, fmtTime } from '../../lib/format'
 import { addDays, pktToday } from '../../../shared/pkt'
 import { leaveCovers } from '../../../shared/attendance'
 import type { HalfDay, Holiday, Leave } from '../../../shared/types'
@@ -62,6 +63,18 @@ export default function OpsLeave() {
   }, [designersQ.data])
 
   const [drawer, setDrawer] = useState<'leave' | 'half' | 'holiday' | null>(null)
+
+  // Command-palette deep link (§20.6): /ops/leave?new=leave opens the
+  // add-leave drawer on mount, then clears the param so refresh/back is clean.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('new') === 'leave') {
+      setDrawer('leave')
+      const next = new URLSearchParams(searchParams)
+      next.delete('new')
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['leaves'] })
@@ -191,6 +204,10 @@ export default function OpsLeave() {
       {(designersQ.error || halfDaysQ.error) && (
         <ErrorBanner
           message="Couldn't refresh the calendar — showing the last loaded entries."
+          asOf={(() => {
+            const lastGood = Math.max(designersQ.dataUpdatedAt, halfDaysQ.dataUpdatedAt)
+            return lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null
+          })()}
           onRetry={() => {
             void designersQ.refetch()
             void halfDaysQ.refetch()
