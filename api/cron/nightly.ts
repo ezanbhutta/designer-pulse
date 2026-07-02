@@ -1,0 +1,326 @@
+/**
+ * Nightly compute (spec §5.1 "nightly tier", §11 Tier 4, §12) — runs at
+ * 02:00 PKT (21:00 UTC, see vercel.json):
+ *  1. Finalize attendance for yesterday + today for all active designers
+ *     (overnight shifts still running keep updating via pulse).
+ *  2. Refresh metrics for open tasks parked in `revision` / `client response`
+ *     so their open-span minutes don't drift stale between events.
+ *  3. Trend alerts, this-7-days vs the prior 7 (shared summarizeDesigner +
+ *     priorPeriod): quality decay, burnout composite, workload forecast.
+ */
+
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { addDays, pktInstant, pktToday } from '../../shared/pkt'
+import {
+  priorPeriod,
+  summarizeDesigner,
+  workloadForecast,
+  type DesignerPeriodSummary,
+  type QuotaContext,
+} from '../../shared/aggregate'
+import type {
+  AttendanceDaily,
+  Designer,
+  DesignerSchedule,
+  Holiday,
+  HolidayWorker,
+  Leave,
+  QuotaException,
+  TaskMetrics,
+  TaskState,
+} from '../../shared/types'
+import { json, requireCronAuth } from '../_lib/http'
+import { expectOk, supabaseAdmin } from '../_lib/supabaseAdmin'
+import { loadConfig } from '../_lib/config'
+import { fireAlert } from '../_lib/alerts'
+import { recomputeTaskMetrics } from '../_lib/ingest'
+import { recomputeWithPriorDay } from '../_lib/attendance-runner'
+
+export const config = { maxDuration: 60 }
+
+export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+  if (!requireCronAuth(req, res)) return
+  const started = Date.now()
+  try {
+    const supa = supabaseAdmin()
+    const cfg = await loadConfig(supa)
+    const now = new Date()
+    const today = pktToday(now)
+
+    const { data: designersRows, error: designersErr } = await supa
+      .from('designers')
+      .select('*')
+      .eq('status', 'active')
+    expectOk(designersErr, 'designers read')
+    const designers = (designersRows ?? []) as Designer[]
+
+    // ── (1) Attendance finalize: yesterday + today ────────────────────────────
+    let attendanceRuns = 0
+    for (const d of designers) {
+      await recomputeWithPriorDay(supa, d, today, cfg)
+      attendanceRuns += 2
+    }
+
+    // ── (2) Open-span drift: refresh revision / client-response tasks ─────────
+    const { data: driftRows, error: driftErr } = await supa
+      .from('task_state')
+      .select('task_id')
+      .eq('deleted', false)
+      .in('current_status', ['revision', 'client response'])
+      .limit(2000)
+    expectOk(driftErr, 'drift tasks read')
+    const driftIds = ((driftRows ?? []) as Array<{ task_id: string }>).map((r) => r.task_id)
+    for (const taskId of driftIds) {
+      await recomputeTaskMetrics(supa, taskId)
+    }
+
+    // ── (3) Trends: this 7 days vs the prior 7 ────────────────────────────────
+    const thisStart = addDays(today, -6)
+    const thisEnd = today
+    const prior = priorPeriod(thisStart, thisEnd)
+    const sinceIso = pktInstant(addDays(today, -35), '00:00').toISOString()
+
+    const [
+      recentRes,
+      openRes,
+      metricsRes,
+      schedulesRes,
+      exceptionsRes,
+      leavesRes,
+      holidaysRes,
+      workersRes,
+      attRes,
+    ] = await Promise.all([
+      supa
+        .from('task_state')
+        .select('*')
+        .eq('deleted', false)
+        .or(`created_at.gte.${sinceIso},last_event_at.gte.${sinceIso}`)
+        .limit(10000),
+      supa
+        .from('task_state')
+        .select('*')
+        .eq('deleted', false)
+        .not('current_status', 'in', '("complete","cancelled")')
+        .limit(10000),
+      supa
+        .from('task_metrics')
+        .select('*')
+        .or(`computed_at.gte.${sinceIso},first_delivered_at.gte.${sinceIso}`)
+        .limit(10000),
+      supa.from('designer_schedule').select('*').limit(5000),
+      supa.from('quota_exceptions').select('*').limit(5000),
+      supa.from('leaves').select('*').limit(5000),
+      supa.from('holidays').select('*').limit(2000),
+      supa.from('holiday_workers').select('*').limit(5000),
+      supa
+        .from('attendance_daily')
+        .select('*')
+        .gte('work_date', prior.start)
+        .lte('work_date', thisEnd)
+        .limit(10000),
+    ])
+    expectOk(recentRes.error, 'recent tasks read')
+    expectOk(openRes.error, 'open tasks read')
+    expectOk(metricsRes.error, 'task_metrics read')
+    expectOk(schedulesRes.error, 'designer_schedule read')
+    expectOk(exceptionsRes.error, 'quota_exceptions read')
+    expectOk(leavesRes.error, 'leaves read')
+    expectOk(holidaysRes.error, 'holidays read')
+    expectOk(workersRes.error, 'holiday_workers read')
+    expectOk(attRes.error, 'attendance_daily read')
+
+    // Merge recent + open task sets (forecast needs every open task).
+    const taskById = new Map<string, TaskState>()
+    for (const t of [...(recentRes.data ?? []), ...(openRes.data ?? [])] as TaskState[]) {
+      taskById.set(t.task_id, t)
+    }
+    const tasks = [...taskById.values()]
+    const metrics = (metricsRes.data ?? []) as TaskMetrics[]
+    const attendance = (attRes.data ?? []) as AttendanceDaily[]
+    const quota: QuotaContext = {
+      schedules: (schedulesRes.data ?? []) as DesignerSchedule[],
+      exceptions: (exceptionsRes.data ?? []) as QuotaException[],
+      leaves: (leavesRes.data ?? []) as Leave[],
+      holidays: (holidaysRes.data ?? []) as Holiday[],
+      holidayWorkers: (workersRes.data ?? []) as HolidayWorker[],
+    }
+
+    let qualityAlerts = 0
+    let burnoutAlerts = 0
+    for (const d of designers) {
+      const cur = summarizeDesigner(d.id, {
+        start: thisStart,
+        end: thisEnd,
+        tasks,
+        metrics,
+        quota,
+      })
+      const prev = summarizeDesigner(d.id, {
+        start: prior.start,
+        end: prior.end,
+        tasks,
+        metrics,
+        quota,
+      })
+
+      // Quality decay (spec §12): FPQ drop > quality_decay_pct vs prior 7d.
+      if (cur.firstPassQualityPct != null && prev.firstPassQualityPct != null) {
+        const drop = prev.firstPassQualityPct - cur.firstPassQualityPct
+        if (drop > cfg.quality_decay_pct) {
+          const dirty = cur.delivered - cur.firstPassClean
+          const result = await fireAlert(supa, {
+            alert_type: 'quality_decay',
+            designer_id: d.id,
+            severity: 'warning',
+            message: `${d.name}'s first-pass quality fell ${drop} pts week-over-week (${prev.firstPassQualityPct}% → ${cur.firstPassQualityPct}%) — ${dirty} of ${cur.delivered} delivered needed revision`,
+            context: {
+              window: { start: thisStart, end: thisEnd },
+              current_pct: cur.firstPassQualityPct,
+              prior_pct: prev.firstPassQualityPct,
+              drop_pts: drop,
+              delivered: cur.delivered,
+              csr_caught: cur.csrCaughtRounds,
+              client_caught: cur.clientCaughtRounds,
+            },
+          })
+          if (result.fired) qualityAlerts++
+        }
+      }
+
+      // Burnout composite (spec §11 Tier 4).
+      const attCur = attendance.filter(
+        (a) => a.designer_id === d.id && a.work_date >= thisStart && a.work_date <= thisEnd,
+      )
+      const attPrev = attendance.filter(
+        (a) => a.designer_id === d.id && a.work_date >= prior.start && a.work_date <= prior.end,
+      )
+      const burnout = burnoutComposite(cur, prev, attCur, attPrev)
+      if (burnout.score > cfg.burnout_score) {
+        const result = await fireAlert(supa, {
+          alert_type: 'burnout',
+          designer_id: d.id,
+          severity: 'warning',
+          message: `${d.name} shows burnout risk (${burnout.score}/100) — revision turnaround ${fmtMin(cur.revisionTurnaroundMedianMin)} vs ${fmtMin(prev.revisionTurnaroundMedianMin)}, attainment ${fmtPct(cur.attainmentPct)} vs ${fmtPct(prev.attainmentPct)}, present ${burnout.presentCur}d with a shrinking warm-up gap`,
+          context: {
+            window: { start: thisStart, end: thisEnd },
+            score: burnout.score,
+            turnaround_rise: burnout.turnaroundRise,
+            attainment_fall: burnout.attainmentFall,
+            warmup_shrink: burnout.warmupShrink,
+            present_days: burnout.presentCur,
+            prior_present_days: burnout.presentPrev,
+          },
+        })
+        if (result.fired) burnoutAlerts++
+      }
+    }
+
+    // Workload forecast (spec §11 Tier 4): 7d inflow vs completion, projected.
+    const forecast = workloadForecast(tasks, cfg.forecast_horizon_days, now)
+    let forecastAlert = false
+    if (forecast.projectedBacklog > cfg.forecast_threshold) {
+      const result = await fireAlert(supa, {
+        alert_type: 'workload_forecast',
+        severity: 'warning',
+        message: `Projected backlog ${forecast.projectedBacklog} tasks in ${forecast.horizonDays}d — inflow ${forecast.inflowPerDay}/day vs completion ${forecast.completionPerDay}/day. Rebalance or add capacity.`,
+        context: { ...forecast, threshold: cfg.forecast_threshold },
+      })
+      forecastAlert = result.fired
+    }
+
+    json(res, 200, {
+      ok: true,
+      work_date: today,
+      attendanceRuns,
+      driftRefreshed: driftIds.length,
+      designersScored: designers.length,
+      qualityAlerts,
+      burnoutAlerts,
+      forecastAlert,
+      projectedBacklog: forecast.projectedBacklog,
+      tookMs: Date.now() - started,
+    })
+  } catch (err) {
+    console.error('[cron/nightly]', err)
+    json(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// ── Burnout composite ─────────────────────────────────────────────────────────
+
+/**
+ * Burnout risk, 0–100 (spec §11 Tier 4) — a leading indicator of "online but
+ * producing less". Weighted, normalized components, this 7 days vs prior 7:
+ *
+ *   0.40 · rising revision turnaround — median turnaround grew; a 2× rise
+ *          saturates the component ((cur/prev − 1), clamped 0..1).
+ *   0.35 · falling quota attainment — a 50-point attainment drop saturates
+ *          ((prev − cur) / 50, clamped 0..1).
+ *   0.25 · shrinking warm-up gap WITH sustained presence — present at least
+ *          as many days, starting activity sooner after check-in, while the
+ *          other signals degrade ((prevWarm − curWarm) / max(prevWarm, 30),
+ *          clamped 0..1; zero unless presence held steady).
+ *
+ * Components missing their baseline (no prior data) contribute 0 — the score
+ * only rises on evidenced movement, never on absence of data.
+ */
+function burnoutComposite(
+  cur: DesignerPeriodSummary,
+  prev: DesignerPeriodSummary,
+  attCur: AttendanceDaily[],
+  attPrev: AttendanceDaily[],
+): {
+  score: number
+  turnaroundRise: number
+  attainmentFall: number
+  warmupShrink: number
+  presentCur: number
+  presentPrev: number
+} {
+  const clamp01 = (x: number) => Math.min(1, Math.max(0, x))
+
+  let turnaroundRise = 0
+  if (
+    prev.revisionTurnaroundMedianMin != null &&
+    prev.revisionTurnaroundMedianMin > 0 &&
+    cur.revisionTurnaroundMedianMin != null
+  ) {
+    turnaroundRise = clamp01(cur.revisionTurnaroundMedianMin / prev.revisionTurnaroundMedianMin - 1)
+  }
+
+  let attainmentFall = 0
+  if (prev.attainmentPct != null && cur.attainmentPct != null) {
+    attainmentFall = clamp01((prev.attainmentPct - cur.attainmentPct) / 50)
+  }
+
+  const isPresent = (a: AttendanceDaily) => a.status === 'Present' || a.status === 'HolidayWorked'
+  const presentCur = attCur.filter(isPresent).length
+  const presentPrev = attPrev.filter(isPresent).length
+  const warmCur = meanWarmup(attCur)
+  const warmPrev = meanWarmup(attPrev)
+  let warmupShrink = 0
+  if (
+    presentCur >= presentPrev &&
+    presentCur > 0 &&
+    warmPrev != null &&
+    warmCur != null &&
+    warmCur < warmPrev
+  ) {
+    warmupShrink = clamp01((warmPrev - warmCur) / Math.max(warmPrev, 30))
+  }
+
+  const score = Math.round(100 * (0.4 * turnaroundRise + 0.35 * attainmentFall + 0.25 * warmupShrink))
+  return { score, turnaroundRise, attainmentFall, warmupShrink, presentCur, presentPrev }
+}
+
+function meanWarmup(rows: AttendanceDaily[]): number | null {
+  const vals = rows
+    .map((r) => r.warmup_gap_min)
+    .filter((v): v is number => v != null && Number.isFinite(v))
+  if (!vals.length) return null
+  return vals.reduce((s, v) => s + v, 0) / vals.length
+}
+
+const fmtMin = (v: number | null) => (v == null ? '—' : `${v}m`)
+const fmtPct = (v: number | null) => (v == null ? '—' : `${v}%`)

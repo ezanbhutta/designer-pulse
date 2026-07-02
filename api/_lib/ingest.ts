@@ -1,0 +1,219 @@
+/**
+ * Ingestion core (spec §5/§6): immutable clickup_events → derived task_state +
+ * task_metrics. Invariants (CONTRACTS.md):
+ *  - events insert with ON CONFLICT DO NOTHING on
+ *    (task_id, event_type, event_time, to_status) — idempotent across
+ *    webhook / reconciliation / backfill;
+ *  - task_metrics is recomputed from the FULL ordered event log via the shared
+ *    computeTaskMetrics after every change (corrections never mutate raw);
+ *  - a task entering `cancelled` fires an instant critical alert (spec §12);
+ *  - the system NEVER writes to ClickUp (spec §22.1).
+ */
+
+import { canonicalizeStatus, parseConceptCount } from '../../shared/statuses'
+import { computeTaskMetrics, type TransitionEvent } from '../../shared/metrics'
+import type { CanonicalStatus } from '../../shared/statuses'
+import type { ClickupEvent, Designer, TaskState } from '../../shared/types'
+import type { ClickUpTask } from './clickup'
+import { expectOk, type SupabaseAdmin } from './supabaseAdmin'
+import { fireAlert } from './alerts'
+
+/** ClickUp ms-epoch (string or number) → ISO timestamp, null-safe. */
+export function msToIso(ms: string | number | null | undefined): string | null {
+  if (ms == null || ms === '') return null
+  const n = Number(ms)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return new Date(n).toISOString()
+}
+
+/**
+ * clickup_list_id → designer row. Includes archived designers so their history
+ * keeps ingesting correctly (archive is the default exit, spec §8.2); only
+ * hard-deleted designers drop out.
+ */
+export async function listDesignerMap(supa: SupabaseAdmin): Promise<Map<string, Designer>> {
+  const { data, error } = await supa
+    .from('designers')
+    .select('*')
+    .not('clickup_list_id', 'is', null)
+    .neq('status', 'deleted')
+  expectOk(error, 'designers read')
+  const map = new Map<string, Designer>()
+  for (const row of (data ?? []) as Designer[]) {
+    if (row.clickup_list_id) map.set(row.clickup_list_id, row)
+  }
+  return map
+}
+
+/**
+ * Upsert the task_state snapshot from a full ClickUp task payload:
+ * name / status / priority / tags → scope_tags + concept_count /
+ * date_created (assignment time, spec §2) / due_date / date_closed.
+ */
+export async function upsertTaskFromClickUp(
+  supa: SupabaseAdmin,
+  task: ClickUpTask,
+  designerId: string,
+): Promise<void> {
+  const listId = task.list?.id
+  if (!listId) throw new Error(`ClickUp task ${task.id} carries no list id — cannot upsert`)
+  const tags = (task.tags ?? []).map((t) => t.name)
+  const canonical = canonicalizeStatus(task.status?.status ?? null)
+  if (!canonical && task.status?.status) {
+    // Spec §6.4: unknown status names are logged for review, never guessed.
+    console.warn(
+      `[ingest] unknown status "${task.status.status}" on task ${task.id} — logged, transition skipped (spec §6.4)`,
+    )
+  }
+  const row: Record<string, unknown> = {
+    task_id: task.id,
+    list_id: listId,
+    designer_id: designerId,
+    name: task.name ?? null,
+    priority: task.priority?.priority ?? null,
+    concept_count: parseConceptCount(tags),
+    scope_tags: tags,
+    created_at: msToIso(task.date_created),
+    due_date: msToIso(task.due_date),
+    closed_at: msToIso(task.date_closed),
+    deleted: false,
+    updated_at: new Date().toISOString(),
+  }
+  if (canonical) row.current_status = canonical
+  const { error } = await supa.from('task_state').upsert(row, { onConflict: 'task_id' })
+  expectOk(error, `task_state upsert (${task.id})`)
+}
+
+export interface IngestEvent {
+  task_id: string
+  list_id: string
+  designer_id: string | null
+  event_type: 'created' | 'status_change' | 'deleted'
+  from_status?: CanonicalStatus | null
+  to_status?: CanonicalStatus | null
+  event_time: string
+  source: 'webhook' | 'reconciliation' | 'backfill'
+  raw?: unknown
+}
+
+/** Idempotent event insert (ON CONFLICT DO NOTHING). */
+export async function insertEvent(supa: SupabaseAdmin, evt: IngestEvent): Promise<void> {
+  await insertEvents(supa, [evt])
+}
+
+/** Batched idempotent event insert. */
+export async function insertEvents(supa: SupabaseAdmin, evts: IngestEvent[]): Promise<void> {
+  if (!evts.length) return
+  const rows = evts.map((e) => ({
+    task_id: e.task_id,
+    list_id: e.list_id,
+    designer_id: e.designer_id,
+    event_type: e.event_type,
+    from_status: e.from_status ?? null,
+    to_status: e.to_status ?? null,
+    event_time: e.event_time,
+    source: e.source,
+    raw: e.raw ?? null,
+  }))
+  const { error } = await supa.from('clickup_events').upsert(rows, {
+    onConflict: 'task_id,event_type,event_time,to_status',
+    ignoreDuplicates: true,
+  })
+  expectOk(error, `clickup_events insert (${rows[0].task_id})`)
+}
+
+/**
+ * Recompute task_metrics for one task from its FULL ordered event log
+ * (spec §4 attribution model) and refresh the task_state derived columns
+ * (current_status / last_event_at / closed_at).
+ * metrics_confidence stays 'backfill' while every event is source='backfill'
+ * (revision rounds are a lower bound there, spec §6.3); one live event
+ * upgrades it to 'live'.
+ */
+export async function recomputeTaskMetrics(supa: SupabaseAdmin, taskId: string): Promise<void> {
+  const { data: taskRow, error: taskErr } = await supa
+    .from('task_state')
+    .select('*')
+    .eq('task_id', taskId)
+    .maybeSingle()
+  expectOk(taskErr, `task_state read (${taskId})`)
+  const task = taskRow as TaskState | null
+  if (!task || !task.created_at) return
+
+  const { data: evRows, error: evErr } = await supa
+    .from('clickup_events')
+    .select('*')
+    .eq('task_id', taskId)
+    .order('event_time', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(2000)
+  expectOk(evErr, `clickup_events read (${taskId})`)
+  const events = (evRows ?? []) as ClickupEvent[]
+
+  const transitions: TransitionEvent[] = events.map((e) => ({
+    event_type: e.event_type,
+    from_status: e.from_status,
+    to_status: e.to_status,
+    event_time: e.event_time,
+  }))
+  const now = new Date()
+  const computed = computeTaskMetrics(task.created_at, transitions, now)
+
+  const allBackfill = events.length > 0 && events.every((e) => e.source === 'backfill')
+  const statusEvents = events.filter((e) => e.event_type === 'status_change' && e.to_status)
+  const lastEventAt = statusEvents.length
+    ? statusEvents[statusEvents.length - 1].event_time
+    : task.created_at
+
+  const { error: metricsErr } = await supa.from('task_metrics').upsert(
+    {
+      task_id: taskId,
+      designer_id: task.designer_id,
+      start_latency_min: computed.start_latency_min,
+      production_min: computed.production_min,
+      first_pass_clean: computed.first_pass_clean,
+      revision_rounds: computed.revision_rounds,
+      csr_caught_rounds: computed.csr_caught_rounds,
+      client_caught_rounds: computed.client_caught_rounds,
+      revision_turnaround_min: computed.revision_turnaround_min,
+      client_wait_min: computed.client_wait_min,
+      first_delivered_at: computed.first_delivered_at,
+      outcome: computed.outcome,
+      is_cancelled: computed.is_cancelled,
+      metrics_confidence: allBackfill ? 'backfill' : 'live',
+      computed_at: now.toISOString(),
+    },
+    { onConflict: 'task_id' },
+  )
+  expectOk(metricsErr, `task_metrics upsert (${taskId})`)
+
+  const { error: stateErr } = await supa
+    .from('task_state')
+    .update({
+      current_status: computed.current_status,
+      last_event_at: lastEventAt,
+      closed_at: computed.outcome === 'in_flight' ? null : lastEventAt,
+      updated_at: now.toISOString(),
+    })
+    .eq('task_id', taskId)
+  expectOk(stateErr, `task_state refresh (${taskId})`)
+}
+
+/**
+ * A task entered `cancelled` — designer-fault terminal loss by definition
+ * (spec §2/§4.3). Instant critical alert, routed Ops + CEO (spec §12); the
+ * dashboards read it as a flag to investigate, not a verdict (spec §4.4).
+ */
+export async function handleCancellation(
+  supa: SupabaseAdmin,
+  task: { task_id: string; designer_id: string | null; name: string | null },
+): Promise<void> {
+  await fireAlert(supa, {
+    alert_type: 'cancellation',
+    designer_id: task.designer_id,
+    task_id: task.task_id,
+    severity: 'critical',
+    message: `"${task.name ?? task.task_id}" was cancelled — designer-fault terminal loss. Review its status trail before judging.`,
+    context: { task_name: task.name },
+  })
+}

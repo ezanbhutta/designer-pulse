@@ -1,0 +1,224 @@
+/**
+ * Typed ClickUp v2 REST client — READ-ONLY toward tasks (spec §22.1: the tool
+ * observes assignment, it never performs it; there is no write-back path and
+ * that is a permanent guarantee, not a v1 limitation). The single POST in this
+ * file is webhook MANAGEMENT (registering our own receiver) — it touches no
+ * task data.
+ *
+ * Rate limits: 429 responses are retried up to 3 times, honouring Retry-After
+ * with exponential fallback.
+ */
+
+const BASE = 'https://api.clickup.com/api/v2'
+
+/** The "Designers Team" space (spec §3.1). Never read any other space. */
+export const DESIGNERS_SPACE_ID = '90187090116'
+
+/** Events our webhook subscribes to (spec §6.1). */
+export const WEBHOOK_EVENTS = [
+  'taskCreated',
+  'taskStatusUpdated',
+  'taskDeleted',
+  'taskUpdated',
+] as const
+
+// ── Response shapes ───────────────────────────────────────────────────────────
+
+export interface ClickUpStatusRef {
+  status: string
+  type?: string
+  color?: string
+}
+
+export interface ClickUpTask {
+  id: string
+  name: string
+  status: ClickUpStatusRef | null
+  /** ClickUp timestamps are ms-epoch strings. */
+  date_created: string | null
+  date_updated: string | null
+  date_closed: string | null
+  due_date: string | null
+  priority: { priority: string } | null
+  tags: Array<{ name: string }> | null
+  assignees: Array<{ id: number; username?: string; email?: string }> | null
+  list: { id: string; name?: string } | null
+  parent?: string | null
+}
+
+export interface ClickUpList {
+  id: string
+  name: string
+  archived?: boolean
+}
+
+export interface ClickUpFolder {
+  id: string
+  name: string
+  lists?: ClickUpList[]
+}
+
+export interface TimeInStatusEntry {
+  status: string
+  orderindex?: number
+  total_time?: { by_minute?: number; since?: string }
+}
+
+export interface TimeInStatusResponse {
+  current_status?: TimeInStatusEntry
+  status_history?: TimeInStatusEntry[]
+}
+
+export interface ClickUpWebhook {
+  id: string
+  endpoint: string
+  events: string[]
+  space_id?: number | null
+  list_id?: number | null
+  secret?: string
+  health?: { status: string; fail_count: number }
+}
+
+// ── Core request with 429-aware retry ─────────────────────────────────────────
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+async function request<T>(
+  path: string,
+  init?: { method?: 'GET' | 'POST'; body?: unknown },
+): Promise<T> {
+  const token = process.env.CLICKUP_API_TOKEN
+  if (!token) throw new Error('CLICKUP_API_TOKEN is not set')
+  const method = init?.method ?? 'GET'
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: { Authorization: token, 'Content-Type': 'application/json' },
+      body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+    })
+    if (res.status === 429 && attempt < 3) {
+      const retryAfter = Number(res.headers.get('retry-after'))
+      const waitMs =
+        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt
+      await sleep(waitMs)
+      continue
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`ClickUp ${method} ${path} → ${res.status} ${text.slice(0, 300)}`)
+    }
+    return (await res.json()) as T
+  }
+}
+
+// ── Hierarchy (list auto-discovery, spec §3.1) ────────────────────────────────
+
+export async function getSpaceFolders(spaceId: string): Promise<ClickUpFolder[]> {
+  const data = await request<{ folders?: ClickUpFolder[] }>(
+    `/space/${spaceId}/folder?archived=false`,
+  )
+  return data.folders ?? []
+}
+
+export async function getFolderlessLists(spaceId: string): Promise<ClickUpList[]> {
+  const data = await request<{ lists?: ClickUpList[] }>(`/space/${spaceId}/list?archived=false`)
+  return data.lists ?? []
+}
+
+/** All lists in the space — folders' lists plus folderless, de-duplicated. */
+export async function discoverSpaceLists(
+  spaceId: string = DESIGNERS_SPACE_ID,
+): Promise<ClickUpList[]> {
+  const [folders, folderless] = await Promise.all([
+    getSpaceFolders(spaceId),
+    getFolderlessLists(spaceId),
+  ])
+  const out: ClickUpList[] = []
+  const seen = new Set<string>()
+  for (const list of [...folders.flatMap((f) => f.lists ?? []), ...folderless]) {
+    if (!seen.has(list.id)) {
+      seen.add(list.id)
+      out.push(list)
+    }
+  }
+  return out
+}
+
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+
+export interface ListTasksOptions {
+  /** ms epoch — only tasks updated after this instant. */
+  dateUpdatedGt?: number
+  includeClosed?: boolean
+  page?: number
+}
+
+export async function getListTasks(
+  listId: string,
+  opts: ListTasksOptions = {},
+): Promise<{ tasks: ClickUpTask[]; lastPage: boolean }> {
+  const params = new URLSearchParams()
+  params.set('page', String(opts.page ?? 0))
+  params.set('subtasks', 'true')
+  params.set('include_closed', String(opts.includeClosed ?? true))
+  params.set('order_by', 'updated')
+  params.set('reverse', 'true')
+  if (opts.dateUpdatedGt != null) params.set('date_updated_gt', String(Math.floor(opts.dateUpdatedGt)))
+  const data = await request<{ tasks?: ClickUpTask[]; last_page?: boolean }>(
+    `/list/${listId}/task?${params.toString()}`,
+  )
+  const tasks = data.tasks ?? []
+  return { tasks, lastPage: data.last_page ?? tasks.length === 0 }
+}
+
+export async function getTask(taskId: string): Promise<ClickUpTask> {
+  return request<ClickUpTask>(`/task/${taskId}`)
+}
+
+// ── Time in status (historical backfill, spec §3.4 / §6.3) ────────────────────
+
+export async function getTaskTimeInStatus(taskId: string): Promise<TimeInStatusResponse> {
+  return request<TimeInStatusResponse>(`/task/${taskId}/time_in_status`)
+}
+
+/**
+ * Bulk time-in-status, chunked ≤100 ids per call. The bulk endpoint requires
+ * at least 2 ids — a lone id falls back to the single-task endpoint.
+ */
+export async function getBulkTimeInStatus(
+  taskIds: string[],
+): Promise<Record<string, TimeInStatusResponse>> {
+  const out: Record<string, TimeInStatusResponse> = {}
+  for (let i = 0; i < taskIds.length; i += 100) {
+    const chunk = taskIds.slice(i, i + 100)
+    if (chunk.length === 0) continue
+    if (chunk.length === 1) {
+      out[chunk[0]] = await getTaskTimeInStatus(chunk[0])
+      continue
+    }
+    const params = chunk.map((id) => `task_ids=${encodeURIComponent(id)}`).join('&')
+    const data = await request<Record<string, TimeInStatusResponse>>(
+      `/task/bulk_time_in_status/task_ids?${params}`,
+    )
+    Object.assign(out, data)
+  }
+  return out
+}
+
+// ── Webhook management (NOT a task write — registering our own receiver) ─────
+
+export async function createWebhook(
+  teamId: string,
+  endpoint: string,
+  spaceId: string = DESIGNERS_SPACE_ID,
+): Promise<{ id: string; webhook: ClickUpWebhook }> {
+  return request<{ id: string; webhook: ClickUpWebhook }>(`/team/${teamId}/webhook`, {
+    method: 'POST',
+    body: { endpoint, events: [...WEBHOOK_EVENTS], space_id: Number(spaceId) },
+  })
+}
+
+export async function getWebhooks(teamId: string): Promise<ClickUpWebhook[]> {
+  const data = await request<{ webhooks?: ClickUpWebhook[] }>(`/team/${teamId}/webhook`)
+  return data.webhooks ?? []
+}
