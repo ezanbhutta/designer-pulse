@@ -72,13 +72,8 @@ create trigger trg_shift_marks_no_delete
   before delete on public.shift_marks
   for each row execute function public.block_delete_unless_service();
 
--- Mark corrections are accountability events: every DELETE is audited (who
--- removed which mark). Manual-insert auditing lives below with the other
--- audit triggers.
-drop trigger if exists trg_audit_shift_marks_delete on public.shift_marks;
-create trigger trg_audit_shift_marks_delete
-  after delete on public.shift_marks
-  for each row execute function public.audit_row_change();
+-- (Mark-correction DELETEs are audited — trigger defined in section 2 below,
+-- after audit_row_change() exists.)
 
 -- ─── 2. Generic audit trigger (§22.8) ────────────────────────────────────────
 
@@ -165,6 +160,13 @@ create trigger trg_audit_shift_marks_manual
   for each row
   when (new.source = 'manual')
   execute function public.audit_row_change();
+
+-- Mark corrections are accountability events: every DELETE is audited (who
+-- removed which mark).
+drop trigger if exists trg_audit_shift_marks_delete on public.shift_marks;
+create trigger trg_audit_shift_marks_delete
+  after delete on public.shift_marks
+  for each row execute function public.audit_row_change();
 
 -- ─── 3. Realtime (spec §22.4) ────────────────────────────────────────────────
 

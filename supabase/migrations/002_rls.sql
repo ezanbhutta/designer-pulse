@@ -177,6 +177,18 @@ revoke all on public.designers, public.designer_schedule, public.quota_exception
   public.app_users, public.audit_log
 from anon;
 
+-- Explicit table grants (don't rely on Supabase default privileges being
+-- configured): authenticated gets the standard broad grant, RLS narrows it;
+-- service_role bypasses RLS for ingestion/compute.
+grant select, insert, update, delete on public.designers, public.designer_schedule,
+  public.quota_exceptions, public.clickup_events, public.task_state,
+  public.task_metrics, public.shift_marks, public.attendance_daily,
+  public.leaves, public.half_days, public.holidays, public.holiday_workers,
+  public.alerts, public.app_config, public.app_users, public.audit_log
+to authenticated;
+grant all on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to authenticated, service_role;
+
 -- ─── designers ───────────────────────────────────────────────────────────────
 
 drop policy if exists designers_select_staff on public.designers;
