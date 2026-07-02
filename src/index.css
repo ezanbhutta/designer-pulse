@@ -1,0 +1,97 @@
+@import '@fontsource-variable/inter';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Semantic tokens (§21.1): R G B triplets, consumed as rgb(var(--t) / a).
+   Light theme — the Designer self-view default (glance-and-check-in). */
+:root {
+  --color-bg: 250 250 252;
+  --color-surface: 255 255 255;
+  --color-surface-2: 244 242 250;
+  --color-border: 231 228 240;
+  --color-fg: 22 10 51; /* deep ink #160A33 */
+  --color-muted: 83 74 120; /* #534A78 — 7.5:1 on white */
+  --color-brand: 114 41 255; /* #7229FF */
+  --color-brand-fg: 255 255 255;
+  --color-brand-soft: 241 234 255;
+  --color-success: 21 128 61;
+  --color-success-soft: 230 246 236;
+  --color-warning: 180 83 9;
+  --color-warning-soft: 253 243 226;
+  --color-danger: 220 38 38;
+  --color-danger-soft: 253 233 233;
+}
+
+/* Dark theme — the all-day Ops/CEO cockpit default (§21.9). */
+.dark {
+  --color-bg: 11 6 24; /* #0B0618 */
+  --color-surface: 22 10 51; /* #160A33 */
+  --color-surface-2: 31 17 71;
+  --color-border: 44 29 93;
+  --color-fg: 242 239 250;
+  --color-muted: 167 159 199;
+  --color-brand: 159 102 255; /* glow violet #9F66FF */
+  --color-brand-fg: 18 6 43;
+  --color-brand-soft: 42 23 88;
+  --color-success: 74 222 128;
+  --color-success-soft: 16 51 31;
+  --color-warning: 251 191 36;
+  --color-warning-soft: 64 47 10;
+  --color-danger: 248 113 113;
+  --color-danger-soft: 68 21 21;
+}
+
+@layer base {
+  html {
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-bg text-fg font-sans text-base;
+  }
+  /* Tabular figures on every number (§21.3). Apply `tnum` to metric cells. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Visible focus states everywhere (§20.10). */
+  :focus-visible {
+    outline: 2px solid rgb(var(--color-brand));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  ::selection {
+    background: rgb(var(--color-brand) / 0.25);
+  }
+}
+
+@layer components {
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.2em] text-muted;
+  }
+  .card {
+    @apply rounded-2xl bg-surface shadow-soft border border-border/60;
+  }
+  .skeleton {
+    @apply rounded-lg bg-surface-2;
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--color-surface-2)) 0%,
+      rgb(var(--color-border) / 0.6) 50%,
+      rgb(var(--color-surface-2)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s linear infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/api/cron/reconcile", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/pulse", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/nightly", "schedule": "0 21 * * *" }
+  ]
+}
