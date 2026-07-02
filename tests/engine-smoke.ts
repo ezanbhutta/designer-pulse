@@ -111,6 +111,43 @@ check('pkt.date', pktDateOf('2026-06-01T20:30:00Z'), '2026-06-02') // 01:30 PKT 
   check('night.late', r.late_minutes, 5)
   check('night.checkout_source', r.checkout_source, 'auto_clickup')
   check('night.declared_out', r.declared_out, '2026-06-01T23:30:00Z')
+  // auto_clickup close is corroborated — early leave applies: last activity
+  // 04:30 PKT vs scheduled 05:00 − 15m grace = 04:45 → 15m early.
+  check('night.early_leave', r.early_leave_minutes, 15)
+}
+
+// ── Attendance: overnight half-day anchors to the post-midnight leg ─────────
+{
+  const r = computeAttendance({
+    workDate: '2026-06-01',
+    schedule: { shift_start: '21:00', shift_end: '05:00', weekly_off: null, late_grace_min: 15, early_leave_grace_min: 15 },
+    marks: [
+      { mark_type: 'check_in', marked_at: '2026-06-01T16:00:00Z' }, // 21:00 PKT
+      { mark_type: 'check_out', marked_at: '2026-06-02T00:00:00Z' }, // 05:00 PKT next day
+    ],
+    activityTimes: ['2026-06-01T17:00:00Z'],
+    isHoliday: false, isHolidayVolunteer: false, onLeave: false,
+    halfDay: { from_time: '00:00', to_time: '05:00' }, // post-midnight absent window
+    forgottenCheckoutMode: 'last_activity', overnightBufferHours: 4,
+    now: new Date('2026-06-02T06:00:00Z'),
+  })
+  // 480m span minus the 00:00–05:00 PKT overlap (300m) = 180m.
+  check('halfnight.worked', r.worked_minutes, 180)
+  check('halfnight.flag', r.is_half_day, true)
+}
+
+// ── Attendance: day-shift window is the local calendar date (§9.2) ──────────
+{
+  const r = computeAttendance({
+    workDate: '2026-06-01',
+    schedule: { shift_start: '09:00', shift_end: '17:00', weekly_off: null, late_grace_min: 15, early_leave_grace_min: 15 },
+    marks: [],
+    activityTimes: ['2026-06-01T16:30:00Z', '2026-06-01T18:00:00Z'], // 21:30, 23:00 PKT
+    isHoliday: false, isHolidayVolunteer: false, onLeave: false, halfDay: null,
+    forgottenCheckoutMode: 'last_activity', overnightBufferHours: 4,
+    now: new Date('2026-06-02T06:00:00Z'),
+  })
+  check('dayshift.evening-activity', r.status, 'Present')
 }
 
 // ── Attendance: check-in, nothing else → Incomplete ─────────────────────────
@@ -165,9 +202,16 @@ check('pkt.date', pktDateOf('2026-06-01T20:30:00Z'), '2026-06-02') // 01:30 PKT 
     leaves: [], holidays: [], holidayWorkers: [],
   }
   check('quota.normal', expectedQuotaOn('d1', '2026-06-01', ctx as never), 3)
-  // 2026-06-05 is a Friday (dow 5) = weekly off → 0 even with exception
-  check('quota.weeklyoff', expectedQuotaOn('d1', '2026-06-05', ctx as never), 0)
+  // An explicit per-date exception OVERRIDES the weekly off (covering the
+  // off-day was agreed) — explicit beats schedule-derived. 2026-06-05 = Friday.
+  check('quota.exception-beats-weeklyoff', expectedQuotaOn('d1', '2026-06-05', ctx as never), 2)
+  // Plain weekly off (no exception) → 0. 2026-06-12 is also a Friday.
+  check('quota.weeklyoff', expectedQuotaOn('d1', '2026-06-12', ctx as never), 0)
   check('quota.exception-on-workday', expectedQuotaOn('d1', '2026-06-12', { ...ctx, exceptions: [{ id: 'q2', designer_id: 'd1', the_date: '2026-06-12', daily_quota: 2, reason: 'x' }], schedules: [{ ...ctx.schedules[0], weekly_off: 0 }] } as never), 2)
+  // Holiday zeroes for everyone — holiday work is bonus, never quota-measured.
+  check('quota.holiday', expectedQuotaOn('d1', '2026-06-01', { ...ctx, holidays: [{ id: 'h1', the_date: '2026-06-01', name: 'X' }] } as never), 0)
+  // Leave zeroes even when an exception exists (absence beats expectation).
+  check('quota.leave-beats-exception', expectedQuotaOn('d1', '2026-06-05', { ...ctx, leaves: [{ id: 'l1', designer_id: 'd1', leave_type: 'sick', start_date: '2026-06-05', end_date: null, paid: true, status: 'approved', reason: null, created_by: null, created_at: '' }] } as never), 0)
 }
 
 check('median.odd', median([5, 1, 9]), 5)

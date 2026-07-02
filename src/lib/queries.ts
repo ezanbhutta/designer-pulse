@@ -94,11 +94,14 @@ export async function fetchConfig(): Promise<Config> {
 // ── Tasks & metrics ───────────────────────────────────────────────────────────
 
 export async function fetchOpenTasks(): Promise<TaskState[]> {
+  // current_status IS NULL must be included: a task in an unmapped ClickUp
+  // status is still open work and must never be invisible to Ops (§6.4) —
+  // `NOT (NULL IN (...))` would silently drop it.
   const { data, error } = await supabase
     .from('task_state')
     .select('*')
     .eq('deleted', false)
-    .not('current_status', 'in', '("complete","cancelled")')
+    .or('current_status.is.null,current_status.not.in.("complete","cancelled")')
   return throwIf(data, error)
 }
 
@@ -129,7 +132,12 @@ export async function fetchTaskEvents(taskId: string): Promise<ClickupEvent[]> {
   return throwIf(data, error)
 }
 
-export async function fetchCancelledTasks(limit = 100): Promise<TaskState[]> {
+/**
+ * NOTE: keep every caller on the default limit — the query key
+ * (qk.cancelledTasks) does not encode it, so two different limits would fight
+ * over one cache entry. Slice locally for previews.
+ */
+export async function fetchCancelledTasks(limit = 200): Promise<TaskState[]> {
   const { data, error } = await supabase
     .from('task_state')
     .select('*')
@@ -153,8 +161,12 @@ export async function setAlertStatus(
   id: number,
   status: 'open' | 'acknowledged' | 'resolved',
 ): Promise<void> {
-  const patch: Record<string, unknown> = { status }
-  if (status === 'resolved') patch.resolved_at = new Date().toISOString()
+  // Un-resolving (the undo path) must clear resolved_at, or the row keeps a
+  // stale resolution timestamp with status back at open/acknowledged.
+  const patch: Record<string, unknown> = {
+    status,
+    resolved_at: status === 'resolved' ? new Date().toISOString() : null,
+  }
   const { error } = await supabase.from('alerts').update(patch).eq('id', id)
   if (error) throw new Error(error.message)
 }
@@ -227,6 +239,18 @@ export async function fetchHolidayWorkers(): Promise<HolidayWorker[]> {
 
 export async function upsertLeave(leave: Partial<Leave> & { designer_id: string; start_date: string }) {
   const { error } = await supabase.from('leaves').upsert(leave)
+  if (error) throw new Error(error.message)
+}
+
+/** Designer self-service (§22.7 "request own"): RLS pins own id + 'pending'. */
+export async function requestLeave(req: {
+  designer_id: string
+  leave_type: string
+  start_date: string
+  end_date: string | null
+  reason: string | null
+}) {
+  const { error } = await supabase.from('leaves').insert({ ...req, status: 'pending', paid: true })
   if (error) throw new Error(error.message)
 }
 

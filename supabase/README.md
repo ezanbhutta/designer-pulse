@@ -96,8 +96,15 @@ and every policy denies) or delete the auth user (the profile row cascades).
   atomically, checks the caller is admin/manager/pm, and writes `audit_log`.
 - **Audit** — every write to `designers`, `designer_schedule`,
   `quota_exceptions`, `leaves`, `half_days`, `holidays`, alert lifecycle
-  updates, and manual shift marks lands in `audit_log` with actor uid + email
-  (null actor = service role / seed). The log is append-only.
+  updates, manual shift marks, and shift-mark deletions lands in `audit_log`
+  with actor uid + email (null actor = service role / seed). The log is
+  append-only.
+- **Attendance marks** — designer self-marks are pinned to "now" by RLS (no
+  backdating); ops roles may insert backdated `manual` marks and may delete a
+  mis-entered self/manual mark (both audited). `auto_*` marks and
+  `clickup_events` are immutable for everyone.
+- **Designer leave requests** — designers may INSERT their own `leaves` rows
+  pinned to `status='pending'` (§22.7 "request own"); only ops/HR approve.
 - **Realtime** — `task_state`, `alerts`, `attendance_daily` are in the
   `supabase_realtime` publication; the frontend subscribes and invalidates
   queries (spec §22.4).

@@ -16,7 +16,9 @@ import { json, readRawBody } from '../_lib/http'
 import { expectOk, supabaseAdmin, type SupabaseAdmin } from '../_lib/supabaseAdmin'
 import { getTask } from '../_lib/clickup'
 import {
+  backfillTaskHistory,
   handleCancellation,
+  hasNearbySyntheticEvent,
   insertEvent,
   listDesignerMap,
   msToIso,
@@ -150,10 +152,19 @@ async function onStatusUpdated(
 ): Promise<void> {
   let state = await loadTaskState(supa, taskId)
   if (!state) {
-    // Missed taskCreated — heal it now, then apply the transition.
-    await onTaskCreated(supa, taskId)
+    // Missed taskCreated — the receiver may have been down through several
+    // transitions, so heal the FULL history via time-in-status (a
+    // created-event-only heal would permanently fake first_pass_clean).
+    const task = await getTask(taskId)
+    const listId = task.list?.id
+    if (!listId) return
+    const designers = await listDesignerMap(supa)
+    const designer = designers.get(listId)
+    if (!designer) return // unknown list
+    await backfillTaskHistory(supa, task, listId, designer.id)
+    await recomputeTaskMetrics(supa, taskId)
     state = await loadTaskState(supa, taskId)
-    if (!state) return // unknown list
+    if (!state) return
   }
 
   const statusItems = items
@@ -184,6 +195,9 @@ async function onStatusUpdated(
       })
       continue
     }
+    // A late redelivery of a transition reconciliation already healed (with a
+    // slightly different timestamp) must not double-count the round.
+    if (await hasNearbySyntheticEvent(supa, taskId, to, eventTime)) continue
     await insertEvent(supa, {
       task_id: taskId,
       list_id: state.list_id,

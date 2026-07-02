@@ -13,7 +13,6 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { canonicalizeStatus } from '../../shared/statuses'
-import { reconstructBackfillEvents } from '../../shared/metrics'
 import type { TaskState } from '../../shared/types'
 import { json, requireCronAuth } from '../_lib/http'
 import { expectOk, supabaseAdmin, type SupabaseAdmin } from '../_lib/supabaseAdmin'
@@ -21,19 +20,17 @@ import {
   DESIGNERS_SPACE_ID,
   discoverSpaceLists,
   getListTasks,
-  getTaskTimeInStatus,
   type ClickUpTask,
 } from '../_lib/clickup'
 import { getLastSync, setLastSync } from '../_lib/config'
 import {
+  backfillTaskHistory,
   handleCancellation,
   insertEvent,
-  insertEvents,
   listDesignerMap,
   msToIso,
   recomputeTaskMetrics,
   upsertTaskFromClickUp,
-  type IngestEvent,
 } from '../_lib/ingest'
 
 export const config = { maxDuration: 60 }
@@ -96,7 +93,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
         if (!existing) {
           // Missed taskCreated → full backfill via time-in-status (spec §6.2).
-          await backfillTask(supa, task, list.id, designer.id)
+          // Events carry source='backfill' so metrics_confidence honestly
+          // reports the lower-bound revision rounds (spec §6.3/§19).
+          await backfillTaskHistory(supa, task, list.id, designer.id)
           await recomputeTaskMetrics(supa, task.id)
           if (cuStatus === 'cancelled') {
             await handleCancellation(supa, {
@@ -140,6 +139,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           }
           await recomputeTaskMetrics(supa, task.id)
           recomputed++
+
+          // Same-millisecond transitions can replay inverted, in which case a
+          // "matching" event exists but the replayed terminal status still
+          // disagrees with ClickUp. Force a heal ordered after everything.
+          const { data: afterRow, error: afterErr } = await supa
+            .from('task_state')
+            .select('current_status,last_event_at')
+            .eq('task_id', task.id)
+            .maybeSingle()
+          expectOk(afterErr, `task_state drift re-read (${task.id})`)
+          const after = afterRow as Pick<TaskState, 'current_status' | 'last_event_at'> | null
+          if (after && after.current_status !== cuStatus) {
+            const base = after.last_event_at ? new Date(after.last_event_at).getTime() : Date.now()
+            await insertEvent(supa, {
+              task_id: task.id,
+              list_id: list.id,
+              designer_id: designer.id,
+              event_type: 'status_change',
+              from_status: after.current_status,
+              to_status: cuStatus,
+              event_time: new Date(base + 1000).toISOString(),
+              source: 'reconciliation',
+              raw: { forcedHeal: true, clickup_status: task.status?.status ?? null },
+            })
+            await recomputeTaskMetrics(supa, task.id)
+            healed++
+          }
           if (cuStatus === 'cancelled' && existing.current_status !== 'cancelled') {
             await handleCancellation(supa, {
               task_id: task.id,
@@ -167,51 +193,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     console.error('[cron/reconcile]', err)
     json(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
   }
-}
-
-/** Reconstruct a never-seen task's history from time-in-status (source 'reconciliation'). */
-async function backfillTask(
-  supa: SupabaseAdmin,
-  task: ClickUpTask,
-  listId: string,
-  designerId: string,
-): Promise<void> {
-  await upsertTaskFromClickUp(supa, task, designerId)
-  const createdIso = msToIso(task.date_created)
-  if (createdIso) {
-    await insertEvent(supa, {
-      task_id: task.id,
-      list_id: listId,
-      designer_id: designerId,
-      event_type: 'created',
-      event_time: createdIso,
-      source: 'reconciliation',
-    })
-  }
-  const tis = await getTaskTimeInStatus(task.id)
-  const history = [
-    ...(tis.status_history ?? []),
-    ...(tis.current_status ? [tis.current_status] : []),
-  ]
-  const events = reconstructBackfillEvents(task.id, listId, history, task.status?.status ?? null)
-  const rows: IngestEvent[] = []
-  for (const e of events) {
-    if (!canonicalizeStatus(e.to_status)) {
-      console.warn(
-        `[cron/reconcile] unknown status "${e.to_status ?? ''}" in history of task ${task.id} — skipped (spec §6.4)`,
-      )
-      continue
-    }
-    rows.push({
-      task_id: task.id,
-      list_id: listId,
-      designer_id: designerId,
-      event_type: 'status_change',
-      from_status: e.from_status,
-      to_status: e.to_status,
-      event_time: e.event_time,
-      source: 'reconciliation',
-    })
-  }
-  await insertEvents(supa, rows)
 }

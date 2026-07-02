@@ -20,7 +20,9 @@ insert into public.app_config (key, value) values
   ('timezone_default',                to_jsonb('Asia/Karachi'::text)),
   ('assignment_gap_check_offset_min', to_jsonb(60)),
   ('aging_days_default',              to_jsonb(3)),
-  ('aging_days_client_response',      to_jsonb(4)),
+  -- §12 requires a LOWER threshold for client response than the default —
+  -- §18's illustrative "e.g. 4" contradicted that; the normative rule wins.
+  ('aging_days_client_response',      to_jsonb(2)),
   ('late_grace_min',                  to_jsonb(15)),
   ('early_leave_grace_min',           to_jsonb(15)),
   ('forgotten_checkout_mode',         to_jsonb('last_activity'::text)),

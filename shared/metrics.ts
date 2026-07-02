@@ -5,7 +5,7 @@
  * never counts against a designer (spec §4.1).
  */
 
-import { CSR_CAUGHT_SOURCES, type CanonicalStatus } from './statuses'
+import { CSR_CAUGHT_SOURCES, canonicalizeStatus, type CanonicalStatus } from './statuses'
 import { minutesBetween } from './pkt'
 
 export interface TransitionEvent {
@@ -134,12 +134,16 @@ export function reconstructBackfillEvents(
   statusHistory: TimeInStatusEntry[],
   currentStatusRaw: string | null,
 ): Array<Omit<TransitionEvent, 'event_type'> & { event_type: 'status_change' }> {
+  // Unknown status names are dropped entirely (§6.4) so the reconstructed
+  // chain never carries a non-canonical from_status; the chain simply links
+  // the canonical neighbors.
   const entries = statusHistory
     .filter((e) => e.total_time?.since)
     .map((e) => ({
-      status: e.status.trim().toLowerCase() as CanonicalStatus,
+      status: canonicalizeStatus(e.status),
       since: new Date(Number(e.total_time!.since!)).toISOString(),
     }))
+    .filter((e): e is { status: CanonicalStatus; since: string } => e.status !== null)
     .sort((a, b) => (a.since < b.since ? -1 : 1))
 
   const events: Array<Omit<TransitionEvent, 'event_type'> & { event_type: 'status_change' }> = []

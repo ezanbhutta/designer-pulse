@@ -194,12 +194,16 @@ create policy designers_insert_ops on public.designers
   for insert to authenticated
   with check ((select public.app_role()) in ('admin', 'manager', 'pm'));
 
--- Roster edits: admin/manager/pm — but flipping status to 'deleted' (the soft
--- hard-delete) is admin-only, matching the §22.7 matrix.
+-- Roster edits: admin/manager/pm — but the transition INTO 'deleted' AND any
+-- touch of an already-deleted row (resurrection) are admin-only, matching the
+-- §22.7 matrix (hard delete is an admin-only, confirmed action).
 drop policy if exists designers_update_ops on public.designers;
 create policy designers_update_ops on public.designers
   for update to authenticated
-  using ((select public.app_role()) in ('admin', 'manager', 'pm'))
+  using (
+    (select public.app_role()) = 'admin'
+    or ((select public.app_role()) in ('manager', 'pm') and status <> 'deleted')
+  )
   with check (status <> 'deleted' or (select public.app_role()) = 'admin');
 
 drop policy if exists designers_delete_admin on public.designers;
@@ -291,7 +295,9 @@ create policy marks_select_own on public.shift_marks
   for select to authenticated
   using (designer_id = (select public.app_designer_id()));
 
--- Designers mark ONLY themselves, ONLY as source='self'.
+-- Designers mark ONLY themselves, ONLY as source='self', ONLY at (about) the
+-- present moment — a client-supplied marked_at would let late arrivals forge
+-- an on-time check-in and defeat the measurement (§22.10 dataset honesty).
 drop policy if exists marks_insert_self on public.shift_marks;
 create policy marks_insert_self on public.shift_marks
   for insert to authenticated
@@ -299,9 +305,12 @@ create policy marks_insert_self on public.shift_marks
     (select public.app_designer_id()) is not null
     and designer_id = (select public.app_designer_id())
     and source = 'self'
+    and marked_at between now() - interval '10 minutes' and now() + interval '1 minute'
   );
 
 -- Ops manual override (§22.7 "Manual attendance override"): source='manual'.
+-- Backdating IS allowed here — corrections are the point — and every row is
+-- audit-logged with the acting user (003_triggers.sql).
 drop policy if exists marks_insert_manual_ops on public.shift_marks;
 create policy marks_insert_manual_ops on public.shift_marks
   for insert to authenticated
@@ -310,7 +319,16 @@ create policy marks_insert_manual_ops on public.shift_marks
     and source = 'manual'
   );
 
--- No UPDATE/DELETE policies: marks are raw truth (003 also blocks by trigger).
+-- Correction path (§9.1): ops roles may remove a mis-entered self/manual mark
+-- (fat-fingered designer or wrong row). auto_* audit marks are immutable, and
+-- every delete lands in audit_log. No UPDATE path for anyone.
+drop policy if exists marks_delete_ops on public.shift_marks;
+create policy marks_delete_ops on public.shift_marks
+  for delete to authenticated
+  using (
+    (select public.app_role()) in ('admin', 'manager', 'pm', 'hr')
+    and source in ('self', 'manual')
+  );
 
 -- ─── attendance_daily (derived; written only by service role) ────────────────
 
@@ -341,6 +359,18 @@ create policy leaves_write_ops_hr on public.leaves
   for all to authenticated
   using ((select public.app_role()) in ('admin', 'manager', 'pm', 'hr'))
   with check ((select public.app_role()) in ('admin', 'manager', 'pm', 'hr'));
+
+-- §22.7 "Designer: request own" — a designer may FILE a leave request for
+-- themselves, pinned to status='pending' (self-approval would be a hole; only
+-- ops/HR can move it to approved). No designer UPDATE/DELETE.
+drop policy if exists leaves_request_own on public.leaves;
+create policy leaves_request_own on public.leaves
+  for insert to authenticated
+  with check (
+    (select public.app_designer_id()) is not null
+    and designer_id = (select public.app_designer_id())
+    and status = 'pending'
+  );
 
 -- ─── half_days ───────────────────────────────────────────────────────────────
 
@@ -375,10 +405,18 @@ create policy holidays_write_ops_hr on public.holidays
 
 -- ─── holiday_workers ─────────────────────────────────────────────────────────
 
+-- Staff see all volunteers; a designer sees ONLY their own volunteer rows —
+-- peer volunteer rows are peer data and the §13.3/§22.10 wall is DB-enforced.
 drop policy if exists holiday_workers_select_all on public.holiday_workers;
-create policy holiday_workers_select_all on public.holiday_workers
+drop policy if exists holiday_workers_select_staff on public.holiday_workers;
+create policy holiday_workers_select_staff on public.holiday_workers
   for select to authenticated
-  using (true);
+  using ((select public.app_role()) in ('admin', 'manager', 'pm', 'hr', 'ceo'));
+
+drop policy if exists holiday_workers_select_own on public.holiday_workers;
+create policy holiday_workers_select_own on public.holiday_workers
+  for select to authenticated
+  using (designer_id = (select public.app_designer_id()));
 
 drop policy if exists holiday_workers_write_ops_hr on public.holiday_workers;
 create policy holiday_workers_write_ops_hr on public.holiday_workers

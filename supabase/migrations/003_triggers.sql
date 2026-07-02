@@ -23,9 +23,10 @@ begin
 end;
 $$;
 
--- DELETE gate for shift_marks: blocked for every API user; permitted only for
--- the service role / superuser (contract: "deletes admin-only via service
--- role") and for FK cascades (designer hard-purge already admin-gated).
+-- DELETE gate for shift_marks: service role / cascades always allowed; ops
+-- roles (RLS also enforces this) may correct a mis-entered self/manual mark —
+-- the §9.1 correction path — but the auto_* audit marks stay immutable. Every
+-- allowed delete is audit-logged (trigger below).
 create or replace function public.block_delete_unless_service()
 returns trigger
 language plpgsql
@@ -36,6 +37,11 @@ begin
   end if;
   if pg_trigger_depth() > 1 then
     -- Cascaded delete from a parent row (e.g. designer hard-purge) — allow.
+    return old;
+  end if;
+  if tg_table_name = 'shift_marks'
+     and old.source in ('self', 'manual')
+     and public.app_role() in ('admin', 'manager', 'pm', 'hr') then
     return old;
   end if;
   raise exception '% is append-only: direct DELETE is not allowed', tg_table_name
@@ -65,6 +71,14 @@ drop trigger if exists trg_shift_marks_no_delete on public.shift_marks;
 create trigger trg_shift_marks_no_delete
   before delete on public.shift_marks
   for each row execute function public.block_delete_unless_service();
+
+-- Mark corrections are accountability events: every DELETE is audited (who
+-- removed which mark). Manual-insert auditing lives below with the other
+-- audit triggers.
+drop trigger if exists trg_audit_shift_marks_delete on public.shift_marks;
+create trigger trg_audit_shift_marks_delete
+  after delete on public.shift_marks
+  for each row execute function public.audit_row_change();
 
 -- ─── 2. Generic audit trigger (§22.8) ────────────────────────────────────────
 

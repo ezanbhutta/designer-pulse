@@ -10,7 +10,7 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { addDays, pktInstant, pktToday } from '../../shared/pkt'
+import { addDays, dateRange, pktInstant, pktToday } from '../../shared/pkt'
 import {
   priorPeriod,
   summarizeDesigner,
@@ -34,9 +34,17 @@ import { expectOk, supabaseAdmin } from '../_lib/supabaseAdmin'
 import { loadConfig } from '../_lib/config'
 import { fireAlert } from '../_lib/alerts'
 import { recomputeTaskMetrics } from '../_lib/ingest'
-import { recomputeWithPriorDay } from '../_lib/attendance-runner'
+import { computeAttendanceFor } from '../_lib/attendance-runner'
 
 export const config = { maxDuration: 60 }
+
+/**
+ * The nightly sweep recomputes this many trailing days per designer so
+ * retroactive leave/holiday/half-day entries and schedule edits within the
+ * window self-heal (spec §8.3/§9.2). Older corrections: POST
+ * /api/admin/recompute-attendance?from=&to=[&designer_id=].
+ */
+const ATTENDANCE_SWEEP_DAYS = 7
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
@@ -54,11 +62,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     expectOk(designersErr, 'designers read')
     const designers = (designersRows ?? []) as Designer[]
 
-    // ── (1) Attendance finalize: yesterday + today ────────────────────────────
+    // ── (1) Attendance finalize: trailing sweep (retroactive edits self-heal) ─
     let attendanceRuns = 0
+    const sweepDates = dateRange(addDays(today, -(ATTENDANCE_SWEEP_DAYS - 1)), today)
     for (const d of designers) {
-      await recomputeWithPriorDay(supa, d, today, cfg)
-      attendanceRuns += 2
+      try {
+        for (const date of sweepDates) {
+          await computeAttendanceFor(supa, d, date, cfg)
+          attendanceRuns++
+        }
+      } catch (err) {
+        console.error(`[cron/nightly] attendance sweep failed for ${d.name}`, err)
+      }
     }
 
     // ── (2) Open-span drift: refresh revision / client-response tasks ─────────
@@ -74,9 +89,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       await recomputeTaskMetrics(supa, taskId)
     }
 
-    // ── (3) Trends: this 7 days vs the prior 7 ────────────────────────────────
-    const thisStart = addDays(today, -6)
-    const thisEnd = today
+    // ── (3) Trends: the last 7 COMPLETE days vs the prior 7 ──────────────────
+    // The run happens ~02:00 PKT when "today" is 2 hours old; including it
+    // would deflate attainment ~14% every night and feed phantom points into
+    // the burnout composite. Complete days only, both windows.
+    const thisEnd = addDays(today, -1)
+    const thisStart = addDays(thisEnd, -6)
     const prior = priorPeriod(thisStart, thisEnd)
     const sinceIso = pktInstant(addDays(today, -35), '00:00').toISOString()
 

@@ -4,11 +4,19 @@
  * (Vercel Cron sends this header automatically when CRON_SECRET is set).
  */
 
+import { createHash, timingSafeEqual } from 'node:crypto'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 /** JSON response helper. */
 export function json(res: VercelResponse, status: number, body: unknown): void {
   res.status(status).json(body)
+}
+
+/** Constant-time string comparison (hash first so lengths never leak). */
+function secretsMatch(a: string, b: string): boolean {
+  const ha = createHash('sha256').update(a, 'utf8').digest()
+  const hb = createHash('sha256').update(b, 'utf8').digest()
+  return timingSafeEqual(ha, hb)
 }
 
 /**
@@ -18,7 +26,7 @@ export function json(res: VercelResponse, status: number, body: unknown): void {
 export function requireCronAuth(req: VercelRequest, res: VercelResponse): boolean {
   const secret = process.env.CRON_SECRET
   const header = req.headers.authorization
-  if (!secret || header !== `Bearer ${secret}`) {
+  if (!secret || typeof header !== 'string' || !secretsMatch(header, `Bearer ${secret}`)) {
     json(res, 401, { error: 'Unauthorized — send Authorization: Bearer CRON_SECRET' })
     return false
   }

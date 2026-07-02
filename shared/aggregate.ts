@@ -52,21 +52,25 @@ export function scheduleFor(
   )
 }
 
-/** Expected intake for one designer on one date (0 on off/leave/holiday days). */
+/**
+ * Expected intake for one designer on one date. Precedence:
+ * leave (an explicit absence always zeroes) → per-date quota exception (an
+ * explicit PM-set expectation overrides schedule-derived defaults, e.g. a
+ * designer covering their weekly off) → holiday (0 for everyone — holiday
+ * work is bonus-eligible, never quota-measured, §9.2) → weekly off (0) →
+ * schedule quota.
+ */
 export function expectedQuotaOn(designerId: string, date: string, ctx: QuotaContext): number {
   const schedule = scheduleFor(ctx.schedules, designerId, date)
   if (!schedule) return 0
+  if (ctx.leaves.some((l) => l.designer_id === designerId && leaveCovers(l, date))) return 0
   const exception = ctx.exceptions.find(
     (e) => e.designer_id === designerId && e.the_date === date,
   )
-  const isHoliday = ctx.holidays.some((h) => h.the_date === date)
-  const volunteers = isHoliday
-    ? ctx.holidayWorkers.some((w) => w.designer_id === designerId && w.the_date === date)
-    : false
-  if (isHoliday && !volunteers) return 0
-  if (ctx.leaves.some((l) => l.designer_id === designerId && leaveCovers(l, date))) return 0
+  if (exception) return exception.daily_quota
+  if (ctx.holidays.some((h) => h.the_date === date)) return 0
   if (schedule.weekly_off != null && schedule.weekly_off === dowOf(date)) return 0
-  return exception ? exception.daily_quota : schedule.daily_quota
+  return schedule.daily_quota
 }
 
 export function expectedQuotaRange(
@@ -234,7 +238,8 @@ export function workloadForecast(
   now: Date = new Date(),
 ): ForecastResult {
   const today = pktDay(now.toISOString())
-  const weekAgo = addDays(today, -7)
+  // 7 PKT calendar dates inclusive: today−6 .. today.
+  const weekAgo = addDays(today, -6)
   const createdLast7 = tasks.filter(
     (t) => !t.deleted && t.created_at && pktDay(t.created_at) >= weekAgo,
   ).length

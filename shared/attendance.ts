@@ -6,7 +6,7 @@
  * whole night to the day the shift started.
  */
 
-import { collectionWindow, dowOf, minutesBetween, pktInstant } from './pkt'
+import { addDays, collectionWindow, dowOf, minutesBetween, pktInstant } from './pkt'
 import type { AttendanceStatus } from './types'
 
 export interface AttendanceScheduleInput {
@@ -67,13 +67,22 @@ export function computeAttendance(inputs: AttendanceInputs): AttendanceResult {
     now,
   } = inputs
 
-  // 1–2. Resolve schedule + collection window. Without a schedule row the
-  // window degrades to the physical PKT day.
-  const win = schedule
+  // 1–2. Resolve schedule + collection window (§9.2 step 2): day shift = the
+  // local PKT calendar date; overnight shift = [sched_in − buffer,
+  // sched_out + buffer]. Without a schedule row, degrade to the PKT day.
+  const dayWindow = {
+    from: pktInstant(workDate, '00:00'),
+    to: pktInstant(workDate, '23:59:59'),
+  }
+  const shiftWin = schedule
     ? collectionWindow(workDate, schedule.shift_start, schedule.shift_end, overnightBufferHours)
+    : null
+  const win = shiftWin
+    ? shiftWin.isOvernight
+      ? shiftWin
+      : { ...dayWindow, scheduledIn: shiftWin.scheduledIn, scheduledOut: shiftWin.scheduledOut, isOvernight: false }
     : {
-        from: pktInstant(workDate, '00:00'),
-        to: pktInstant(workDate, '23:59:59'),
+        ...dayWindow,
         scheduledIn: null as Date | null,
         scheduledOut: null as Date | null,
         isOvernight: false,
@@ -154,16 +163,37 @@ export function computeAttendance(inputs: AttendanceInputs): AttendanceResult {
     const graceIn = new Date(win.scheduledIn.getTime() + schedule.late_grace_min * 60_000)
     lateMinutes = Math.max(0, minutesBetween(graceIn, effectiveIn))
   }
-  if (schedule && win.scheduledOut && effectiveOut && checkoutSource === 'self') {
+  // Early leave applies to any corroborated close (self mark or last ClickUp
+  // activity); auto_shift_end is exactly scheduled_out so it yields 0 anyway.
+  if (
+    schedule &&
+    win.scheduledOut &&
+    effectiveOut &&
+    (checkoutSource === 'self' || checkoutSource === 'auto_clickup')
+  ) {
     const graceOut = new Date(win.scheduledOut.getTime() - schedule.early_leave_grace_min * 60_000)
     earlyLeaveMinutes = Math.max(0, minutesBetween(effectiveOut, graceOut))
   }
 
   // Half-day: day stays Present, worked minutes reduced by the absent window.
+  // On overnight shifts a wall time before shift_start belongs to the
+  // post-midnight leg — anchor each bound to whichever calendar day places it
+  // inside the shift window.
+  const anchorToShift = (wallTime: string): Date => {
+    const sameDay = pktInstant(workDate, wallTime)
+    if (!win.isOvernight || !win.scheduledIn || !win.scheduledOut) return sameDay
+    const nextDay = pktInstant(addDays(workDate, 1), wallTime)
+    const pad = 60 * 60_000
+    const inShift = (d: Date) =>
+      d.getTime() >= win.scheduledIn!.getTime() - pad && d.getTime() <= win.scheduledOut!.getTime() + pad
+    if (inShift(sameDay)) return sameDay
+    if (inShift(nextDay)) return nextDay
+    return sameDay
+  }
   const isHalfDay = !!halfDay && status === 'Present'
   if (isHalfDay && halfDay?.from_time && halfDay?.to_time && effectiveIn && effectiveOut) {
-    const absentFrom = pktInstant(workDate, halfDay.from_time)
-    const absentTo = pktInstant(workDate, halfDay.to_time)
+    const absentFrom = anchorToShift(halfDay.from_time)
+    const absentTo = anchorToShift(halfDay.to_time)
     const overlapStart = Math.max(absentFrom.getTime(), new Date(effectiveIn).getTime())
     const overlapEnd = Math.min(absentTo.getTime(), new Date(effectiveOut).getTime())
     if (overlapEnd > overlapStart) {

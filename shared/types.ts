@@ -232,7 +232,10 @@ export const CONFIG_DEFAULTS: Config = {
   timezone_default: 'Asia/Karachi',
   assignment_gap_check_offset_min: 60,
   aging_days_default: 3,
-  aging_days_client_response: 4,
+  // §12 normatively requires a LOWER threshold for client response ("revenue
+  // rotting in limbo"); §18's illustrative "e.g. 4" contradicted it and the
+  // normative rule wins. Editable in app_config.
+  aging_days_client_response: 2,
   late_grace_min: 15,
   early_leave_grace_min: 15,
   forgotten_checkout_mode: 'last_activity',

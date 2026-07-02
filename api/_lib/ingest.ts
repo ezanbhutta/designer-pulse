@@ -11,10 +11,14 @@
  */
 
 import { canonicalizeStatus, parseConceptCount } from '../../shared/statuses'
-import { computeTaskMetrics, type TransitionEvent } from '../../shared/metrics'
+import {
+  computeTaskMetrics,
+  reconstructBackfillEvents,
+  type TransitionEvent,
+} from '../../shared/metrics'
 import type { CanonicalStatus } from '../../shared/statuses'
 import type { ClickupEvent, Designer, TaskState } from '../../shared/types'
-import type { ClickUpTask } from './clickup'
+import { getTaskTimeInStatus, type ClickUpTask } from './clickup'
 import { expectOk, type SupabaseAdmin } from './supabaseAdmin'
 import { fireAlert } from './alerts'
 
@@ -123,12 +127,92 @@ export async function insertEvents(supa: SupabaseAdmin, evts: IngestEvent[]): Pr
 }
 
 /**
+ * Reconstruct a task's full history from ClickUp's time-in-status payload and
+ * insert it (spec §6.3). ALWAYS source='backfill' regardless of which job
+ * runs it — the source describes how the events were derived (aggregated
+ * re-entries → revision rounds are a lower bound), not who inserted them, and
+ * recomputeTaskMetrics keys metrics_confidence off it. Used by the one-time
+ * backfill, by reconciliation for never-seen tasks, and by the webhook when a
+ * status update arrives for a task whose taskCreated was missed — a
+ * created-event-only heal would freeze first_pass_clean=true forever.
+ */
+export async function backfillTaskHistory(
+  supa: SupabaseAdmin,
+  task: ClickUpTask,
+  listId: string,
+  designerId: string,
+): Promise<void> {
+  await upsertTaskFromClickUp(supa, task, designerId)
+  const createdIso = msToIso(task.date_created)
+  if (createdIso) {
+    await insertEvent(supa, {
+      task_id: task.id,
+      list_id: listId,
+      designer_id: designerId,
+      event_type: 'created',
+      event_time: createdIso,
+      source: 'backfill',
+    })
+  }
+  const tis = await getTaskTimeInStatus(task.id)
+  const history = [
+    ...(tis.status_history ?? []),
+    ...(tis.current_status ? [tis.current_status] : []),
+  ]
+  // reconstructBackfillEvents drops unknown status names (spec §6.4) and
+  // keeps the canonical chain intact.
+  const events = reconstructBackfillEvents(task.id, listId, history, task.status?.status ?? null)
+  await insertEvents(
+    supa,
+    events.map((e) => ({
+      task_id: task.id,
+      list_id: listId,
+      designer_id: designerId,
+      event_type: 'status_change' as const,
+      from_status: e.from_status,
+      to_status: e.to_status,
+      event_time: e.event_time,
+      source: 'backfill' as const,
+    })),
+  )
+}
+
+/**
+ * Has a synthetic (reconciliation/backfill) event already recorded this same
+ * physical transition close to this time? Used by the webhook so a late
+ * ClickUp redelivery of a dropped event doesn't double-count a revision round
+ * the reconciliation cron already healed with a slightly different timestamp.
+ */
+export async function hasNearbySyntheticEvent(
+  supa: SupabaseAdmin,
+  taskId: string,
+  toStatus: CanonicalStatus,
+  eventTime: string,
+  windowMinutes = 45,
+): Promise<boolean> {
+  const t = new Date(eventTime).getTime()
+  const from = new Date(t - windowMinutes * 60_000).toISOString()
+  const to = new Date(t + windowMinutes * 60_000).toISOString()
+  const { data, error } = await supa
+    .from('clickup_events')
+    .select('id')
+    .eq('task_id', taskId)
+    .eq('to_status', toStatus)
+    .in('source', ['reconciliation', 'backfill'])
+    .gte('event_time', from)
+    .lte('event_time', to)
+    .limit(1)
+  expectOk(error, `clickup_events synthetic match (${taskId})`)
+  return (data ?? []).length > 0
+}
+
+/**
  * Recompute task_metrics for one task from its FULL ordered event log
  * (spec §4 attribution model) and refresh the task_state derived columns
  * (current_status / last_event_at / closed_at).
- * metrics_confidence stays 'backfill' while every event is source='backfill'
- * (revision rounds are a lower bound there, spec §6.3); one live event
- * upgrades it to 'live'.
+ * metrics_confidence is 'backfill' when ANY event was reconstructed from the
+ * aggregated time-in-status payload (revision rounds are a lower bound there,
+ * spec §6.3) — a taint that live events after cutover cannot wash out.
  */
 export async function recomputeTaskMetrics(supa: SupabaseAdmin, taskId: string): Promise<void> {
   const { data: taskRow, error: taskErr } = await supa
@@ -159,7 +243,7 @@ export async function recomputeTaskMetrics(supa: SupabaseAdmin, taskId: string):
   const now = new Date()
   const computed = computeTaskMetrics(task.created_at, transitions, now)
 
-  const allBackfill = events.length > 0 && events.every((e) => e.source === 'backfill')
+  const anyBackfill = events.some((e) => e.source === 'backfill')
   const statusEvents = events.filter((e) => e.event_type === 'status_change' && e.to_status)
   const lastEventAt = statusEvents.length
     ? statusEvents[statusEvents.length - 1].event_time
@@ -180,7 +264,7 @@ export async function recomputeTaskMetrics(supa: SupabaseAdmin, taskId: string):
       first_delivered_at: computed.first_delivered_at,
       outcome: computed.outcome,
       is_cancelled: computed.is_cancelled,
-      metrics_confidence: allBackfill ? 'backfill' : 'live',
+      metrics_confidence: anyBackfill ? 'backfill' : 'live',
       computed_at: now.toISOString(),
     },
     { onConflict: 'task_id' },

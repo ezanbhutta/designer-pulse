@@ -98,6 +98,12 @@ Vercel serverless (api/) ── service-role key ──► Supabase Postgres
 - A designer login sees only their own data at `/me` (RLS-enforced).
 - `Cancel` a test task → a critical alert appears for Ops + CEO.
 
+### Maintenance endpoints
+
+- `POST /api/admin/recompute-attendance?from=YYYY-MM-DD&to=YYYY-MM-DD[&designer_id=]`
+  (Bearer `CRON_SECRET`) — retroactive attendance recompute after late leave
+  entries or schedule edits older than the nightly 7-day self-healing sweep.
+
 ## Implementation notes & deviations (flagged, not hidden)
 
 - `task_metrics.first_delivered_at`, `attendance_daily.needs_review`, and
@@ -111,6 +117,18 @@ Vercel serverless (api/) ── service-role key ──► Supabase Postgres
   status — §19); it is reported on revision cycles at team level only.
 - The weekly report is in-app + PDF (jsPDF). An emailed digest is a
   config-gated add-on requiring an email provider (§22.9) and is not wired.
+- **Leave balance** (§13.3) is not computable — the §7 schema holds no leave
+  allowance, and §20.12 forbids expanding it. The self-view shows leave days
+  recorded this year instead; add an allowance policy to `app_config` if a
+  true balance is ever needed.
+- `aging_days_client_response` seeds as **2** (lower than the default 3): §12
+  normatively requires a lower threshold for `client response`, and §18's
+  illustrative "e.g. 4" contradicted it — the normative rule wins (editable).
+- Designer self check-in/out timestamps are pinned server-side to "now"
+  (±grace for clock skew) by RLS — self marks cannot be backdated. Ops manual
+  marks may be backdated and are audit-logged; ops may also delete a
+  mis-entered self/manual mark (audited). The ClickUp event log itself is
+  strictly append-only for everyone.
 - Cancellation is read faithfully as designer-fault **by definition** (§2)
   but surfaced as a flag to investigate, with full history one click away
   (§4.4).

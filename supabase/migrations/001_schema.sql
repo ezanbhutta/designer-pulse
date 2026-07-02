@@ -47,6 +47,13 @@ create table if not exists public.designer_schedule (
   early_leave_grace_min int default 15
 );
 
+-- At most ONE open (effective_to IS NULL) row per designer — closes the
+-- apply_schedule_change concurrency race at the storage layer: a second
+-- concurrent open-row insert errors instead of silently forking the schedule.
+create unique index if not exists designer_schedule_one_open
+  on public.designer_schedule (designer_id)
+  where effective_to is null;
+
 -- Specific-date quota overrides (e.g. Amin's two reduced Fridays). PM enters them.
 create table if not exists public.quota_exceptions (
   id uuid primary key default gen_random_uuid(),

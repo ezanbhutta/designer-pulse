@@ -41,8 +41,12 @@ import { recomputeWithPriorDay } from '../_lib/attendance-runner'
 
 export const config = { maxDuration: 60 }
 
-/** The gap check fires when shift_start+offset fell within this lookback. */
-const GAP_WINDOW_MS = 20 * 60_000
+/**
+ * The gap check fires when shift_start+offset fell within this lookback.
+ * Generous (2h) on purpose: a skipped/failed cron run must not drop the day's
+ * check, and fireAlert's per-work_date dedupe makes re-evaluation free.
+ */
+const GAP_WINDOW_MS = 120 * 60_000
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
@@ -80,43 +84,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
 
     // ── (1) Assignment gaps at shift-start + offset (spec §11 T3, §12) ────────
+    // Both today's and yesterday's shift starts are evaluated so a shift whose
+    // start+offset crosses PKT midnight (e.g. 23:30 start) is never skipped,
+    // and one designer's failure never aborts the rest.
     let gapAlerts = 0
-    const dayStartIso = pktInstant(today, '00:00').toISOString()
-    const dayEndIso = pktInstant(addDays(today, 1), '00:00').toISOString()
     for (const d of designers) {
       if (!d.clickup_list_id) continue
-      const schedule = scheduleFor(schedules, d.id, today)
-      if (!schedule) continue
-      const checkAt =
-        pktInstant(today, schedule.shift_start).getTime() +
-        cfg.assignment_gap_check_offset_min * 60_000
-      const sinceCheck = now.getTime() - checkAt
-      if (sinceCheck < 0 || sinceCheck > GAP_WINDOW_MS) continue
+      for (const workDate of [today, addDays(today, -1)]) {
+        try {
+          const schedule = scheduleFor(schedules, d.id, workDate)
+          if (!schedule) continue
+          const checkAt =
+            pktInstant(workDate, schedule.shift_start).getTime() +
+            cfg.assignment_gap_check_offset_min * 60_000
+          const sinceCheck = now.getTime() - checkAt
+          if (sinceCheck < 0 || sinceCheck > GAP_WINDOW_MS) continue
 
-      const expected = expectedQuotaOn(d.id, today, quota)
-      if (expected <= 0) continue // off day / leave / holiday — no slots expected
+          const expected = expectedQuotaOn(d.id, workDate, quota)
+          if (expected <= 0) continue // off day / leave / holiday — no slots expected
 
-      const { count, error: countErr } = await supa
-        .from('task_state')
-        .select('task_id', { count: 'exact', head: true })
-        .eq('designer_id', d.id)
-        .eq('deleted', false)
-        .gte('created_at', dayStartIso)
-        .lt('created_at', dayEndIso)
-      expectOk(countErr, `created-today count (${d.name})`)
-      const created = count ?? 0
-      const gap = expected - created
-      if (gap <= 0) continue
+          const { count, error: countErr } = await supa
+            .from('task_state')
+            .select('task_id', { count: 'exact', head: true })
+            .eq('designer_id', d.id)
+            .eq('deleted', false)
+            .gte('created_at', pktInstant(workDate, '00:00').toISOString())
+            .lt('created_at', pktInstant(addDays(workDate, 1), '00:00').toISOString())
+          expectOk(countErr, `created-today count (${d.name})`)
+          const created = count ?? 0
+          const gap = expected - created
+          if (gap <= 0) continue
 
-      const result = await fireAlert(supa, {
-        alert_type: 'assignment_gap',
-        designer_id: d.id,
-        severity: 'warning',
-        // §20.3 wording — an observation + a deep-link action, never a write.
-        message: `${gap} slot${gap === 1 ? '' : 's'} open — open ${d.name}'s list in ClickUp`,
-        context: { work_date: today, expected, created, gap },
-      })
-      if (result.fired) gapAlerts++
+          const result = await fireAlert(supa, {
+            alert_type: 'assignment_gap',
+            designer_id: d.id,
+            severity: 'warning',
+            // §20.3 wording — an observation + a deep-link action, never a write.
+            message: `${gap} slot${gap === 1 ? '' : 's'} open — open ${d.name}'s list in ClickUp`,
+            context: { work_date: workDate, expected, created, gap },
+          })
+          if (result.fired) gapAlerts++
+        } catch (err) {
+          console.error(`[cron/pulse] gap check failed for ${d.name} (${workDate})`, err)
+        }
+      }
     }
 
     // ── (2) Task aging (spec §11 T3, §12) ─────────────────────────────────────
@@ -158,8 +169,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // ── (3) Attendance recompute — today + yesterday (spec §9.2) ──────────────
     let attendanceRuns = 0
     for (const d of designers) {
-      await recomputeWithPriorDay(supa, d, today, cfg)
-      attendanceRuns += 2
+      try {
+        await recomputeWithPriorDay(supa, d, today, cfg)
+        attendanceRuns += 2
+      } catch (err) {
+        console.error(`[cron/pulse] attendance recompute failed for ${d.name}`, err)
+      }
     }
 
     json(res, 200, {
