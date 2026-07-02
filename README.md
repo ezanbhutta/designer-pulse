@@ -70,10 +70,16 @@ Vercel serverless (api/) ── service-role key ──► Supabase Postgres
    `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLICKUP_API_TOKEN`,
    `CLICKUP_WEBHOOK_SECRET` (set after step 3), `CLICKUP_TEAM_ID`,
    `CRON_SECRET` (server-only — never shipped to the browser).
-3. Deploy. Note: the two 15-minute crons (`reconcile`, `pulse`) require a
-   Vercel plan with sub-daily crons; on Hobby, point any external scheduler
-   (e.g. cron-job.org) at those URLs with the `Authorization: Bearer
-   $CRON_SECRET` header instead.
+3. Deploy. `vercel.json` ships with DAILY cron schedules so the Hobby plan
+   deploys without errors (Hobby rejects sub-daily crons at build time).
+   For the real 15-minute cadence on `reconcile` and `pulse`:
+   - **Hobby (free):** create two jobs at any external scheduler (e.g.
+     [cron-job.org](https://cron-job.org)), each every 15 minutes, calling
+     `/api/cron/reconcile` and `/api/cron/pulse` with the request header
+     `Authorization: Bearer $CRON_SECRET`.
+   - **Pro:** change those two schedules in `vercel.json` to `*/15 * * * *`
+     and redeploy.
+   The daily entries remain as a safety net either way.
 
 ### 3. ClickUp wiring
 

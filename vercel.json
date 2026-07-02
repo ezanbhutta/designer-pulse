@@ -1,12 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "//": "Crons are DAILY so the Hobby plan can deploy (Hobby rejects sub-daily crons at build time). reconcile + pulse need to run every 15 min in production: either upgrade to Pro and change their schedules to */15 * * * *, or point a free external scheduler (e.g. cron-job.org) at /api/cron/reconcile and /api/cron/pulse every 15 min with header 'Authorization: Bearer <CRON_SECRET>'. The daily entries below stay as a safety net either way.",
   "framework": "vite",
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "crons": [
-    { "path": "/api/cron/reconcile", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/pulse", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/reconcile", "schedule": "17 21 * * *" },
+    { "path": "/api/cron/pulse", "schedule": "27 21 * * *" },
     { "path": "/api/cron/nightly", "schedule": "7 21 * * *" }
   ]
 }
