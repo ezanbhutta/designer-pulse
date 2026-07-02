@@ -112,7 +112,7 @@ export function computeAttendance(inputs: AttendanceInputs): AttendanceResult {
       checkoutSource = 'auto_clickup'
     } else if (scheduledOutIso) {
       declaredOut = scheduledOutIso
-      checkoutSource = lastActivity ? 'auto_shift_end' : 'auto_shift_end'
+      checkoutSource = 'auto_shift_end'
       if (!lastActivity) needsReview = true // nothing corroborates work
     }
   }

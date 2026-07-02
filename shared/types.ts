@@ -248,7 +248,7 @@ export function mergeConfig(rows: AppConfig[] | null | undefined): Config {
   const merged: Config = { ...CONFIG_DEFAULTS }
   for (const row of rows ?? []) {
     if (row.key in merged) {
-      ;(merged as Record<string, unknown>)[row.key] = row.value
+      ;(merged as unknown as Record<string, unknown>)[row.key] = row.value
     }
   }
   return merged
