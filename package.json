@@ -2,8 +2,7 @@
   "name": "studio-pulse",
   "private": true,
   "version": "1.0.0",
-  "type": "module",
-  "description": "Studio Pulse — real-time production-health and attendance system for a remote design team, sourced from ClickUp.",
+  "description": "Studio Pulse — real-time production-health and attendance system for a remote design team, sourced from ClickUp. NOTE: no \"type\": \"module\" here on purpose — Vercel compiles the api/*.ts functions to CommonJS, and declaring the package as ESM makes every function crash at load (FUNCTION_INVOCATION_FAILED). ESM configs use the .mjs extension instead.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
