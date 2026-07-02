@@ -25,15 +25,23 @@ const AuthContext = createContext<AuthState | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<AppUser | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Gate routing until the persisted session has actually been read —
+  // otherwise deep links bounce through /login before auth resolves.
+  const [sessionReady, setSessionReady] = useState(false)
+  // 'idle' covers the render gap between session arrival and the profile
+  // fetch effect running; without it RequireRole sees role=null and bounces.
+  const [profileState, setProfileState] = useState<'idle' | 'loading' | 'done'>('idle')
 
   useEffect(() => {
     let cancelled = false
     supabase.auth.getSession().then(({ data }) => {
-      if (!cancelled) setSession(data.session)
+      if (cancelled) return
+      setSession(data.session)
+      setSessionReady(true)
     })
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s)
+      setSessionReady(true)
       if (!s) setProfile(null)
     })
     return () => {
@@ -42,13 +50,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const userId = session?.user?.id ?? null
   useEffect(() => {
     let cancelled = false
-    if (!session) {
-      setLoading(false)
+    if (!sessionReady) return
+    if (!userId) {
+      setProfile(null)
+      setProfileState('done')
       return
     }
-    setLoading(true)
+    setProfileState('loading')
     fetchMyProfile()
       .then((p) => {
         if (!cancelled) setProfile(p)
@@ -57,12 +68,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setProfile(null)
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setProfileState('done')
       })
     return () => {
       cancelled = true
     }
-  }, [session])
+  }, [userId, sessionReady])
+
+  const loading = !sessionReady || (!!session && !profile && profileState !== 'done')
 
   const value = useMemo<AuthState>(
     () => ({
