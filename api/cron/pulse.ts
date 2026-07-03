@@ -38,6 +38,8 @@ import { expectOk, supabaseAdmin } from '../_lib/supabaseAdmin'
 import { loadConfig } from '../_lib/config'
 import { fireAlert } from '../_lib/alerts'
 import { recomputeWithPriorDay } from '../_lib/attendance-runner'
+import { setClickUpDeadline } from '../_lib/clickup'
+import { runDeepVerifySlice } from '../_lib/deep-verify'
 
 export const config = { maxDuration: 60 }
 
@@ -64,6 +66,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   if (!requireCronAuth(req, res)) return
   const started = Date.now()
   const outOfTime = () => Date.now() - started > BUDGET_MS
+  setClickUpDeadline(started + BUDGET_MS)
   let responded = false
   const summary: Record<string, unknown> = { ok: true }
   const respond = (status: number, body: Record<string, unknown>) => {
@@ -166,8 +169,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const openTasks = (openRows ?? []) as TaskState[]
 
     let agingAlerts = 0
+    let agingCompleted = true
+    const agedTaskIds = new Set<string>()
     for (const t of openTasks) {
-      if (outOfTime()) break
+      if (outOfTime()) {
+        agingCompleted = false
+        break
+      }
       if (!t.current_status) continue
       const thresholdDays =
         t.current_status === 'client response'
@@ -175,6 +183,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           : cfg.aging_days_default
       const age = ageMinutes(t, now)
       if (age < thresholdDays * 1440) continue
+      agedTaskIds.add(t.task_id)
       const days = Math.floor(age / 1440)
       const severity = age >= thresholdDays * 2 * 1440 ? 'critical' : 'warning'
       const message =
@@ -191,9 +200,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       })
       if (result.fired || result.escalated) agingAlerts++
     }
+
+    // ── (2b) Alerts clean themselves up: when the flagged condition no longer
+    // holds, the alert resolves itself — no manual inbox sweeping.
+    let autoResolved = 0
+    if (agingCompleted) {
+      const { data: openAging, error: oaErr } = await supa
+        .from('alerts')
+        .select('id,task_id')
+        .eq('alert_type', 'task_aging')
+        .in('status', ['open', 'acknowledged'])
+        .limit(2000)
+      expectOk(oaErr, 'open aging alerts read')
+      const stale = ((openAging ?? []) as Array<{ id: number; task_id: string | null }>)
+        .filter((a) => !a.task_id || !agedTaskIds.has(a.task_id))
+        .map((a) => a.id)
+      for (let i = 0; i < stale.length; i += 200) {
+        const { error: resErr } = await supa
+          .from('alerts')
+          .update({ status: 'resolved', resolved_at: now.toISOString() })
+          .in('id', stale.slice(i, i + 200))
+        expectOk(resErr, 'aging alerts auto-resolve')
+      }
+      autoResolved += stale.length
+    }
+    // Yesterday's assignment-gap alerts are history once the day is over.
+    const { data: staleGaps, error: sgErr } = await supa
+      .from('alerts')
+      .select('id')
+      .eq('alert_type', 'assignment_gap')
+      .in('status', ['open', 'acknowledged'])
+      .filter('context->>work_date', 'lt', today)
+      .limit(2000)
+    expectOk(sgErr, 'stale gap alerts read')
+    const staleGapIds = ((staleGaps ?? []) as Array<{ id: number }>).map((a) => a.id)
+    if (staleGapIds.length) {
+      const { error: sgResErr } = await supa
+        .from('alerts')
+        .update({ status: 'resolved', resolved_at: now.toISOString() })
+        .in('id', staleGapIds)
+      expectOk(sgResErr, 'gap alerts auto-resolve')
+      autoResolved += staleGapIds.length
+    }
+
     summary.work_date = today
     summary.gapAlerts = gapAlerts
     summary.agingAlerts = agingAlerts
+    summary.autoResolved = autoResolved
 
     // ── (3) Attendance recompute — today + yesterday (spec §9.2) ──────────────
     // Parallel batches within the time budget. The start offset rotates every
@@ -222,13 +275,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       summary.attendanceRuns = attendanceRuns
     }
 
+    // ── (4) Deep verify — the system matches ClickUp BY ITSELF ───────────────
+    // Whatever budget is left goes to the rolling workspace verification: a
+    // few pages per run, cursor carried across runs, wrap-around forever. Any
+    // divergence (missed webhook, moved task, copied-task empty history) heals
+    // automatically within hours, with zero human action.
+    let deepVerify: Awaited<ReturnType<typeof runDeepVerifySlice>> | null = null
+    if (started + BUDGET_MS - Date.now() > 6_000) {
+      try {
+        deepVerify = await runDeepVerifySlice(supa, started + BUDGET_MS)
+      } catch (err) {
+        console.error('[cron/pulse] deep verify slice failed', err)
+      }
+    }
+
     respond(200, {
       ok: true,
       work_date: today,
       gapAlerts,
       agingAlerts,
+      autoResolved,
       openTasks: openTasks.length,
       attendanceRuns,
+      deepVerify,
       partial: attendancePartial,
       tookMs: Date.now() - started,
     })
