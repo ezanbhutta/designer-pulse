@@ -96,6 +96,11 @@ export default function OpsRoster() {
             message: `${d.name} updated`,
             undo: () => saveDesigner.mutate(original),
           }),
+        // A silent save failure looks identical to success — surface it.
+        onError: (err) =>
+          toast({
+            message: `Couldn't save ${d.name}: ${err instanceof Error ? err.message : 'unknown error'}`,
+          }),
       },
     )
   }
@@ -319,7 +324,7 @@ export default function OpsRoster() {
                           <div className="flex items-center gap-1.5">
                             <InlineEdit
                               value={d.clickup_list_id ?? ''}
-                              onSave={(v) => patchField(d, { clickup_list_id: v || null })}
+                              onSave={(v) => patchField(d, { clickup_list_id: v.trim() || null })}
                               ariaLabel={`ClickUp list id of ${d.name}`}
                               className="tnum text-muted"
                             />
