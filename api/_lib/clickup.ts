@@ -79,9 +79,32 @@ export interface ClickUpWebhook {
   health?: { status: string; fail_count: number }
 }
 
-// ── Core request with 429-aware retry ─────────────────────────────────────────
+// ── Core request with 429-aware retry + hard deadline ────────────────────────
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Serverless kill-guard: a 429 Retry-After can be 60s+, and awaiting it inside
+ * one invocation sails straight past any caller-side budget check into the
+ * platform's FUNCTION_INVOCATION_TIMEOUT. Callers set a wall-clock deadline;
+ * the client throws ClickUpBudgetError instead of waiting past it, so sliced
+ * jobs (backfill/reconcile) can return partial progress and resume next call.
+ */
+export class ClickUpBudgetError extends Error {
+  constructor(msg = 'ClickUp rate-limit wait would exceed the invocation budget') {
+    super(msg)
+    this.name = 'ClickUpBudgetError'
+  }
+}
+
+let deadlineAt = Number.POSITIVE_INFINITY
+
+/** Set the absolute ms-epoch after which no ClickUp call may start or wait. */
+export function setClickUpDeadline(msEpoch: number): void {
+  deadlineAt = msEpoch
+}
+
+const remainingMs = () => deadlineAt - Date.now()
 
 async function request<T>(
   path: string,
@@ -91,15 +114,18 @@ async function request<T>(
   if (!token) throw new Error('CLICKUP_API_TOKEN is not set')
   const method = init?.method ?? 'GET'
   for (let attempt = 0; ; attempt++) {
+    if (remainingMs() < 2_000) throw new ClickUpBudgetError()
     const res = await fetch(`${BASE}${path}`, {
       method,
       headers: { Authorization: token, 'Content-Type': 'application/json' },
       body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+      signal: AbortSignal.timeout(Math.min(Math.max(remainingMs() - 1_000, 1_000), 25_000)),
     })
     if (res.status === 429 && attempt < 3) {
       const retryAfter = Number(res.headers.get('retry-after'))
       const waitMs =
         Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt
+      if (waitMs > remainingMs() - 2_000) throw new ClickUpBudgetError()
       await sleep(waitMs)
       continue
     }

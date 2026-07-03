@@ -17,9 +17,11 @@ import type { TaskState } from '../../shared/types'
 import { json, requireCronAuth } from '../_lib/http'
 import { expectOk, supabaseAdmin, type SupabaseAdmin } from '../_lib/supabaseAdmin'
 import {
+  ClickUpBudgetError,
   DESIGNERS_SPACE_ID,
   discoverSpaceLists,
   getListTasks,
+  setClickUpDeadline,
   type ClickUpTask,
 } from '../_lib/clickup'
 import { getLastSync, setLastSync } from '../_lib/config'
@@ -41,6 +43,10 @@ const FIRST_RUN_LOOKBACK_MS = 24 * 3600_000
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
   const started = new Date()
+  // Never let a ClickUp 429 wait push the invocation into the platform kill —
+  // on budget exhaustion we return partial and do NOT advance last_sync, so
+  // the next 15-minute run redoes the window.
+  setClickUpDeadline(started.getTime() + 45_000)
   try {
     const supa = supabaseAdmin()
     const lastSync = await getLastSync(supa)
@@ -190,6 +196,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       tookMs: Date.now() - started.getTime(),
     })
   } catch (err) {
+    if (err instanceof ClickUpBudgetError) {
+      // Partial run: last_sync was NOT advanced, so the next 15-minute run
+      // covers the same window again. Not an error condition.
+      json(res, 200, {
+        ok: true,
+        partial: true,
+        reason: 'ClickUp rate-limit wait exceeded the invocation budget',
+        tookMs: Date.now() - started.getTime(),
+      })
+      return
+    }
     console.error('[cron/reconcile]', err)
     json(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
   }

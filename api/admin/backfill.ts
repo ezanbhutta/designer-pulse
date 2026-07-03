@@ -23,10 +23,12 @@ import { reconstructBackfillEvents } from '../../shared/metrics'
 import { json, requireCronAuth } from '../_lib/http'
 import { expectOk, supabaseAdmin, type SupabaseAdmin } from '../_lib/supabaseAdmin'
 import {
+  ClickUpBudgetError,
   DESIGNERS_SPACE_ID,
   discoverSpaceLists,
   getBulkTimeInStatus,
   getListTasks,
+  setClickUpDeadline,
   type ClickUpTask,
 } from '../_lib/clickup'
 import {
@@ -50,6 +52,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   if (!requireCronAuth(req, res)) return
   const started = Date.now()
   const outOfTime = () => Date.now() - started > BUDGET_MS
+  // A ClickUp 429 Retry-After must never be awaited past the slice budget —
+  // the client throws ClickUpBudgetError instead, handled below as done:false.
+  setClickUpDeadline(started + BUDGET_MS)
   try {
     const supa = supabaseAdmin()
     const rawParam = req.query.list_id
@@ -75,6 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const skipped: Array<{ list_id: string; list_name: string; reason: string }> = []
     let ranOutOfTime = false
 
+    try {
     for (const list of lists) {
       if (onlyListId && list.id !== onlyListId) continue
       const designer = designers.get(list.id)
@@ -185,6 +191,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       })
       if (ranOutOfTime) break
     }
+    } catch (err) {
+      // Rate-limit wait would blow the slice — return partial progress; the
+      // next call resumes (already-imported tasks are skipped).
+      if (err instanceof ClickUpBudgetError) ranOutOfTime = true
+      else throw err
+    }
 
     const done = !ranOutOfTime
     json(res, 200, {
@@ -194,7 +206,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       skipped,
       hint: done
         ? 'Backfill complete — every mapped list is imported.'
-        : 'Time slice used up — CALL THIS ENDPOINT AGAIN; it resumes exactly where it stopped (already-imported tasks are skipped).',
+        : 'Slice budget or ClickUp rate limit reached — CALL AGAIN (leave ~60s between calls if progress stalls); it resumes exactly where it stopped, already-imported tasks are skipped.',
       tookMs: Date.now() - started,
     })
   } catch (err) {

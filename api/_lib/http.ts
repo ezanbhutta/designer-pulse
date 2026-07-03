@@ -7,8 +7,12 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
+/** Bumped on API behavior changes — lets `curl -i` prove which build is live. */
+export const APP_VERSION = 'sp-3'
+
 /** JSON response helper. */
 export function json(res: VercelResponse, status: number, body: unknown): void {
+  res.setHeader('x-studio-pulse-version', APP_VERSION)
   res.status(status).json(body)
 }
 
