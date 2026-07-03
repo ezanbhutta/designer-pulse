@@ -345,23 +345,23 @@ export function firstName(name: string): string {
 
 export interface ConstraintRead {
   status: CanonicalStatus
-  owner: 'production' | 'the CSR gate' | 'the client'
+  owner: 'the design work itself' | 'our checking step' | 'the client'
   line: string
 }
 
 const STATUS_OWNER: Record<string, ConstraintRead['owner']> = {
-  'pickup your projects': 'production',
-  'in progress': 'production',
-  revision: 'production',
-  'deliver to client': 'the CSR gate',
-  'revision complete': 'the CSR gate',
-  'final files': 'the CSR gate',
+  'pickup your projects': 'the design work itself',
+  'in progress': 'the design work itself',
+  revision: 'the design work itself',
+  'deliver to client': 'our checking step',
+  'revision complete': 'our checking step',
+  'final files': 'our checking step',
   'client response': 'the client',
 }
 
 /**
- * Reads the Pipeline Bottleneck (§22.5) in one sentence: whether the
- * constraint is production, the CSR gate, or client wait (§11 T5).
+ * Reads the Pipeline Bottleneck (§22.5) in one plain sentence: whether the
+ * slowest step is the design work, our checking step, or the client (§11 T5).
  */
 export function constraintRead(
   rows: Array<{ status: CanonicalStatus; count: number; medianAgeMin: number | null }>,
@@ -372,11 +372,11 @@ export function constraintRead(
     .sort((a, b) => (b.medianAgeMin ?? 0) - (a.medianAgeMin ?? 0))
   const top = ranked[0]
   if (!top) return null
-  const owner = STATUS_OWNER[top.status] ?? 'production'
+  const owner = STATUS_OWNER[top.status] ?? 'the design work itself'
   return {
     status: top.status,
     owner,
-    line: `The constraint is ${owner} — ${top.count} open task${top.count === 1 ? '' : 's'} sit${top.count === 1 ? 's' : ''} a median ${fmtDur(top.medianAgeMin)} in ${STATUS_LABELS[top.status].toLowerCase()}.`,
+    line: `The slowest step right now is ${owner} — ${top.count} open project${top.count === 1 ? ' has' : 's have'} usually been sitting ${fmtDur(top.medianAgeMin)} at "${STATUS_LABELS[top.status].toLowerCase()}".`,
   }
 }
 
@@ -438,7 +438,7 @@ export function burnoutRisk(
       100
     turnaround = clamp(risePct, 0, 100)
     causes.push(
-      `revision turnaround up ${Math.round(risePct)}% (${fmtDur(prior.revisionTurnaroundMedianMin)} → ${fmtDur(cur.revisionTurnaroundMedianMin)})`,
+      `fixes are taking ${Math.round(risePct)}% longer (${fmtDur(prior.revisionTurnaroundMedianMin)} → ${fmtDur(cur.revisionTurnaroundMedianMin)})`,
     )
   }
 
@@ -447,7 +447,7 @@ export function burnoutRisk(
   if (cur.attainmentPct != null && prior.attainmentPct != null && cur.attainmentPct < prior.attainmentPct) {
     const dropPp = prior.attainmentPct - cur.attainmentPct
     attainment = clamp(dropPp * 2, 0, 100)
-    causes.push(`attainment down ${dropPp}pp (${prior.attainmentPct}% → ${cur.attainmentPct}%)`)
+    causes.push(`"target met" fell from ${prior.attainmentPct}% to ${cur.attainmentPct}%`)
   }
 
   // 20% — shrinking warm-up gap with sustained presence
@@ -465,7 +465,7 @@ export function burnoutRisk(
     const shrinkPct = ((priorGap - curGap) / priorGap) * 100
     warmup = clamp(shrinkPct, 0, 100)
     causes.push(
-      `presence held (${curPresent.length} present days vs ${priorPresent.length}) but warm-up gap shrank ${fmtDur(priorGap)} → ${fmtDur(curGap)} while output fell`,
+      `still showing up as usual (${curPresent.length} days vs ${priorPresent.length}) and starting work sooner (${fmtDur(priorGap)} → ${fmtDur(curGap)}), yet finishing less`,
     )
   }
 

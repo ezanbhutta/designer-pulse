@@ -530,19 +530,19 @@ export default function OpsAttendance() {
                       {meta && row?.status ? (
                         <div>
                           <Badge tone={meta.tone} icon={meta.icon}>
-                            {row.status === 'HolidayWorked' ? 'Holiday worked' : row.status}
+                            {STATUS_DISPLAY[row.status]}
                             {row.is_half_day ? ' · half day' : ''}
                           </Badge>
                           {row.needs_review && (
                             <p className="mt-1 text-xs text-warning">
-                              auto-closed at shift end — verify
+                              closed by the system — please double-check
                             </p>
                           )}
                         </div>
                       ) : (
                         <span className="text-xs text-muted">
-                          {shiftLabel ? `Shift ${shiftLabel} PKT — no signal yet` : 'No schedule'}
-                          {expected === 0 && shiftLabel ? ' · not expected today' : ''}
+                          {shiftLabel ? `Hours ${shiftLabel} PKT — nothing yet` : 'No work hours set'}
+                          {expected === 0 && shiftLabel ? ' · not expected in today' : ''}
                         </span>
                       )}
                     </td>
@@ -550,10 +550,10 @@ export default function OpsAttendance() {
                     <td className="px-3 py-2.5">
                       <span className="tnum text-muted">{fmtTime(row?.declared_out)}</span>
                       {row?.declared_out && row.checkout_source === 'auto_clickup' && (
-                        <p className="text-[11px] text-muted">auto — last ClickUp activity</p>
+                        <p className="text-[11px] text-muted">filled in — their last work activity</p>
                       )}
                       {row?.declared_out && row.checkout_source === 'auto_shift_end' && (
-                        <p className="text-[11px] text-warning">auto — shift end, verify</p>
+                        <p className="text-[11px] text-warning">filled in by the system — double-check</p>
                       )}
                     </td>
                     <td className={`px-3 py-2.5 ${warmupFlagged ? 'bg-warning-soft/60' : 'bg-surface-2/40'}`}>
@@ -566,7 +566,7 @@ export default function OpsAttendance() {
                           </span>
                           {warmupFlagged && (
                             <p className="text-[11px] text-warning">
-                              in {fmtTime(row?.declared_in)}, first activity {fmtTime(row?.first_activity)}
+                              in at {fmtTime(row?.declared_in)}, first work {fmtTime(row?.first_activity)}
                             </p>
                           )}
                         </div>
@@ -671,9 +671,9 @@ export default function OpsAttendance() {
                               className={`tnum inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg px-1 text-xs font-semibold ${
                                 meta ? meta.cell : 'bg-surface-2/50 text-muted/50'
                               }`}
-                              title={`${fmtDate(wd)}: ${r?.status ?? 'no record'}${
-                                r?.warmup_gap_min != null ? ` · warm-up ${fmtDuration(r.warmup_gap_min)}` : ''
-                              }${r?.needs_review ? ' · needs review' : ''}`}
+                              title={`${fmtDate(wd)}: ${r?.status ? STATUS_DISPLAY[r.status] : 'no record'}${
+                                r?.warmup_gap_min != null ? ` · start delay ${fmtDuration(r.warmup_gap_min)}` : ''
+                              }${r?.needs_review ? ' · double-check' : ''}`}
                             >
                               {meta ? meta.letter : '·'}
                               {r?.needs_review ? '!' : ''}
@@ -688,8 +688,8 @@ export default function OpsAttendance() {
             </tbody>
           </table>
           <p className="mt-3 text-xs text-muted">
-            P present · HW holiday worked · L leave · H holiday · W weekly off · A absent · I
-            incomplete · ! needs review
+            P present · HW worked on a holiday · L leave · H holiday · W weekly day off · A absent ·
+            I incomplete · ! please double-check
           </p>
         </div>
       )}

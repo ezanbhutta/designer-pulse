@@ -277,7 +277,7 @@ export default function CeoOverview() {
         sample: `${x.c.firstPassClean} of ${x.c.delivered} designs needed no changes`,
         delta: metricDelta(x.c.firstPassQualityPct, x.p.firstPassQualityPct, {
           goodWhen: 'up',
-          format: (v) => `${v}pp`,
+          format: (v) => `${v} pts`,
           vs: '',
         }),
       }))
@@ -291,7 +291,7 @@ export default function CeoOverview() {
         sample: `${x.c.completed} of ${x.c.expectedQuota} planned projects finished`,
         delta: metricDelta(x.c.attainmentPct, x.p.attainmentPct, {
           goodWhen: 'up',
-          format: (v) => `${v}pp`,
+          format: (v) => `${v} pts`,
           vs: '',
         }),
       }))
@@ -395,7 +395,7 @@ export default function CeoOverview() {
             value={fmtPct(model?.fpqNow.pct ?? null)}
             delta={
               model
-                ? metricDelta(model.fpqNow.pct, model.fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v}pp` })
+                ? metricDelta(model.fpqNow.pct, model.fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v} pts` })
                 : null
             }
             cause={

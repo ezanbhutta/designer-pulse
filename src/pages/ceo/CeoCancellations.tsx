@@ -7,12 +7,13 @@
  * Grouped by designer with count + cancellation rate. Read-only (§22.1).
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { ExternalLink, Info, OctagonX } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { Drawer } from '../../components/ui/Drawer'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
+import { InfoTip } from '../../components/ui/InfoTip'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
@@ -106,16 +107,16 @@ export default function CeoCancellations() {
       }
       const top = [...topThisWeek.entries()].sort((a, b) => b[1] - a[1])[0]
       const direction =
-        nowCount > prevCount ? 'rising' : nowCount < prevCount ? 'falling' : 'holding steady'
+        nowCount > prevCount ? 'going up' : nowCount < prevCount ? 'going down' : 'holding steady'
       verdicts.push({
         id: 'cancellation-trend',
         severity: nowCount > 0 ? (nowCount > prevCount ? 'critical' : 'warning') : 'info',
         text:
           nowCount > 0
-            ? `${nowCount} cancellation${nowCount === 1 ? '' : 's'} this week vs ${prevCount} at this point last week — ${direction}${top ? `; ${firstName(top[0])} accounts for ${top[1]}` : ''}.`
-            : `No cancellations this week (${prevCount} at this point last week) — the trend is what matters, and it's clean.`,
+            ? `${nowCount} order${nowCount === 1 ? '' : 's'} lost this week vs ${prevCount} at this point last week — ${direction}${top ? `; ${firstName(top[0])} accounts for ${top[1]}` : ''}.`
+            : `No orders lost this week (${prevCount} at this point last week) — the pattern over time is what matters, and it looks clean.`,
         detail:
-          'Cancelled = designer-fault terminal loss by definition; complete ≠ business win (§2). Review the trails below before acting.',
+          '"Cancelled" here always means an order lost because of a design problem. Open the full stories below before acting on anyone.',
       })
     }
 
@@ -132,16 +133,18 @@ export default function CeoCancellations() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-3xl font-semibold text-fg">Cancellations</h1>
+        <h1 className="inline-flex items-center gap-2 text-3xl font-semibold text-fg">
+          Cancellations{' '}
+          <InfoTip text="Orders lost because of design problems. Open each one to see its full story before judging anyone." />
+        </h1>
         <p className="mt-1 text-sm text-muted">
-          Every designer-fault terminal loss, with its full history one click away — the 10-second
-          fault review (§4.4)
+          Every order lost because of a design problem, with its full history one click away
         </p>
       </header>
 
       {failed != null && (
         <ErrorBanner
-          message={`Couldn't load cancellations — ${(failed as Error).message}`}
+          message={`Could not load the cancellations — ${(failed as Error).message}`}
           asOf={
             cancelledQ.dataUpdatedAt > 0 ? fmtTime(new Date(cancelledQ.dataUpdatedAt).toISOString()) : null
           }
@@ -152,18 +155,21 @@ export default function CeoCancellations() {
         />
       )}
 
-      <VerdictBlock
-        title="The cancellation read"
-        items={model?.verdicts ?? []}
-        emptyMessage="No cancellations on record — nothing has been lost to designer fault."
-        loading={loading}
-      />
+      <CornerTip tip="How this week's lost orders compare with last week — the pattern over time matters more than any single order.">
+        <VerdictBlock
+          title="The picture this week"
+          items={model?.verdicts ?? []}
+          emptyMessage="No lost orders on record — nothing has been cancelled because of design problems."
+          loading={loading}
+        />
+      </CornerTip>
 
       {/* §4.4 integrity caveat — surfaced, never hidden; quiet, not alarming. */}
       <p className="flex items-start gap-2 text-sm text-muted">
         <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        Cancellation fault is judged by the CSR at close — treat as a flag to investigate, not a
-        verdict; act on the trend.
+        Whether a cancellation was the designer&apos;s fault is decided by the person who closed
+        the order. Treat each one as something to look into, not a final judgement — watch the
+        pattern over weeks.
       </p>
 
       {loading && (
@@ -178,7 +184,7 @@ export default function CeoCancellations() {
         <EmptyState
           icon={OctagonX}
           title="No cancellations on record"
-          hint="When a CSR sets a task to cancelled it lands here instantly, with its full status trail."
+          hint="If an order ever gets cancelled, it will show up here right away with its full history."
         />
       )}
 
@@ -189,15 +195,16 @@ export default function CeoCancellations() {
           aria-label={`Cancellations — ${g.designer?.name ?? 'unassigned'}`}
         >
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <h2 className="text-base font-semibold text-fg">{g.designer?.name ?? 'Unassigned list'}</h2>
+            <h2 className="text-base font-semibold text-fg">{g.designer?.name ?? 'No designer assigned'}</h2>
             {g.designer && <Badge tone="neutral">{g.designer.team}</Badge>}
             <Badge tone="danger" icon={OctagonX}>
               {g.tasks.length} cancelled
             </Badge>
-            <span className="tnum text-xs text-muted">
+            <span className="tnum inline-flex items-center gap-1 text-xs text-muted">
               {g.assigned12w > 0
-                ? `${g.cancelled12w} of ${g.assigned12w} assigned in the last 12 weeks — ${Math.round((g.cancelled12w / g.assigned12w) * 100)}% cancellation rate`
-                : 'no assignments in the last 12 weeks'}
+                ? `${g.cancelled12w} of the ${g.assigned12w} projects given in the last 12 weeks ended cancelled — ${Math.round((g.cancelled12w / g.assigned12w) * 100)}%`
+                : 'no projects given in the last 12 weeks'}
+              <InfoTip text="Out of everything this designer was given in the last 12 weeks, the share that ended cancelled. A pattern here matters more than one bad order." />
             </span>
           </div>
           <ul className="mt-3 divide-y divide-border/50">
@@ -207,15 +214,15 @@ export default function CeoCancellations() {
                   type="button"
                   onClick={() => setSelected(t)}
                   className="flex min-h-[2.75rem] w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-2 py-2 text-left transition-colors duration-150 hover:bg-surface-2"
-                  aria-label={`Open the status trail for ${t.name ?? t.task_id}`}
+                  aria-label={`See the full history of ${t.name ?? t.task_id}`}
                 >
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
                     {t.name ?? t.task_id}
                   </span>
                   <span className="tnum text-xs text-muted">
-                    assigned {fmtDate(t.created_at)} · cancelled {fmtDateTime(t.closed_at ?? t.last_event_at)}
+                    given {fmtDate(t.created_at)} · cancelled {fmtDateTime(t.closed_at ?? t.last_event_at)}
                   </span>
-                  <span className="text-xs font-medium text-brand">View trail</span>
+                  <span className="text-xs font-medium text-brand">See history</span>
                 </button>
               </li>
             ))}
@@ -226,7 +233,7 @@ export default function CeoCancellations() {
       <Drawer
         open={selected != null}
         onClose={() => setSelected(null)}
-        title={selected?.name ?? 'Cancelled task'}
+        title={selected?.name ?? 'Cancelled order'}
         wide
       >
         {selected && (
@@ -253,7 +260,7 @@ export default function CeoCancellations() {
             </div>
             <dl className="tnum grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               <div>
-                <dt className="text-xs text-muted">Assigned</dt>
+                <dt className="text-xs text-muted">Given to the designer</dt>
                 <dd className="text-fg">{fmtDateTime(selected.created_at)}</dd>
               </div>
               <div>
@@ -263,16 +270,34 @@ export default function CeoCancellations() {
             </dl>
             <p className="flex items-start gap-2 rounded-xl bg-surface-2/70 p-3 text-xs text-muted">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              Fault here is the CSR's call at close — read the trail, then judge the pattern across
-              weeks, not this row alone (§4.4).
+              Fault was decided by the person who closed this order. Read the history below, then
+              judge the pattern across weeks — not this one order alone.
             </p>
             <div>
-              <h3 className="eyebrow mb-3">Status trail</h3>
+              <h3 className="eyebrow mb-3 inline-flex items-center gap-1">
+                Full history{' '}
+                <InfoTip text="Every step this order went through, from start to cancellation." />
+              </h3>
               <TaskTrail taskId={selected.task_id} />
             </div>
           </div>
         )}
       </Drawer>
+    </div>
+  )
+}
+
+/**
+ * Places a small ⓘ in the corner of a card whose component only accepts a
+ * plain-string heading (VerdictBlock).
+ */
+function CornerTip({ tip, children }: { tip: string; children: ReactNode }) {
+  return (
+    <div className="relative">
+      {children}
+      <span className="absolute right-4 top-4">
+        <InfoTip text={tip} />
+      </span>
     </div>
   )
 }

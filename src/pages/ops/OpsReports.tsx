@@ -10,6 +10,7 @@ import {
 import { DeltaChip } from '../../components/ui/DeltaChip'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
+import { InfoTip } from '../../components/ui/InfoTip'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { StatTile } from '../../components/ui/StatTile'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
@@ -49,6 +50,21 @@ interface ReportRow {
   designer: Designer
   cur: DesignerPeriodSummary
   prev: DesignerPeriodSummary
+}
+
+/**
+ * Label + ⓘ for StatTile's string-typed `eyebrow` (copy-pass workaround, local
+ * to this file — StatTile's props are owned elsewhere). The node keeps a
+ * readable toString so StatTile's template-literal aria-labels stay sensible.
+ */
+function labelTip(label: string, tip: string): string {
+  const node = (
+    <span className="inline-flex items-center gap-1">
+      {label}
+      <InfoTip text={tip} />
+    </span>
+  )
+  return Object.assign({}, node, { toString: () => label }) as unknown as string
 }
 
 /**
@@ -133,11 +149,11 @@ export default function OpsReports() {
       items.push({
         id: `att-${r.designer.id}`,
         severity: pct < 50 ? 'critical' : 'warning',
-        text: `${r.designer.name} at ${pct}% attainment — ${r.cur.completed} completed of ${r.cur.expectedQuota} expected`,
+        text: `${r.designer.name} met ${pct}% of their target — finished ${r.cur.completed} of ${r.cur.expectedQuota}`,
         detail:
           r.cur.assigned < r.cur.expectedQuota
-            ? `Only ${r.cur.assigned} assigned in period — the gap may be assignment, not the designer (§11 T3)`
-            : 'Assignment kept pace — the gap is production',
+            ? `They were only given ${r.cur.assigned} projects — the shortfall may be in handing out work, not the person`
+            : 'They were given enough projects — the shortfall is in getting them done',
         action: { label: 'Open details', onClick: () => openDesigner(r.designer.id) },
       })
     }
@@ -145,11 +161,11 @@ export default function OpsReports() {
       items.push({
         id: `fpq-${r.designer.id}`,
         severity: 'warning',
-        text: `${r.designer.name} first-pass quality ${r.cur.firstPassQualityPct}% — ${r.cur.firstPassClean} of ${r.cur.delivered} clean`,
+        text: `${r.designer.name} was right first time on ${r.cur.firstPassQualityPct}% — ${r.cur.firstPassClean} of ${r.cur.delivered} needed no changes`,
         detail:
           r.cur.csrCaughtRounds >= r.cur.clientCaughtRounds
-            ? `${r.cur.csrCaughtRounds} CSR-caught rounds — coaching flag (§4.2)`
-            : `${r.cur.clientCaughtRounds} client-caught rounds — tighten the CSR gate or the brief (§4.2)`,
+            ? `${r.cur.csrCaughtRounds} rounds of changes were caught by our own checkers — some coaching may help`
+            : `${r.cur.clientCaughtRounds} rounds of changes came from clients — our checking step or the brief may need tightening`,
         action: { label: 'Open details', onClick: () => openDesigner(r.designer.id) },
       })
     }
@@ -157,8 +173,8 @@ export default function OpsReports() {
       items.push({
         id: `cancel-${r.designer.id}`,
         severity: 'critical',
-        text: `${r.designer.name}: ${r.cur.cancelled} cancellation${r.cur.cancelled === 1 ? '' : 's'} — designer-fault terminal loss`,
-        detail: 'Human-judged at close — review the trail, act on the trend, not one row (§4.4)',
+        text: `${r.designer.name}: ${r.cur.cancelled} cancelled order${r.cur.cancelled === 1 ? '' : 's'} — lost because of a design problem`,
+        detail: 'Check the project history first, and look at the pattern — not just one project.',
         action: { label: 'Open details', onClick: () => openDesigner(r.designer.id) },
       })
     }
@@ -180,15 +196,21 @@ export default function OpsReports() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="eyebrow">Reports · {rangeLabel} · vs {fmtDate(prior.start)} – {fmtDate(prior.end)}</p>
-          <h1 className="mt-1 text-3xl font-semibold text-fg">Reports</h1>
+          <h1 className="mt-1 inline-flex items-center gap-2 text-3xl font-semibold text-fg">
+            Reports
+            <InfoTip text="How each person did over a period — targets met, quality and speed — with a PDF you can share." />
+          </h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <SegmentedControl<PeriodKey>
-            options={PERIODS.map((p) => ({ value: p.value, label: p.label }))}
-            value={periodKey}
-            onChange={setPeriodKey}
-            ariaLabel="Report period"
-          />
+          <div className="flex items-center gap-1">
+            <SegmentedControl<PeriodKey>
+              options={PERIODS.map((p) => ({ value: p.value, label: p.label }))}
+              value={periodKey}
+              onChange={setPeriodKey}
+              ariaLabel="Report period"
+            />
+            <InfoTip text="Pick the time period. Every number is compared with the period before it." />
+          </div>
           <button
             type="button"
             onClick={exportPdf}
@@ -196,14 +218,14 @@ export default function OpsReports() {
             className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg hover:opacity-90 disabled:opacity-50"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
-            Export PDF
+            Download PDF
           </button>
         </div>
       </header>
 
       {(tasksQ.error || metricsQ.error) && (
         <ErrorBanner
-          message="Couldn't refresh period data — showing the last computed summaries."
+          message="Could not load the latest numbers — you are seeing the last saved view."
           asOf={(() => {
             const lastGood = Math.max(tasksQ.dataUpdatedAt, metricsQ.dataUpdatedAt)
             return lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null

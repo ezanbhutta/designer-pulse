@@ -218,8 +218,8 @@ export default function CeoReports() {
       {!loading && model && model.rows.length === 0 && (
         <EmptyState
           icon={FileText}
-          title="No designer activity in this week"
-          hint="Pick an earlier week, or wait for the current week to complete on Sunday (PKT)."
+          title="No designer work in this week"
+          hint="Pick an earlier week, or wait until this week finishes on Sunday."
         />
       )}
 
@@ -233,7 +233,12 @@ export default function CeoReports() {
           if (teamRows.length === 0) return null
           return (
             <section key={team} aria-label={`${team} team weekly reports`}>
-              <h2 className="mb-3 text-lg font-semibold text-fg">{team}</h2>
+              <h2 className="mb-3 inline-flex items-center gap-1.5 text-lg font-semibold text-fg">
+                {team}{' '}
+                <InfoTip
+                  text={`The ${team} team's week, one card per designer — the person who most needs a chat comes first.`}
+                />
+              </h2>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {teamRows.map((r) => (
                   <ReportCard key={r.designer.id} row={r} />
@@ -249,9 +254,9 @@ export default function CeoReports() {
 // ── Report card ───────────────────────────────────────────────────────────────
 
 const TREND_META = {
-  up: { icon: TrendingUp, className: 'text-success', label: 'Improving vs prior week' },
-  down: { icon: TrendingDown, className: 'text-danger', label: 'Declining vs prior week' },
-  flat: { icon: Minus, className: 'text-muted', label: 'Steady vs prior week' },
+  up: { icon: TrendingUp, className: 'text-success', label: 'Better than last week' },
+  down: { icon: TrendingDown, className: 'text-danger', label: 'Worse than last week' },
+  flat: { icon: Minus, className: 'text-muted', label: 'About the same as last week' },
 } as const
 
 function ReportCard({ row }: { row: ReportRow }) {
@@ -269,23 +274,38 @@ function ReportCard({ row }: { row: ReportRow }) {
       <p className="mt-1.5 text-sm font-medium leading-snug text-fg">{row.interpretation}</p>
       <dl className="tnum mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-border/60 pt-3 text-sm">
         <ReportStat
-          label="Attainment"
+          label="Target met"
+          tip="Out of the projects they were supposed to take, how many they finished. This is the only fair way to compare different teams."
           value={fmtPct(row.cur.attainmentPct)}
-          sub={row.cur.expectedQuota > 0 ? `${row.cur.completed} of ${row.cur.expectedQuota}` : 'no quota set'}
+          sub={row.cur.expectedQuota > 0 ? `${row.cur.completed} of ${row.cur.expectedQuota}` : 'no target set'}
         />
         <ReportStat
-          label="First-pass quality"
+          label="Right first time"
+          tip="How many designs were accepted without anyone asking for changes. Higher is better."
           value={fmtPct(row.cur.firstPassQualityPct)}
-          sub={row.cur.delivered > 0 ? `${row.cur.firstPassClean}/${row.cur.delivered} clean` : 'none delivered'}
+          sub={row.cur.delivered > 0 ? `${row.cur.firstPassClean} of ${row.cur.delivered}` : 'none sent'}
         />
-        <ReportStat label="Production median" value={fmtDuration(row.cur.productionMedianMin)} />
-        <ReportStat label="Revision rounds" value={String(row.cur.revisionRounds)} />
         <ReportStat
-          label="Cancelled"
+          label="Work time"
+          tip="Usual time from getting a project to sending the first design. Client waiting time is not counted."
+          value={fmtDuration(row.cur.productionMedianMin)}
+        />
+        <ReportStat
+          label="Changes asked"
+          tip="How many times someone asked for changes this week. Also called revision rounds."
+          value={String(row.cur.revisionRounds)}
+        />
+        <ReportStat
+          label="Lost orders"
+          tip="Orders cancelled because of design problems. Open the Cancellations page to read each one's full story."
           value={String(row.cur.cancelled)}
           tone={row.cur.cancelled > 0 ? 'danger' : undefined}
         />
-        <ReportStat label="Assigned" value={String(row.cur.assigned)} />
+        <ReportStat
+          label="New projects"
+          tip="How many projects they were given this week."
+          value={String(row.cur.assigned)}
+        />
       </dl>
     </article>
   )
@@ -293,18 +313,22 @@ function ReportCard({ row }: { row: ReportRow }) {
 
 function ReportStat({
   label,
+  tip,
   value,
   sub,
   tone,
 }: {
   label: string
+  tip: string
   value: string
   sub?: string
   tone?: 'danger'
 }) {
   return (
     <div>
-      <dt className="text-xs text-muted">{label}</dt>
+      <dt className="inline-flex items-center gap-1 text-xs text-muted">
+        {label} <InfoTip text={tip} />
+      </dt>
       <dd className={`font-medium ${tone === 'danger' ? 'text-danger' : 'text-fg'}`}>
         {value}
         {sub && <span className="ml-1 text-xs font-normal text-muted">({sub})</span>}
@@ -332,10 +356,10 @@ function trendDirection(cur: DesignerPeriodSummary, prev: DesignerPeriodSummary)
 /** Template sentences only — worst signal wins; every line says what to DO. */
 function interpretWeek(cur: DesignerPeriodSummary, prev: DesignerPeriodSummary, cfg: Config): string {
   if (cur.expectedQuota === 0 && cur.assigned === 0 && cur.delivered === 0) {
-    return 'No expected work this week — leave, off-days, or an intake gap.'
+    return 'No work was expected this week — leave, off-days, or no new projects came in.'
   }
   if (cur.cancelled > 0) {
-    return `${cur.cancelled} designer-fault cancellation${cur.cancelled === 1 ? '' : 's'} — read the trail before judging; act on the trend (§4.4).`
+    return `${cur.cancelled} order${cur.cancelled === 1 ? '' : 's'} lost to design problems — read the full story first, and judge the pattern over weeks, not one bad week.`
   }
   if (
     cur.firstPassQualityPct != null &&
@@ -346,26 +370,26 @@ function interpretWeek(cur: DesignerPeriodSummary, prev: DesignerPeriodSummary, 
     const revised = cur.delivered - cur.firstPassClean
     const src =
       cur.clientCaughtRounds === 0 && cur.csrCaughtRounds > 0
-        ? ', all CSR-caught'
+        ? ' — all caught by our own checkers'
         : cur.csrCaughtRounds === 0 && cur.clientCaughtRounds > 0
-          ? ', all client-caught'
+          ? ' — all caught by clients'
           : ''
-    return `Quality slipped ${prev.firstPassQualityPct - cur.firstPassQualityPct}pp — ${revised} of ${cur.delivered} needed revision${src}. Coaching check-in.`
+    return `Designs are getting sent back more often — ${revised} of ${cur.delivered} needed changes${src}. Worth a coaching chat.`
   }
   if (cur.attainmentPct != null && cur.attainmentPct < 60) {
-    return `At ${cur.attainmentPct}% of quota — if intake fell short, that's an assignment gap (PM-owned, §11 T3), not designer slack. Check before coaching.`
+    return `Only ${cur.attainmentPct}% of their target — but first check they were given enough projects. If not, that is a planning gap, not a designer problem.`
   }
   if ((cur.firstPassQualityPct ?? 0) >= 90 && (cur.attainmentPct ?? 0) >= 100) {
-    return 'Strong week — quota met with first-pass quality intact. Keep.'
+    return 'A strong week — target met and almost everything accepted first time.'
   }
   if (
     cur.firstPassQualityPct != null &&
     prev.firstPassQualityPct != null &&
     cur.firstPassQualityPct - prev.firstPassQualityPct >= 5
   ) {
-    return `Quality up ${cur.firstPassQualityPct - prev.firstPassQualityPct}pp on the prior week — whatever changed, keep it.`
+    return `Quality is up ${cur.firstPassQualityPct - prev.firstPassQualityPct} points on last week — whatever changed, keep doing it.`
   }
-  return 'Steady week — no flags.'
+  return 'A steady week — nothing to worry about.'
 }
 
 /** The whole-studio paragraph, from the same computed rows the cards use. */
@@ -392,14 +416,14 @@ function buildWeeklySummary(
 
   const sentences: string[] = []
   sentences.push(
-    `In the week of ${fmtDate(period.start)}–${fmtDate(period.end)}, the studio completed ${completed}${expected > 0 ? ` of ${expected} expected` : ''} projects${att != null ? ` (${att}% attainment)` : ''}.`,
+    `In the week of ${fmtDate(period.start)}–${fmtDate(period.end)}, the studio finished ${completed}${expected > 0 ? ` of the ${expected} planned` : ''} projects${att != null ? ` (${att}% of target)` : ''}.`,
   )
   if (fpq != null) {
     const deltaClause =
       prevFpq != null && fpq !== prevFpq
-        ? `, ${Math.abs(fpq - prevFpq)}pp ${fpq > prevFpq ? 'up' : 'down'} on the prior week`
+        ? `, ${Math.abs(fpq - prevFpq)} points ${fpq > prevFpq ? 'up' : 'down'} on the week before`
         : ''
-    sentences.push(`First-pass quality was ${fpq}% — ${clean} of ${delivered} delivered clean${deltaClause}.`)
+    sentences.push(`${fpq}% of designs were right first time — ${clean} of ${delivered} needed no changes${deltaClause}.`)
   }
   const teamFpq = TEAMS.map((team) => {
     const teamRows = rows.filter((r) => r.designer.team === team)
@@ -410,7 +434,7 @@ function buildWeeklySummary(
   if (teamFpq.length >= 2) {
     const best = [...teamFpq].sort((a, b) => b.pct - a.pct)[0]
     const worst = [...teamFpq].sort((a, b) => a.pct - b.pct)[0]
-    sentences.push(`${best.team} led on quality at ${best.pct}%; ${worst.team} trailed at ${worst.pct}%.`)
+    sentences.push(`${best.team} had the best quality score (${best.pct}%); ${worst.team} had the lowest (${worst.pct}%).`)
   }
   if (cancelled > 0) {
     const names = rows
@@ -418,21 +442,21 @@ function buildWeeklySummary(
       .map((r) => `${firstName(r.designer.name)} ${r.cur.cancelled}`)
       .join(', ')
     sentences.push(
-      `${cancelled} designer-fault cancellation${cancelled === 1 ? '' : 's'} (${names}) — review each trail, judge the trend.`,
+      `${cancelled} order${cancelled === 1 ? ' was' : 's were'} lost to design problems (${names}) — read each one's story, judge the pattern.`,
     )
   } else {
-    sentences.push('No designer-fault cancellations.')
+    sentences.push('No orders were lost to design problems.')
   }
   if (productionMedian != null) {
     const deltaClause =
       priorProductionMedian != null && productionMedian !== priorProductionMedian
-        ? ` — ${fmtDuration(Math.abs(productionMedian - priorProductionMedian))} ${productionMedian < priorProductionMedian ? 'faster' : 'slower'} than the prior week`
+        ? ` — ${fmtDuration(Math.abs(productionMedian - priorProductionMedian))} ${productionMedian < priorProductionMedian ? 'faster' : 'slower'} than the week before`
         : ''
-    sentences.push(`Median production time was ${fmtDuration(productionMedian)}${deltaClause}.`)
+    sentences.push(`Usual work time was ${fmtDuration(productionMedian)}${deltaClause}.`)
   }
   if (designers.length > rows.length) {
     sentences.push(
-      `${designers.length - rows.length} designer${designers.length - rows.length === 1 ? ' was' : 's were'} inactive this week (leave, off-days, or no intake).`,
+      `${designers.length - rows.length} designer${designers.length - rows.length === 1 ? ' had' : 's had'} no work this week (leave, off-days, or no new projects).`,
     )
   }
   return sentences.join(' ')

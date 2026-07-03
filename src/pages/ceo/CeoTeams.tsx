@@ -158,7 +158,7 @@ export default function CeoTeams() {
         trend,
         trendBaseline,
         fpqPct: fpqNow.pct,
-        fpqDelta: metricDelta(fpqNow.pct, fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v}pp` }),
+        fpqDelta: metricDelta(fpqNow.pct, fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v} pts` }),
         fpqCause:
           fpqNow.delivered > 0
             ? `${fpqNow.clean} of ${fpqNow.delivered} accepted with no changes — ${fpqNow.csrCaughtRounds} change requests from our checkers, ${fpqNow.clientCaughtRounds} from clients`

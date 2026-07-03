@@ -107,7 +107,7 @@ export function generateWeeklyReportPdf(args: WeeklyReportArgs): void {
     doc.setFont('helvetica', 'italic')
     doc.setFontSize(10)
     doc.setTextColor(...MUTED)
-    doc.text('No designer activity recorded in this period.', MARGIN_X, y + 6)
+    doc.text('No designer work recorded in this week.', MARGIN_X, y + 6)
   }
 
   drawFooters(doc)
@@ -132,7 +132,22 @@ function drawHeader(doc: jsPDF, period: { start: string; end: string }, teamName
   doc.setDrawColor(...HAIRLINE)
   doc.setLineWidth(0.3)
   doc.line(MARGIN_X, 31, CONTENT_RIGHT, 31)
-  return 38
+
+  // Printed legend — the PDF has no hover tips, so the two key measures are
+  // explained in one sentence each, right under the header.
+  doc.setFontSize(8)
+  doc.setTextColor(...MUTED)
+  doc.text(
+    '"Target met" = out of the projects they were supposed to take, how many they finished.',
+    MARGIN_X,
+    36,
+  )
+  doc.text(
+    '"Right first time" = designs accepted without anyone asking for changes; higher is better.',
+    MARGIN_X,
+    40,
+  )
+  return 47
 }
 
 function drawTeamHeader(doc: jsPDF, team: Team, teamRows: DesignerPeriodSummary[], y: number): number {
@@ -150,7 +165,7 @@ function drawTeamHeader(doc: jsPDF, team: Team, teamRows: DesignerPeriodSummary[
   doc.setFontSize(9)
   doc.setTextColor(...MUTED)
   doc.text(
-    `${teamRows.length} designer${teamRows.length === 1 ? '' : 's'} · ${completed} completed · first-pass quality ${pct(teamFpq)}`,
+    `${teamRows.length} designer${teamRows.length === 1 ? '' : 's'} · ${completed} finished · right first time ${pct(teamFpq)}`,
     CONTENT_RIGHT,
     y,
     { align: 'right' },
@@ -163,10 +178,10 @@ function drawColumnHeader(doc: jsPDF, y: number): number {
   doc.setFontSize(8)
   doc.setTextColor(...MUTED)
   doc.text('DESIGNER', COL.name, y)
-  doc.text('ATTAINMENT', COL.attainment, y, { align: 'right' })
-  doc.text('FIRST-PASS QUALITY', COL.quality, y, { align: 'right' })
-  doc.text('PRODUCTION', COL.production, y, { align: 'right' })
-  doc.text('REVISIONS', COL.revisions, y, { align: 'right' })
+  doc.text('TARGET MET', COL.attainment, y, { align: 'right' })
+  doc.text('RIGHT FIRST TIME', COL.quality, y, { align: 'right' })
+  doc.text('WORK TIME', COL.production, y, { align: 'right' })
+  doc.text('CHANGES', COL.revisions, y, { align: 'right' })
   doc.text('CANCELLED', COL.cancelled, y, { align: 'right' })
   doc.setDrawColor(...HAIRLINE)
   doc.setLineWidth(0.2)
@@ -185,7 +200,7 @@ function drawDesignerRow(doc: jsPDF, r: DesignerPeriodSummary, name: string, y: 
   const quality =
     r.firstPassQualityPct == null
       ? '—'
-      : `${r.firstPassQualityPct}%  (${r.firstPassClean}/${r.delivered} clean)`
+      : `${r.firstPassQualityPct}%  (${r.firstPassClean} of ${r.delivered})`
 
   doc.text(attainment, COL.attainment, y, { align: 'right' })
   doc.text(quality, COL.quality, y, { align: 'right' })
@@ -226,7 +241,7 @@ function drawFooters(doc: jsPDF): void {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8)
     doc.setTextColor(...MUTED)
-    doc.text('Cross-team comparison valid on attainment only', MARGIN_X, PAGE_H - 11)
+    doc.text('Only "Target met" is fair to compare across different teams', MARGIN_X, PAGE_H - 11)
     doc.text(`Page ${i} of ${pages}`, CONTENT_RIGHT, PAGE_H - 11, { align: 'right' })
   }
 }
