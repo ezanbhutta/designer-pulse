@@ -379,7 +379,10 @@ export default function OpsAttendance() {
       {/* ── Tiles (§20.2) ── */}
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Attendance summary">
         <StatTile
-          eyebrow="Team warm-up median"
+          eyebrow={labelTip(
+            'Team start delay',
+            'The time between pressing Check in and doing the first real work in ClickUp. This is the usual (middle) value for the team.',
+          )}
           icon={Hourglass}
           value={fmtDuration(warmupMedian)}
           delta={metricDelta(warmupMedian, warmupPrev, {
@@ -387,38 +390,47 @@ export default function OpsAttendance() {
             format: fmtDuration,
             vs: 'vs prior day',
           })}
-          cause="check-in → first ClickUp activity — the honest remote-presence metric (§9.3)"
+          cause="the usual gap between checking in and starting real work"
           state={warmupMedian == null ? null : warmupMedian > 60 ? 'flag' : warmupMedian > 30 ? 'watch' : 'ok'}
           loading={attendanceQ.isLoading}
         />
         <StatTile
-          eyebrow="Checked in"
+          eyebrow={labelTip(
+            'Checked in',
+            "How many of today's scheduled people have pressed Check in.",
+          )}
           icon={UserCheck}
           value={`${checkedIn} of ${scheduledCount}`}
           delta={metricDelta(checkedIn, prevStats.checked, { goodWhen: 'up', vs: 'vs prior day' })}
           cause={
             scheduledCount - checkedIn > 0
-              ? `${scheduledCount - checkedIn} scheduled designer${scheduledCount - checkedIn === 1 ? '' : 's'} yet to mark in`
-              : 'every scheduled designer has marked in'
+              ? `${scheduledCount - checkedIn} still to check in`
+              : 'everyone scheduled today has checked in'
           }
           state={scheduledCount > 0 && checkedIn < scheduledCount ? 'watch' : 'ok'}
           loading={attendanceQ.isLoading}
         />
         <StatTile
-          eyebrow="Needs review"
+          eyebrow={labelTip(
+            'Needs review',
+            'The system closed this day automatically because the person forgot to press Check out. Please double-check it.',
+          )}
           icon={TriangleAlert}
           value={String(needsReview)}
           delta={metricDelta(needsReview, prevStats.review, { goodWhen: 'down', vs: 'vs prior day' })}
-          cause="auto-closed at shift end with nothing corroborating work — verify"
+          cause="the system closed these days on its own — please double-check them"
           state={needsReview > 0 ? 'flag' : 'ok'}
           loading={attendanceQ.isLoading}
         />
         <StatTile
-          eyebrow="Late arrivals"
+          eyebrow={labelTip(
+            'Late arrivals',
+            'People who checked in after their start time, allowing a small grace period.',
+          )}
           icon={LogIn}
           value={String(lateCount)}
           delta={metricDelta(lateCount, prevStats.late, { goodWhen: 'down', vs: 'vs prior day' })}
-          cause="checked in past their shift start + grace"
+          cause="checked in after their start time"
           state={lateCount > 0 ? 'watch' : 'ok'}
           loading={attendanceQ.isLoading}
         />
@@ -433,8 +445,8 @@ export default function OpsAttendance() {
       ) : designers.length === 0 ? (
         <EmptyState
           icon={UserCheck}
-          title="No active designers"
-          hint="Add designers on the Roster page — attendance rows appear per scheduled shift."
+          title="No designers yet"
+          hint="Add people on the Roster page — their attendance will show up here."
         />
       ) : view === 'day' ? (
         // ── Day table, needs-attention-first ──
@@ -443,16 +455,49 @@ export default function OpsAttendance() {
             <thead>
               <tr className="border-b border-border/60 text-xs text-muted">
                 <th scope="col" className="px-3 py-2.5 font-medium">Designer</th>
-                <th scope="col" className="px-3 py-2.5 font-medium">Status</th>
-                <th scope="col" className="px-3 py-2.5 font-medium">In</th>
-                <th scope="col" className="px-3 py-2.5 font-medium">Out</th>
-                <th scope="col" className="bg-surface-2/70 px-3 py-2.5 font-semibold text-fg">
-                  Warm-up gap
+                <th scope="col" className="px-3 py-2.5 font-medium">
+                  <span className="inline-flex items-center gap-1">
+                    Status
+                    <InfoTip text="What kind of day it was — worked, on leave, day off, absent, and so on." />
+                  </span>
                 </th>
-                <th scope="col" className="px-3 py-2.5 text-right font-medium">Worked</th>
-                <th scope="col" className="px-3 py-2.5 text-right font-medium">Late / early</th>
+                <th scope="col" className="px-3 py-2.5 font-medium">
+                  <span className="inline-flex items-center gap-1">
+                    In
+                    <InfoTip text="The time they pressed Check in." />
+                  </span>
+                </th>
+                <th scope="col" className="px-3 py-2.5 font-medium">
+                  <span className="inline-flex items-center gap-1">
+                    Out
+                    <InfoTip text="The time they pressed Check out. If they forgot, the system fills it in and marks the day for a double-check." />
+                  </span>
+                </th>
+                <th scope="col" className="bg-surface-2/70 px-3 py-2.5 font-semibold text-fg">
+                  <span className="inline-flex items-center gap-1">
+                    Start delay
+                    <InfoTip text="The time between pressing Check in and doing the first real work in ClickUp." />
+                  </span>
+                </th>
+                <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                  <span className="inline-flex items-center gap-1">
+                    Worked
+                    <InfoTip text="Total time worked that day." />
+                  </span>
+                </th>
+                <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                  <span className="inline-flex items-center gap-1">
+                    Late / early
+                    <InfoTip text="Started late or left early, and by how much." />
+                  </span>
+                </th>
                 {isToday && (
-                  <th scope="col" className="px-3 py-2.5 text-right font-medium">Manual mark</th>
+                  <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                    <span className="inline-flex items-center gap-1">
+                      Mark for them
+                      <InfoTip text="Press Check in or Check out for someone who forgot." />
+                    </span>
+                  </th>
                 )}
               </tr>
             </thead>

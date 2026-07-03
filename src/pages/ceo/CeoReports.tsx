@@ -129,10 +129,13 @@ export default function CeoReports() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold text-fg">Weekly reports</h1>
+          <h1 className="inline-flex items-center gap-2 text-3xl font-semibold text-fg">
+            Weekly reports{' '}
+            <InfoTip text="Your Monday review, already prepared — one card per designer with their numbers and a one-line summary." />
+          </h1>
           <p className="mt-1 text-sm text-muted">
-            The pre-built Monday review — per-designer attainment, quality, speed and trend for a
-            full Mon–Sun week (PKT)
+            Each designer&apos;s week at a glance — target met, right first time, work time, and
+            which way they are heading. Covers a full Monday–Sunday week (Pakistan time)
           </p>
         </div>
         <button
@@ -142,7 +145,7 @@ export default function CeoReports() {
           className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Download className="h-4 w-4" aria-hidden="true" />
-          Download weekly PDF
+          Download PDF
         </button>
       </header>
 
@@ -160,7 +163,8 @@ export default function CeoReports() {
         <span className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-medium text-fg">
           <Calendar className="h-4 w-4 text-muted" aria-hidden="true" />
           Mon {fmtDate(period.start)} – Sun {fmtDate(period.end)}
-          {weeksBack === 0 && <span className="text-xs text-muted">· last full week</span>}
+          {weeksBack === 0 && <span className="text-xs text-muted">· most recent full week</span>}
+          <InfoTip text="The week this report covers. Use the arrows to look at earlier weeks." />
         </span>
         <button
           type="button"
@@ -175,7 +179,7 @@ export default function CeoReports() {
 
       {failed != null && (
         <ErrorBanner
-          message={`Couldn't load report data — ${(failed as Error).message}`}
+          message={`Could not load the report numbers — ${(failed as Error).message}`}
           asOf={tasksQ.dataUpdatedAt > 0 ? fmtTime(new Date(tasksQ.dataUpdatedAt).toISOString()) : null}
           onRetry={() => {
             void tasksQ.refetch()
@@ -194,7 +198,10 @@ export default function CeoReports() {
         model &&
         model.summary && (
           <div className="card animate-fade-in p-6">
-            <h2 className="eyebrow">The week in one paragraph</h2>
+            <h2 className="eyebrow inline-flex items-center gap-1">
+              The week in one paragraph{' '}
+              <InfoTip text="A short summary of the whole studio's week, written from the same numbers as the cards below." />
+            </h2>
             <p className="mt-2 text-sm leading-relaxed text-fg">{model.summary}</p>
           </div>
         )
