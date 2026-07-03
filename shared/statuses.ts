@@ -59,17 +59,34 @@ export function canonicalizeStatus(raw: string | null | undefined): CanonicalSta
   return (STATUSES as readonly string[]).includes(name) ? (name as CanonicalStatus) : null
 }
 
-/** Short display labels, used identically on every screen (spec §21.2). */
+/**
+ * Short display labels, used identically on every screen (spec §21.2).
+ * Written in plain everyday English so non-technical users read them
+ * instantly; the canonical ClickUp names stay internal.
+ */
 export const STATUS_LABELS: Record<CanonicalStatus, string> = {
-  'pickup your projects': 'Pickup',
-  'in progress': 'In progress',
-  'deliver to client': 'Delivered',
-  revision: 'Revision',
-  'revision complete': 'Revision done',
-  'client response': 'Client response',
+  'pickup your projects': 'Waiting to start',
+  'in progress': 'Working',
+  'deliver to client': 'First design sent',
+  revision: 'Changes asked',
+  'revision complete': 'Changes done',
+  'client response': 'Waiting for client',
   'final files': 'Final files',
   cancelled: 'Cancelled',
-  complete: 'Complete',
+  complete: 'Done',
+}
+
+/** One-line plain-language meaning per status — for ⓘ info tips. */
+export const STATUS_EXPLAINERS: Record<CanonicalStatus, string> = {
+  'pickup your projects': 'A new project the designer has not started yet.',
+  'in progress': 'The designer is working on it right now.',
+  'deliver to client': 'The first design is ready and was sent for checking.',
+  revision: 'Someone asked for changes. The designer needs to fix it.',
+  'revision complete': 'The changes are done and sent back for checking.',
+  'client response': 'We are waiting for the client to reply. This waiting never counts against the designer.',
+  'final files': 'The client said yes — the designer is preparing the final files.',
+  cancelled: 'The order was lost because of a design problem. Check the task history before judging.',
+  complete: 'The project is closed.',
 }
 
 /**
