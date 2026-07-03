@@ -164,19 +164,43 @@ export async function backfillTaskHistory(
   // reconstructBackfillEvents drops unknown status names (spec §6.4) and
   // keeps the canonical chain intact.
   const events = reconstructBackfillEvents(task.id, listId, history, task.status?.status ?? null)
-  await insertEvents(
-    supa,
-    events.map((e) => ({
+  const rows: IngestEvent[] = events.map((e) => ({
+    task_id: task.id,
+    list_id: listId,
+    designer_id: designerId,
+    event_type: 'status_change' as const,
+    from_status: e.from_status,
+    to_status: e.to_status,
+    event_time: e.event_time,
+    source: 'backfill' as const,
+  }))
+
+  // Snapshot heal: ClickUp's LIVE status is ground truth. Copied tasks (and
+  // some others) return an empty time-in-status history — without this, the
+  // event replay regresses them to their birth status ('pickup') and they
+  // read as stuck forever. If the reconstructed chain is empty or ends on a
+  // different status than the snapshot, append a final transition.
+  const last = rows.length ? rows[rows.length - 1] : null
+  const snapshot = canonicalizeStatus(task.status?.status ?? null)
+  if (snapshot && snapshot !== (last?.to_status ?? 'pickup your projects')) {
+    const closedOrUpdated = msToIso(task.date_closed) ?? msToIso(task.date_updated)
+    const healTime =
+      closedOrUpdated && (!last || closedOrUpdated > last.event_time)
+        ? closedOrUpdated
+        : new Date(new Date(last?.event_time ?? Date.now()).getTime() + 1000).toISOString()
+    rows.push({
       task_id: task.id,
       list_id: listId,
       designer_id: designerId,
-      event_type: 'status_change' as const,
-      from_status: e.from_status,
-      to_status: e.to_status,
-      event_time: e.event_time,
-      source: 'backfill' as const,
-    })),
-  )
+      event_type: 'status_change',
+      from_status: last?.to_status ?? 'pickup your projects',
+      to_status: snapshot,
+      event_time: healTime,
+      source: 'backfill',
+      raw: { snapshotHeal: true },
+    })
+  }
+  await insertEvents(supa, rows)
 }
 
 /**

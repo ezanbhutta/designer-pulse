@@ -121,12 +121,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     )
 
     // Cursor: jump straight to the first unfinished (list, page). Ignored when
-    // the caller restricts to one list; reset by ?force=1.
+    // the caller restricts to one list. ?force=1 bypasses the skip-done check
+    // but STILL rides the cursor — otherwise every force slice would restart
+    // at list 0 / page 0 and never get past the budget. (A finished run clears
+    // the cursor, so a force sweep after completion naturally starts from the
+    // top.)
     let cursor: Cursor | null = null
-    if (!onlyListId) {
-      if (force) await saveCursor(supa, null)
-      else cursor = await loadCursor(supa)
-    }
+    if (!onlyListId) cursor = await loadCursor(supa)
     let startIdx = 0
     let startPage = 0
     if (cursor) {
@@ -281,18 +282,47 @@ async function importChunk(
   const statusEvents: IngestEvent[] = []
   for (const task of chunk) {
     const tis = tisById[task.id]
-    if (!tis) continue
-    const history = [...(tis.status_history ?? []), ...(tis.current_status ? [tis.current_status] : [])]
-    for (const e of reconstructBackfillEvents(task.id, listId, history, task.status?.status ?? null)) {
+    let lastTo: string | null = null
+    let lastTime: string | null = null
+    if (tis) {
+      const history = [...(tis.status_history ?? []), ...(tis.current_status ? [tis.current_status] : [])]
+      for (const e of reconstructBackfillEvents(task.id, listId, history, task.status?.status ?? null)) {
+        statusEvents.push({
+          task_id: task.id,
+          list_id: listId,
+          designer_id: designerId,
+          event_type: 'status_change',
+          from_status: e.from_status,
+          to_status: e.to_status,
+          event_time: e.event_time,
+          source: 'backfill',
+        })
+        lastTo = e.to_status
+        lastTime = e.event_time
+      }
+    }
+    // Snapshot heal: ClickUp's LIVE status is ground truth. Copied tasks (and
+    // some others) return an empty time-in-status history — without this, the
+    // replay regresses them to their birth status ('pickup') and they read as
+    // stuck forever. If the chain is empty or ends elsewhere, append a final
+    // transition to the snapshot status.
+    const snapshot = canonicalizeStatus(task.status?.status ?? null)
+    if (snapshot && snapshot !== (lastTo ?? 'pickup your projects')) {
+      const closedOrUpdated = msToIso(task.date_closed) ?? msToIso(task.date_updated)
+      const healTime =
+        closedOrUpdated && (!lastTime || closedOrUpdated > lastTime)
+          ? closedOrUpdated
+          : new Date(new Date(lastTime ?? Date.now()).getTime() + 1000).toISOString()
       statusEvents.push({
         task_id: task.id,
         list_id: listId,
         designer_id: designerId,
         event_type: 'status_change',
-        from_status: e.from_status,
-        to_status: e.to_status,
-        event_time: e.event_time,
+        from_status: (lastTo as IngestEvent['from_status']) ?? 'pickup your projects',
+        to_status: snapshot,
+        event_time: healTime,
         source: 'backfill',
+        raw: { snapshotHeal: true },
       })
     }
   }
