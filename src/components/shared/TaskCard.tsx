@@ -42,7 +42,7 @@ export function TaskCard({ task, onOpen, designerName }: TaskCardProps) {
   const body = (
     <>
       <p className="truncate text-sm font-medium text-fg" title={task.name ?? task.task_id}>
-        {task.name ?? 'Untitled task'}
+        {task.name ?? 'Untitled project'}
       </p>
       {designerName && <p className="mt-0.5 truncate text-xs text-muted">{designerName}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -53,7 +53,7 @@ export function TaskCard({ task, onOpen, designerName }: TaskCardProps) {
               <span className="tnum">{fmtDuration(age)}</span>
               <span className="sr-only">
                 {' '}
-                in {STATUS_LABELS[status]} — past the aging threshold
+                in {STATUS_LABELS[status]} — stuck too long
               </span>
             </Badge>
           ) : (
@@ -88,9 +88,9 @@ export function TaskCard({ task, onOpen, designerName }: TaskCardProps) {
         type="button"
         onClick={() => onOpen(task.task_id)}
         className={`${frame} block min-h-[2.75rem] transition-shadow duration-200 ease-out hover:shadow-raised`}
-        aria-label={`${task.name ?? 'Untitled task'} — ${
+        aria-label={`${task.name ?? 'Untitled project'} — ${
           status ? STATUS_LABELS[status] : 'no status'
-        }, open trail`}
+        }, open history`}
       >
         {body}
       </button>

@@ -377,9 +377,9 @@ export default function OpsReports() {
                       >
                         <td className="px-3 py-2.5">
                           {flagged ? (
-                            <TriangleAlert className="h-4 w-4 text-danger" aria-label="Flagged" />
+                            <TriangleAlert className="h-4 w-4 text-danger" aria-label="Needs attention" />
                           ) : watch ? (
-                            <Eye className="h-4 w-4 text-warning" aria-label="Watch" />
+                            <Eye className="h-4 w-4 text-warning" aria-label="Keep an eye" />
                           ) : (
                             <CircleCheck className="h-4 w-4 text-success" aria-label="On track" />
                           )}
@@ -402,15 +402,15 @@ export default function OpsReports() {
                             })()}
                           </span>
                           <p className="text-xs font-normal text-muted">
-                            {cur.completed} of {cur.expectedQuota} expected
+                            finished {cur.completed} of {cur.expectedQuota}
                           </p>
                         </td>
                         <td className="tnum px-3 py-2.5 text-right">
                           <span className="font-medium text-fg">{fmtPct(cur.firstPassQualityPct)}</span>
                           <p className="text-xs font-normal text-muted">
                             {cur.delivered > 0
-                              ? `${cur.firstPassClean} of ${cur.delivered} delivered clean`
-                              : 'nothing delivered'}
+                              ? `${cur.firstPassClean} of ${cur.delivered} with no changes`
+                              : 'nothing sent yet'}
                           </p>
                         </td>
                         <td className="tnum px-3 py-2.5 text-right text-fg">

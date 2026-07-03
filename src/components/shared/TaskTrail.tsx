@@ -15,7 +15,7 @@ export interface TaskTrailProps {
 
 function sourceLabel(source: ClickupEvent['source']): string | null {
   if (source === 'webhook') return null
-  return source === 'reconciliation' ? 'via reconciliation' : 'backfilled'
+  return source === 'reconciliation' ? 'added by a later sync' : 'added from old records'
 }
 
 /**
@@ -49,7 +49,7 @@ export function TaskTrail({ taskId }: TaskTrailProps) {
   if (error) {
     return (
       <ErrorBanner
-        message="Couldn't load this task's history — the trail below may be incomplete."
+        message="Could not load this project's history — the list below may be missing steps."
         onRetry={() => void refetch()}
       />
     )
@@ -60,7 +60,7 @@ export function TaskTrail({ taskId }: TaskTrailProps) {
       <EmptyState
         icon={History}
         title="No history yet"
-        hint="Events appear here the moment the task moves in ClickUp."
+        hint="Steps show up here the moment the project moves in ClickUp."
       />
     )
   }
@@ -68,7 +68,7 @@ export function TaskTrail({ taskId }: TaskTrailProps) {
   const now = new Date()
 
   return (
-    <ol className="relative space-y-5 border-l border-border pl-5" aria-label="Task status trail">
+    <ol className="relative space-y-5 border-l border-border pl-5" aria-label="Project history">
       {events.map((e, i) => {
         const next = events[i + 1]
         const isLast = i === events.length - 1
@@ -123,7 +123,7 @@ export function TaskTrail({ taskId }: TaskTrailProps) {
                   {' · '}
                   {isLast
                     ? `in ${STATUS_LABELS[status]} for ${fmtDuration(heldMin)} so far`
-                    : `held ${fmtDuration(heldMin)}`}
+                    : `stayed here ${fmtDuration(heldMin)}`}
                 </>
               )}
             </p>
