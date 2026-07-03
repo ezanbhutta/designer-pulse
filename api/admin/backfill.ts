@@ -1,24 +1,27 @@
 /**
- * One-time historical backfill (spec §6.3), sliced to fit serverless limits.
+ * One-time historical backfill (spec §6.3), sliced + cursored to fit
+ * serverless limits.
  *
  * Guarantees on every invocation, in order of defense:
- *   1. A 25s work budget checked around EVERY operation (ClickUp + Supabase);
- *      when it's spent the call returns done:false with progress — repeated
- *      calls resume (tasks with a task_metrics row are skipped).
+ *   1. A 40s work budget checked around EVERY operation; when spent, the call
+ *      returns done:false with progress. A PERSISTENT CURSOR (app_config key
+ *      'backfill_cursor' = {list_id, page}) means the next call jumps straight
+ *      to the first unfinished page — no re-paging of finished work.
  *   2. The ClickUp client refuses to wait out a 429 past the budget
- *      (ClickUpBudgetError → clean partial response, not a timeout).
+ *      (ClickUpBudgetError -> clean partial response, not a timeout).
  *   3. A last-resort 50s safety flush answers done:false BEFORE the platform
- *      can kill the invocation, even if something unforeseen stalls.
- * Per-chunk Supabase work is batched (3 writes + 1 read per 20 tasks, not 6
- * round-trips per task) so slow cross-region databases fit the budget too.
- * Responses carry per-phase timings for diagnosis.
+ *      can kill the invocation.
+ * Pages are fetched with order_by=created (immutable key -> stable cursor),
+ * processed page-by-page, and Supabase work is batched (~5 round-trips per
+ * 20 tasks). Tasks that already have a task_metrics row are skipped, so even
+ * without the cursor re-runs are idempotent. Responses carry phase timings.
  *
  * Revision rounds reconstructed from time-in-status are a LOWER BOUND
- * (ClickUp aggregates re-entries) → metrics_confidence='backfill'; webhook
+ * (ClickUp aggregates re-entries) -> metrics_confidence='backfill'; webhook
  * tracking is exact going forward.
  *
- * Params: ?list_id=<clickup list id> to restrict to one list;
- *         ?force=1 to redo tasks that already have metrics.
+ * Params: ?list_id=<clickup list id> — restrict to one list (ignores the
+ *         global cursor); ?force=1 — reset the cursor and redo everything.
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
@@ -37,9 +40,16 @@ import {
 } from '../_lib/clickup'
 import { insertEvents, listDesignerMap, msToIso, type IngestEvent } from '../_lib/ingest'
 
+const CURSOR_KEY = 'backfill_cursor'
+
+interface Cursor {
+  list_id: string
+  page: number
+}
+
 export const config = { maxDuration: 60 }
 
-const BUDGET_MS = 25_000
+const BUDGET_MS = 40_000
 const SAFETY_FLUSH_MS = 50_000
 const CHUNK = 20
 
@@ -109,71 +119,82 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       Promise.all([discoverSpaceLists(DESIGNERS_SPACE_ID), listDesignerMap(supa)]),
     )
 
-    for (const list of lists) {
+    // Cursor: jump straight to the first unfinished (list, page). Ignored when
+    // the caller restricts to one list; reset by ?force=1.
+    let cursor: Cursor | null = null
+    if (!onlyListId) {
+      if (force) await saveCursor(supa, null)
+      else cursor = await loadCursor(supa)
+    }
+    let startIdx = 0
+    let startPage = 0
+    if (cursor) {
+      const idx = lists.findIndex((l) => l.id === cursor!.list_id)
+      if (idx >= 0) {
+        startIdx = idx
+        startPage = cursor.page
+      } // list vanished → start over from the top (skip-done makes it cheap)
+    }
+
+    for (let li = startIdx; li < lists.length; li++) {
+      const list = lists[li]
       if (onlyListId && list.id !== onlyListId) continue
       const designer = designers.get(list.id)
       if (!designer) {
         skipped.push({ list_id: list.id, list_name: list.name, reason: 'no roster designer mapped' })
         continue
       }
-      ensureTime()
 
-      // Page ALL tasks, closed included (spec §6.3) — ~1 request / 100 tasks.
-      const tasks: ClickUpTask[] = []
-      await timed('page_tasks', async () => {
-        for (let page = 0; ; page++) {
-          ensureTime()
-          const { tasks: batch, lastPage } = await getListTasks(list.id, {
-            includeClosed: true,
-            page,
-          })
-          tasks.push(...batch)
-          if (lastPage || batch.length === 0) break
-        }
-      })
-
-      // Resume support: anything with a task_metrics row was already imported
-      // (a previous slice, or tracked live by the webhook).
-      const doneIds = force
-        ? new Set<string>()
-        : await timed('scan_done', () => existingMetricIds(supa, tasks.map((t) => t.id), ensureTime))
-      const pending = tasks.filter((t) => !doneIds.has(t.id))
-
-      let backfilled = 0
-      let eventsInserted = 0
-      let completed = true
-
-      for (let i = 0; i < pending.length; i += CHUNK) {
-        try {
-          ensureTime()
-          const chunk = pending.slice(i, i + CHUNK)
-          const n = await timed('import_chunk', () =>
-            importChunk(supa, list.id, designer.id, chunk, ensureTime),
-          )
-          backfilled += chunk.length
-          eventsInserted += n
-        } catch (err) {
-          if (err instanceof SliceOver || err instanceof ClickUpBudgetError) {
-            completed = false
-            break
-          }
-          throw err
-        }
-      }
-
-      results.push({
+      const entry = {
         list_id: list.id,
         list_name: list.name,
         designer: designer.name,
-        tasks: tasks.length,
-        already_done: doneIds.size,
-        backfilled,
-        events: eventsInserted,
-        completed,
-      })
-      if (!completed) {
-        respond(false)
-        return
+        tasks: 0,
+        already_done: 0,
+        backfilled: 0,
+        events: 0,
+        completed: false,
+      }
+      results.push(entry)
+
+      // Page-by-page: fetch one page (≤100 tasks, order_by=created → stable),
+      // import it, persist the cursor, move on. A slice always makes progress.
+      for (let page = li === startIdx ? startPage : 0; ; page++) {
+        ensureTime()
+        const { tasks: batch, lastPage } = await timed('page_tasks', () =>
+          getListTasks(list.id, { includeClosed: true, page, orderBy: 'created' }),
+        )
+        entry.tasks += batch.length
+
+        if (batch.length > 0) {
+          const doneIds = force
+            ? new Set<string>()
+            : await timed('scan_done', () =>
+                existingMetricIds(supa, batch.map((t) => t.id), ensureTime),
+              )
+          entry.already_done += doneIds.size
+          const pending = batch.filter((t) => !doneIds.has(t.id))
+
+          for (let i = 0; i < pending.length; i += CHUNK) {
+            ensureTime()
+            const chunk = pending.slice(i, i + CHUNK)
+            const n = await timed('import_chunk', () =>
+              importChunk(supa, list.id, designer.id, chunk, ensureTime),
+            )
+            entry.backfilled += chunk.length
+            entry.events += n
+          }
+        }
+
+        if (lastPage || batch.length === 0) break
+        if (!onlyListId) await saveCursor(supa, { list_id: list.id, page: page + 1 })
+      }
+
+      entry.completed = true
+      // This list is done — cursor moves to the next one (or clears at the end).
+      if (!onlyListId) {
+        const next = lists[li + 1]
+        await saveCursor(supa, next ? { list_id: next.id, page: 0 } : null)
       }
     }
 
@@ -345,6 +366,31 @@ async function importChunk(
   expectOk(sErr.error, 'task_state batch refresh')
 
   return createdEvents.length + statusEvents.length
+}
+
+/** Read the persisted (list, page) cursor; null = start from the top. */
+async function loadCursor(supa: SupabaseAdmin): Promise<Cursor | null> {
+  const { data, error } = await supa
+    .from('app_config')
+    .select('value')
+    .eq('key', CURSOR_KEY)
+    .maybeSingle()
+  expectOk(error, 'backfill cursor read')
+  const v = (data?.value ?? null) as Cursor | null
+  return v && typeof v.list_id === 'string' && typeof v.page === 'number' ? v : null
+}
+
+/** Persist the cursor; null clears it (backfill finished or ?force reset). */
+async function saveCursor(supa: SupabaseAdmin, cursor: Cursor | null): Promise<void> {
+  if (cursor === null) {
+    const { error } = await supa.from('app_config').delete().eq('key', CURSOR_KEY)
+    expectOk(error, 'backfill cursor clear')
+    return
+  }
+  const { error } = await supa
+    .from('app_config')
+    .upsert({ key: CURSOR_KEY, value: cursor }, { onConflict: 'key' })
+  expectOk(error, 'backfill cursor save')
 }
 
 /** Which of these task ids already have a task_metrics row? (chunked IN query) */

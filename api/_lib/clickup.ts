@@ -177,6 +177,8 @@ export interface ListTasksOptions {
   dateUpdatedGt?: number
   includeClosed?: boolean
   page?: number
+  /** 'created' = stable pagination for cursors; default 'updated'. */
+  orderBy?: 'created' | 'updated'
 }
 
 export async function getListTasks(
@@ -187,7 +189,9 @@ export async function getListTasks(
   params.set('page', String(opts.page ?? 0))
   params.set('subtasks', 'true')
   params.set('include_closed', String(opts.includeClosed ?? true))
-  params.set('order_by', 'updated')
+  // 'created' gives STABLE pagination (immutable key) — required by the
+  // backfill's page cursor; reconciliation uses 'updated' for its date filter.
+  params.set('order_by', opts.orderBy ?? 'updated')
   params.set('reverse', 'true')
   if (opts.dateUpdatedGt != null) params.set('date_updated_gt', String(Math.floor(opts.dateUpdatedGt)))
   const data = await request<{ tasks?: ClickUpTask[]; last_page?: boolean }>(
