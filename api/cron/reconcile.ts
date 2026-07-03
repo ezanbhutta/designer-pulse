@@ -43,10 +43,28 @@ const FIRST_RUN_LOOKBACK_MS = 24 * 3600_000
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
   const started = new Date()
-  // Never let a ClickUp 429 wait push the invocation into the platform kill —
-  // on budget exhaustion we return partial and do NOT advance last_sync, so
-  // the next 15-minute run redoes the window.
-  setClickUpDeadline(started.getTime() + 45_000)
+  // External schedulers (cron-job.org free tier) wait ≤30s and auto-disable
+  // jobs that keep timing out, so reconcile must ALWAYS answer within ~25s.
+  // On budget exhaustion we return partial and do NOT advance last_sync, so
+  // the next 15-minute run redoes the window (5-min overlap covers gaps).
+  setClickUpDeadline(started.getTime() + 22_000)
+  let responded = false
+  const respond = (status: number, body: Record<string, unknown>) => {
+    if (responded) return
+    responded = true
+    clearTimeout(safety)
+    json(res, status, body)
+  }
+  const safety = setTimeout(
+    () =>
+      respond(200, {
+        ok: true,
+        partial: true,
+        note: 'safety flush — last_sync not advanced, next run redoes the window',
+        tookMs: Date.now() - started.getTime(),
+      }),
+    26_000,
+  )
   try {
     const supa = supabaseAdmin()
     const lastSync = await getLastSync(supa)
@@ -184,7 +202,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
 
     await setLastSync(supa, started.toISOString())
-    json(res, 200, {
+    respond(200, {
       ok: true,
       since: new Date(sinceMs).toISOString(),
       lists: lists.length,
@@ -199,7 +217,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     if (err instanceof ClickUpBudgetError) {
       // Partial run: last_sync was NOT advanced, so the next 15-minute run
       // covers the same window again. Not an error condition.
-      json(res, 200, {
+      respond(200, {
         ok: true,
         partial: true,
         reason: 'ClickUp rate-limit wait exceeded the invocation budget',
@@ -208,6 +226,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return
     }
     console.error('[cron/reconcile]', err)
-    json(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
+    respond(500, { ok: false, error: err instanceof Error ? err.message : String(err) })
   }
 }

@@ -48,9 +48,34 @@ export const config = { maxDuration: 60 }
  */
 const GAP_WINDOW_MS = 120 * 60_000
 
+/**
+ * External schedulers (cron-job.org free tier) wait ≤30s for a reply and
+ * auto-disable jobs that keep "timing out" — so pulse must ALWAYS answer
+ * within ~25s. Work is budgeted; whatever attendance recompute doesn't fit
+ * rolls into the next 15-minute run (a rotating start offset guarantees every
+ * designer is covered across runs).
+ */
+const BUDGET_MS = 22_000
+const SAFETY_FLUSH_MS = 26_000
+/** Designers recomputed concurrently per batch. */
+const ATT_PARALLEL = 6
+
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
   const started = Date.now()
+  const outOfTime = () => Date.now() - started > BUDGET_MS
+  let responded = false
+  const summary: Record<string, unknown> = { ok: true }
+  const respond = (status: number, body: Record<string, unknown>) => {
+    if (responded) return
+    responded = true
+    clearTimeout(safety)
+    json(res, status, body)
+  }
+  const safety = setTimeout(
+    () => respond(200, { ...summary, partial: true, note: 'safety flush — remainder next run' }),
+    SAFETY_FLUSH_MS,
+  )
   try {
     const supa = supabaseAdmin()
     const cfg = await loadConfig(supa)
@@ -142,6 +167,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     let agingAlerts = 0
     for (const t of openTasks) {
+      if (outOfTime()) break
       if (!t.current_status) continue
       const thresholdDays =
         t.current_status === 'client response'
@@ -165,29 +191,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       })
       if (result.fired || result.escalated) agingAlerts++
     }
+    summary.work_date = today
+    summary.gapAlerts = gapAlerts
+    summary.agingAlerts = agingAlerts
 
     // ── (3) Attendance recompute — today + yesterday (spec §9.2) ──────────────
+    // Parallel batches within the time budget. The start offset rotates every
+    // 15 minutes so if a run can't finish everyone, the next run starts where
+    // this one's tail was — nobody is starved.
     let attendanceRuns = 0
-    for (const d of designers) {
-      try {
-        await recomputeWithPriorDay(supa, d, today, cfg)
-        attendanceRuns += 2
-      } catch (err) {
-        console.error(`[cron/pulse] attendance recompute failed for ${d.name}`, err)
+    let attendancePartial = false
+    const offset = designers.length ? Math.floor(now.getTime() / 900_000) % designers.length : 0
+    const rotated = [...designers.slice(offset), ...designers.slice(0, offset)]
+    for (let i = 0; i < rotated.length; i += ATT_PARALLEL) {
+      if (outOfTime()) {
+        attendancePartial = true
+        break
       }
+      const batch = rotated.slice(i, i + ATT_PARALLEL)
+      await Promise.all(
+        batch.map(async (d) => {
+          try {
+            await recomputeWithPriorDay(supa, d, today, cfg)
+            attendanceRuns += 2
+          } catch (err) {
+            console.error(`[cron/pulse] attendance recompute failed for ${d.name}`, err)
+          }
+        }),
+      )
+      summary.attendanceRuns = attendanceRuns
     }
 
-    json(res, 200, {
+    respond(200, {
       ok: true,
       work_date: today,
       gapAlerts,
       agingAlerts,
       openTasks: openTasks.length,
       attendanceRuns,
+      partial: attendancePartial,
       tookMs: Date.now() - started,
     })
   } catch (err) {
     console.error('[cron/pulse]', err)
-    json(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
+    respond(500, { ok: false, error: err instanceof Error ? err.message : String(err) })
   }
 }
