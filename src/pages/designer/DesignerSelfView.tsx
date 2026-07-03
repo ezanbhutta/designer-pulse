@@ -35,6 +35,7 @@ import {
 } from '../../lib/queries'
 import { ToastProvider, useToast } from '../../components/ui/ToastProvider'
 import { StatusBadge } from '../../components/ui/StatusBadge'
+import { InfoTip } from '../../components/ui/InfoTip'
 import {
   DesignerMetricsPanel,
   type MetricsPeriod,
@@ -65,7 +66,7 @@ import {
   type QuotaContext,
 } from '../../../shared/aggregate'
 import { leaveCovers } from '../../../shared/attendance'
-import { STATUS_LABELS } from '../../../shared/statuses'
+import { STATUS_EXPLAINERS, STATUS_LABELS } from '../../../shared/statuses'
 import { CONFIG_DEFAULTS } from '../../../shared/types'
 import type {
   AttendanceDaily,
@@ -107,6 +108,17 @@ const ATT_TONE: Record<AttendanceStatus, BadgeProps['tone']> = {
   WeeklyOff: 'neutral',
   Absent: 'warning',
   Incomplete: 'warning',
+}
+
+/** Plain-English display words for attendance statuses (display only). */
+const ATT_LABEL: Record<AttendanceStatus, string> = {
+  Present: 'Present',
+  HolidayWorked: 'Holiday · worked',
+  Leave: 'On leave',
+  Holiday: 'Holiday',
+  WeeklyOff: 'Day off',
+  Absent: 'Absent',
+  Incomplete: 'Day not closed',
 }
 
 // ── Theme toggle (light-default self-view, §21.9 — override persists) ─────────
@@ -346,7 +358,7 @@ function SelfViewBody() {
           // Roll back visibly (§20.6) — the button returns to its prior state.
           setLocalMarks((prev) => prev.filter((m) => m.id !== local.id))
           toast({
-            message: `Couldn't save your ${mark_type === 'check_in' ? 'check-in' : 'check-out'} — check your connection and try again`,
+            message: `Couldn't save your ${mark_type === 'check_in' ? 'check-in' : 'check-out'} — check your internet and tap again`,
           })
         })
     },
@@ -529,8 +541,8 @@ function SelfViewBody() {
         <div className="mt-8">
           <EmptyState
             icon={UserRound}
-            title="Your account isn't linked to a designer yet"
-            hint="Ask your PM to link your login to your roster entry — your check-in button and numbers will appear here the moment that's done."
+            title="Your login isn't connected to your name yet"
+            hint="Ask your team lead to connect your login — your check-in button and your numbers will show up here as soon as that's done."
             action={
               <button
                 type="button"
@@ -560,7 +572,7 @@ function SelfViewBody() {
       {errored.length > 0 && (
         <div className="mt-4">
           <ErrorBanner
-            message="Couldn't load some of your data — check your connection."
+            message="Couldn't load some of your info — check your internet."
             asOf={lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null}
             onRetry={() => errored.forEach((q) => void q.refetch())}
           />
@@ -675,19 +687,24 @@ function PageHeader({
 
 // ── 2. Check-in / check-out ───────────────────────────────────────────────────
 
-function shiftContextLine(active: ActiveShift, today: string): string {
+function shiftContextLine(active: ActiveShift, today: string): { text: string; overnight: boolean } {
   const s = active.schedule
-  if (!s) return 'No schedule on file yet — your marks still count.'
+  if (!s) {
+    return { text: 'No work schedule saved for you yet — your check-in still counts.', overnight: false }
+  }
   const span = `${fmtShiftTime(s.shift_start)}–${fmtShiftTime(s.shift_end)}`
   if (active.carry) {
     // Overnight shift that started yesterday: name the SHIFT day, never the
     // calendar day (§22.11).
-    return `Marking for ${WEEKDAY[dowOf(active.workDate)]}'s shift (${span})`
+    return { text: `Still on ${WEEKDAY[dowOf(active.workDate)]}'s shift (${span})`, overnight: true }
   }
   if (s.shift_end <= s.shift_start) {
-    return `Tonight's shift ${span} — wraps ${WEEKDAY[dowOf(addDays(today, 1))]} morning`
+    return {
+      text: `Tonight's shift ${span} — ends ${WEEKDAY[dowOf(addDays(today, 1))]} morning`,
+      overnight: true,
+    }
   }
-  return `Today's shift ${span}`
+  return { text: `Today's shift ${span}`, overnight: false }
 }
 
 function CheckInCard({
@@ -732,21 +749,27 @@ function CheckInCard({
       className={`card p-5 ${prominent ? 'shadow-raised ring-1 ring-brand/20' : ''}`}
     >
       <div className="flex items-center justify-between gap-2">
-        <p className="eyebrow">Attendance</p>
+        <p className="eyebrow inline-flex items-center gap-1">
+          Check-in
+          <InfoTip text="Press Check in when you start your work day, and Check out when you finish. If you forget to check out, the system closes your day from your ClickUp activity." />
+        </p>
         {phase === 'in' && (
           <Badge tone="success" icon={CircleCheck}>
-            On the clock
+            Checked in
           </Badge>
         )}
         {phase === 'out' && (
           <Badge tone="neutral" icon={CircleCheck}>
-            Shift wrapped
+            Day done
           </Badge>
         )}
       </div>
-      <p className="mt-2 text-sm text-muted">
-        {context}
-        {dayOff && phase === 'unmarked' ? ' · your day off — marks still count if you work' : ''}
+      <p className="mt-2 inline-flex flex-wrap items-center gap-1 text-sm text-muted">
+        {context.text}
+        {context.overnight && (
+          <InfoTip text="Your shift runs past midnight — this whole night counts as one work day." />
+        )}
+        {dayOff && phase === 'unmarked' ? ' · your day off — checking in still counts if you work' : ''}
       </p>
 
       {phase === 'unmarked' && (
@@ -847,13 +870,13 @@ function HonestLine({
   else if (dayOffReason === 'leave') headline = "You're on leave — nothing expected today."
   else if (dayOffReason === 'weekly_off') headline = "It's your day off — nothing expected."
   else if (dayOffReason === 'none') {
-    headline = 'No quota is set for today — ask your PM if that looks wrong.'
+    headline = 'No target is set for you today — ask your team lead if that looks wrong.'
   } else if (daySum.completed >= expectedToday) {
     const clean =
       daySum.delivered > 0 && daySum.firstPassClean === daySum.delivered
-        ? ' Clean day so far.'
+        ? ' Every design accepted first time — nice.'
         : ''
-    headline = `Quota met — ${daySum.completed} of ${expectedToday} ${dayLabel}.${clean}`
+    headline = `Target met — ${daySum.completed} of ${expectedToday} ${dayLabel}.${clean}`
   } else {
     const slots = expectedToday - daySum.completed
     headline = `You're at ${daySum.completed} of ${expectedToday} ${dayLabel} — ${
@@ -864,15 +887,15 @@ function HonestLine({
   // Weekly quality line — only once there's enough signal to be honest about.
   let qualityLine: string | null = null
   if (weekSum && weekSum.delivered >= 3 && weekSum.firstPassQualityPct != null) {
-    const base = `${weekSum.firstPassClean} of ${weekSum.delivered} clean`
+    const base = `${weekSum.firstPassClean} of ${weekSum.delivered} designs accepted with no changes`
     const prev = prevSum?.firstPassQualityPct ?? null
-    if (prev == null) qualityLine = `First-pass quality this week — ${base}.`
+    if (prev == null) qualityLine = `Right first time this week — ${base}.`
     else if (weekSum.firstPassQualityPct > prev) {
-      qualityLine = `First-pass quality up this week — ${base} (was ${prev}% last week).`
+      qualityLine = `Right first time is up — ${base} this week (was ${prev}% last week).`
     } else if (weekSum.firstPassQualityPct < prev) {
-      qualityLine = `First-pass quality dipped this week — ${base} (was ${prev}% last week).`
+      qualityLine = `Right first time dipped — ${base} this week (was ${prev}% last week).`
     } else {
-      qualityLine = `First-pass quality steady this week — ${base}.`
+      qualityLine = `Right first time is steady — ${base} this week.`
     }
   }
 
@@ -887,8 +910,16 @@ function HonestLine({
 
   return (
     <section aria-label="Today at a glance" className="card p-5">
-      <h2 className="text-xl font-semibold leading-snug text-fg">{headline}</h2>
-      {qualityLine && <p className="mt-2 text-sm leading-relaxed text-muted">{qualityLine}</p>}
+      <h2 className="text-xl font-semibold leading-snug text-fg">
+        {headline}{' '}
+        <InfoTip text="Your day at a glance: out of the projects you were supposed to take, how many you finished." />
+      </h2>
+      {qualityLine && (
+        <p className="mt-2 text-sm leading-relaxed text-muted">
+          {qualityLine}{' '}
+          <InfoTip text="Right first time = designs accepted without anyone asking for changes." />
+        </p>
+      )}
       {showPickup && (
         <a
           href={nextHref}
@@ -896,7 +927,7 @@ function HonestLine({
           rel="noreferrer"
           className="mt-3 inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl px-1 text-sm font-medium text-brand hover:underline"
         >
-          Pick up your next task in ClickUp
+          Pick up your next project in ClickUp
           <ExternalLink className="h-4 w-4" aria-hidden="true" />
         </a>
       )}
@@ -916,13 +947,16 @@ function agingNote(
   const days = Math.floor(ageMinutes(task, now) / (60 * 24))
   if (task.current_status === 'client response') {
     if (days < agingDaysClientResponse) return null
-    return { text: `with the client ${days} days — not your clock`, mine: false }
+    return { text: `waiting for the client ${days} days — not counted against you`, mine: false }
   }
   const designerOwned = ['pickup your projects', 'in progress', 'revision', 'final files']
   if (!designerOwned.includes(task.current_status)) return null
   if (days < agingDaysDefault) return null
-  const label = STATUS_LABELS[task.current_status].toLowerCase()
-  return { text: `in ${label} ${days} day${days === 1 ? '' : 's'} — worth a look`, mine: true }
+  const label = STATUS_LABELS[task.current_status]
+  return {
+    text: `${days} day${days === 1 ? '' : 's'} in "${label}" — worth a look`,
+    mine: true,
+  }
 }
 
 function TodayTasks({
@@ -955,8 +989,9 @@ function TodayTasks({
 
   return (
     <section aria-labelledby="today-tasks-h">
-      <h2 id="today-tasks-h" className="eyebrow px-1">
+      <h2 id="today-tasks-h" className="eyebrow inline-flex items-center gap-1 px-1">
         On your plate
+        <InfoTip text="Your open projects, with the ones that need attention first at the top. Tap a name to open it in ClickUp." />
       </h2>
       <div className="card mt-2 px-5 py-1">
         {loading ? (
@@ -969,8 +1004,8 @@ function TodayTasks({
           <div className="py-4">
             <EmptyState
               icon={Inbox}
-              title="No open tasks right now"
-              hint="New assignments land here the moment they're created in your ClickUp list."
+              title="No open projects right now"
+              hint="New projects show up here as soon as they're added to your ClickUp list."
             />
           </div>
         ) : (
@@ -998,9 +1033,17 @@ function TodayTasks({
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                    {task.current_status && <StatusBadge status={task.current_status} />}
+                    {task.current_status && (
+                      <span className="inline-flex items-center gap-1">
+                        <StatusBadge status={task.current_status} />
+                        <InfoTip
+                          text={STATUS_EXPLAINERS[task.current_status]}
+                          label={`What does ${STATUS_LABELS[task.current_status]} mean?`}
+                        />
+                      </span>
+                    )}
                     <span className="tnum text-xs text-muted">
-                      {fmtDuration(age)} in status
+                      {fmtDuration(age)} in this step
                     </span>
                   </div>
                   {note && (

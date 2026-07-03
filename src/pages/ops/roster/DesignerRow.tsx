@@ -1,0 +1,239 @@
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
+import {
+  Archive,
+  BarChart3,
+  CalendarClock,
+  CircleCheck,
+  ExternalLink,
+  Link2Off,
+  Moon,
+  Pencil,
+} from 'lucide-react'
+import { InfoTip } from '../../../components/ui/InfoTip'
+import { clickupListUrl } from '../../../lib/queries'
+import { DOW_LABELS, fmtShiftTime } from '../../../lib/format'
+import type { Designer, DesignerSchedule } from '../../../../shared/types'
+
+/** Deterministic initials — the same name always draws the same avatar. */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  const first = parts[0]?.[0] ?? '?'
+  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : ''
+  return `${first}${last}`.toUpperCase()
+}
+
+/** Quiet labeled chip (§21.4 — whitespace and weight, never a loud badge). */
+function Chip({
+  tone = 'neutral',
+  children,
+}: {
+  tone?: 'neutral' | 'warning'
+  children: ReactNode
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs ${
+        tone === 'warning' ? 'bg-warning-soft text-warning' : 'bg-surface-2 text-muted'
+      }`}
+    >
+      {children}
+    </span>
+  )
+}
+
+export interface DesignerRowProps {
+  designer: Designer
+  schedule: DesignerSchedule | null
+  exceptionCount: number
+  /** Open the edit drawer, optionally scrolled to a section. */
+  onEdit: (focus?: 'clickup' | 'schedule') => void
+  /** Open the performance drawer (?d= search param). */
+  onViewPerformance: () => void
+}
+
+/**
+ * One designer, scannable in a glance (§21.6 verdict-first rows): status
+ * glyph → identity → schedule chips → ClickUp link → actions. The whole row
+ * is keyboard-operable and opens the edit drawer; inner controls stop the
+ * click from bubbling.
+ */
+export function DesignerRow({
+  designer: d,
+  schedule,
+  exceptionCount,
+  onEdit,
+  onViewPerformance,
+}: DesignerRowProps) {
+  const archived = d.status === 'archived'
+  const linked = Boolean(d.clickup_list_id)
+  const listUrl = clickupListUrl(d.clickup_list_id)
+  const overnight = schedule != null && schedule.shift_end <= schedule.shift_start
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onEdit()
+    }
+  }
+
+  const stop = (e: MouseEvent) => e.stopPropagation()
+
+  // Status glyph — always paired with a screen-reader label (§20.10).
+  let glyph: ReactNode
+  if (archived) {
+    glyph = (
+      <>
+        <Archive className="h-4 w-4 text-muted" aria-hidden="true" />
+        <span className="sr-only">Archived</span>
+      </>
+    )
+  } else if (!linked) {
+    glyph = (
+      <>
+        <Link2Off className="h-4 w-4 text-warning" aria-hidden="true" />
+        <span className="sr-only">Not linked to ClickUp</span>
+      </>
+    )
+  } else if (!schedule) {
+    glyph = (
+      <>
+        <CalendarClock className="h-4 w-4 text-warning" aria-hidden="true" />
+        <span className="sr-only">No work schedule yet</span>
+      </>
+    )
+  } else {
+    glyph = (
+      <>
+        <CircleCheck className="h-4 w-4 text-success" aria-hidden="true" />
+        <span className="sr-only">Linked and scheduled</span>
+      </>
+    )
+  }
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Edit ${d.name}`}
+      onClick={() => onEdit()}
+      onKeyDown={handleKeyDown}
+      className={`grid min-h-[4rem] cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 transition-colors duration-150 ease-out hover:bg-surface-2 focus-visible:bg-surface-2 lg:grid-cols-[auto_minmax(0,2.5fr)_minmax(0,3fr)_minmax(0,1.5fr)_auto] lg:gap-x-4 ${
+        archived ? 'opacity-60' : ''
+      }`}
+    >
+      {/* (a) status glyph */}
+      <span className="flex h-5 w-5 items-center justify-center">{glyph}</span>
+
+      {/* (b) identity */}
+      <span className="flex min-w-0 items-center gap-3">
+        <span
+          aria-hidden="true"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand"
+        >
+          {initialsOf(d.name)}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate font-medium text-fg">{d.name}</span>
+          {d.specialty && (
+            <span className="block truncate text-xs text-muted">{d.specialty}</span>
+          )}
+        </span>
+      </span>
+
+      {/* (c) schedule at a glance — quiet labeled chips */}
+      <span className="col-span-2 col-start-2 flex flex-wrap items-center gap-1.5 lg:col-span-1 lg:col-start-auto">
+        {schedule ? (
+          <>
+            <Chip>
+              <span className="tnum">
+                Target {schedule.daily_quota}/day
+              </span>
+            </Chip>
+            <Chip>
+              {overnight && <Moon className="h-3 w-3" aria-hidden="true" />}
+              <span className="tnum">
+                {fmtShiftTime(schedule.shift_start)}–{fmtShiftTime(schedule.shift_end)}
+              </span>
+              {overnight && <span className="sr-only">works past midnight</span>}
+            </Chip>
+            {schedule.weekly_off != null && <Chip>Off {DOW_LABELS[schedule.weekly_off]}</Chip>}
+            {exceptionCount > 0 && (
+              <Chip>
+                <span className="tnum">{exceptionCount}</span> special day
+                {exceptionCount === 1 ? '' : 's'}
+                <InfoTip
+                  text="Days with a different daily target — for example a lighter Friday."
+                  label="What are special days?"
+                />
+              </Chip>
+            )}
+          </>
+        ) : (
+          <Chip tone="warning">No schedule yet</Chip>
+        )}
+      </span>
+
+      {/* (d) ClickUp */}
+      <span className="col-span-2 col-start-2 flex items-center lg:col-span-1 lg:col-start-auto">
+        {linked && listUrl ? (
+          <a
+            href={listUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={stop}
+            aria-label={`Open ${d.name}'s ClickUp list in a new tab`}
+            title="Open list in ClickUp"
+            className="-mx-2 inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-lg px-2 text-xs text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
+          >
+            <span className="tnum">{d.clickup_list_id}</span>
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+          </a>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onEdit('clickup')
+            }}
+            aria-label={`Link ${d.name}'s ClickUp list`}
+            className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-warning/40 bg-warning-soft px-3 text-xs font-medium text-warning transition-colors duration-150 ease-out hover:border-warning/70"
+          >
+            <Link2Off className="h-3.5 w-3.5" aria-hidden="true" />
+            Link list
+          </button>
+        )}
+      </span>
+
+      {/* (e) actions */}
+      <span className="col-start-3 row-start-1 flex items-center justify-end gap-1 lg:col-start-auto lg:row-start-auto">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onViewPerformance()
+          }}
+          aria-label={`View ${d.name}'s performance`}
+          title="View performance"
+          className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
+        >
+          <BarChart3 className="h-4 w-4" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onEdit()
+          }}
+          aria-label={`Edit ${d.name}`}
+          title="Edit"
+          className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
+        >
+          <Pencil className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </span>
+    </div>
+  )
+}
+
+export default DesignerRow

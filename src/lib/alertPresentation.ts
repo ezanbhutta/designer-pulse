@@ -7,6 +7,10 @@
  * §22.1 is absolute here: the tool observes assignment, it never performs
  * it. Every href is a navigation link for the PM/CSR to act inside ClickUp;
  * the wording is always "Open … in ClickUp", never "assign".
+ *
+ * Copy rules: everyday English a non-technical reader gets instantly, and
+ * the same plain words as the designer self-view glossary ("open slots",
+ * "sent back", "waiting for the client").
  */
 
 import type { LucideIcon } from 'lucide-react'
@@ -22,6 +26,7 @@ import {
 } from 'lucide-react'
 import type { Alert, Designer } from '../../shared/types'
 import { STATUS_LABELS, canonicalizeStatus } from '../../shared/statuses'
+import { fmtDate } from './format'
 import { clickupListUrl, clickupTaskUrl } from './queries'
 
 export interface AlertPresentation {
@@ -94,9 +99,11 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
       return {
         title:
           gap != null
-            ? `${name} has ${plural(gap, 'open slot')} an hour into their shift`
-            : `${name} is under quota an hour into their shift`,
-        suggestion: `Spare capacity is idling — create the next ${gap != null && gap > 1 ? 'tasks' : 'task'} in ${name}'s list. This gap sits with assignment, not the designer.`,
+            ? `${name} has ${plural(gap, 'open slot')} today`
+            : `${name} has room for more work today`,
+        suggestion: `Open ${name}'s list in ClickUp and give them ${
+          gap != null && gap > 1 ? 'the next projects' : 'the next project'
+        }. This gap is about assigning work — it's not on ${name}.`,
         href: listHref,
         hrefLabel: listHref ? 'Open list in ClickUp' : null,
         icon,
@@ -106,22 +113,26 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
 
     case 'task_aging': {
       const status = canonicalizeStatus(ctxStr(alert, 'status', 'current_status'))
-      const statusLabel = status ? STATUS_LABELS[status] : 'its current status'
+      const statusLabel = status ? STATUS_LABELS[status] : 'the same step'
+      const taskName = ctxStr(alert, 'task_name', 'name')
+      const what = taskName ? `"${taskName}"` : `One of ${name}'s projects`
       const days =
         ctxNum(alert, 'age_days', 'days') ??
         (() => {
           const mins = ctxNum(alert, 'age_minutes', 'age_min')
           return mins != null ? Math.floor(mins / 1440) : null
         })()
-      const aged = days != null ? `for ${plural(days, 'day')}` : 'past the threshold'
+      const aged = days != null ? `for ${plural(days, 'day')}` : 'for too long'
       const isClientResponse = status === 'client response'
       return {
         title: isClientResponse
-          ? `${name}'s task has been parked in Client response ${aged}`
-          : `${name}'s task has sat in ${statusLabel} ${aged}`,
+          ? `${what} has been waiting for the client ${aged}`
+          : `${what} has been stuck in ${statusLabel} ${aged}`,
         suggestion: isClientResponse
-          ? `Nudge the client — this one is waiting on them${days != null ? `, ${plural(days, 'day')} and counting` : ''}. Revenue rots in this status.`
-          : `Check in with ${name} — the task has stalled and may need unblocking.`,
+          ? `Worth a nudge — the client hasn't replied${
+              days != null ? ` in ${plural(days, 'day')}` : ''
+            }. This waiting is on the client, not on ${name}.`
+          : `Check in with ${name} — this one seems stuck and may need help to move.`,
         href: taskHref,
         hrefLabel: taskHref ? 'Open task in ClickUp' : null,
         icon,
@@ -129,25 +140,29 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
       }
     }
 
-    case 'cancellation':
+    case 'cancellation': {
+      const taskName = ctxStr(alert, 'task_name', 'name')
       return {
-        title: `${name}'s task was cancelled — a designer-fault loss was recorded`,
+        title: taskName
+          ? `"${taskName}" was cancelled`
+          : `One of ${name}'s projects was cancelled`,
         suggestion:
-          'Review the full status trail before judging — a cancellation is a flag to investigate, not a verdict. Watch the trend, not the single row.',
+          'Open it and check what happened — read the whole history before judging anyone. One cancellation is a reason to look, not a verdict.',
         href: taskHref,
         hrefLabel: taskHref ? 'Open task in ClickUp' : null,
         icon,
         tone,
       }
+    }
 
     case 'quality_decay': {
-      const drop = ctxNum(alert, 'drop_pct', 'decay_pct', 'delta_pct')
+      const drop = ctxNum(alert, 'drop_pts', 'drop_pct', 'decay_pct', 'delta_pct')
       return {
         title:
           drop != null
-            ? `${name}'s first-pass quality fell ${Math.abs(Math.round(drop))}% vs the prior period`
-            : `${name}'s first-pass quality is slipping vs their prior period`,
-        suggestion: `Coaching flag — review ${name}'s recent revisions and where they were caught (CSR gate vs client) before it becomes a crisis.`,
+            ? `More of ${name}'s designs are being sent back lately — down ${Math.abs(Math.round(drop))} points from before`
+            : `More of ${name}'s designs are being sent back lately`,
+        suggestion: `Might be time for a friendly coaching chat — look at ${name}'s recent change requests and who asked for them, before it grows into a bigger problem.`,
         href: null,
         hrefLabel: null,
         icon,
@@ -160,9 +175,9 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
       return {
         title:
           score != null
-            ? `Burnout risk is rising for ${name} — composite at ${Math.round(score)} of 100`
-            : `Burnout risk is rising for ${name}`,
-        suggestion: `Check in with ${name} — online as much as ever but producing less. This is a leading indicator, not a verdict.`,
+            ? `${name} may be overloaded — warning level ${Math.round(score)} of 100`
+            : `${name} may be overloaded`,
+        suggestion: `${name}'s fixes are taking longer and they're finishing less, while being online as much as ever. Check in with them — this is an early warning, not a verdict.`,
         href: null,
         hrefLabel: null,
         icon,
@@ -170,27 +185,32 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
       }
     }
 
-    case 'forgotten_checkout':
+    case 'forgotten_checkout': {
+      const workDate = ctxStr(alert, 'work_date')
       return {
-        title: `${name} checked in but never checked out`,
+        title: workDate
+          ? `${name} forgot to check out on ${fmtDate(workDate)}`
+          : `${name} forgot to check out`,
         suggestion:
-          'Attendance was auto-closed from their last activity — review the day and correct the checkout if it looks wrong.',
+          'The system closed their day automatically from their last activity — please double-check it and fix the time if it looks wrong.',
         href: null,
         hrefLabel: null,
         icon,
         tone,
       }
+    }
 
     case 'workload_forecast': {
       const team = ctxStr(alert, 'team')
-      const backlog = ctxNum(alert, 'projected_backlog', 'backlog')
+      const backlog = ctxNum(alert, 'projected_backlog', 'projectedBacklog', 'backlog')
+      const who = team ? `The ${team} team` : 'The team'
       return {
         title:
           backlog != null
-            ? `${team ? `${team} team` : 'Team'} backlog is forecast to reach ${plural(Math.round(backlog), 'open task')} within the week`
-            : `${team ? `${team} team` : 'Team'} inflow is outpacing completion`,
+            ? `Work is piling up — ${who.toLowerCase()} is heading for ${plural(Math.round(backlog), 'open project')} within a week`
+            : `${who} is getting new projects faster than it can finish them`,
         suggestion:
-          'Next week’s overload is visible now — rebalance work toward spare capacity or add hands before it lands.',
+          'A pile-up is forming for next week — move work to whoever has room, or bring in help before it lands.',
         href: null,
         hrefLabel: null,
         icon,

@@ -13,16 +13,16 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner'
 function friendlyAuthError(raw: string): string {
   const msg = raw.toLowerCase()
   if (msg.includes('invalid login credentials')) {
-    return "That email and password don't match — check both and try again."
+    return "That email or password doesn't match. Try again."
   }
   if (msg.includes('email not confirmed')) {
-    return 'Your email address is not confirmed yet — check your inbox for the confirmation link.'
+    return "Your email isn't confirmed yet — open the link we sent to your inbox first."
   }
   if (msg.includes('rate limit') || msg.includes('too many')) {
-    return 'Too many sign-in attempts — wait a minute, then try again.'
+    return 'Too many tries — wait a minute, then try again.'
   }
   if (msg.includes('fetch') || msg.includes('network')) {
-    return "Couldn't reach the server — check your connection and try again."
+    return "Can't reach the server — check your internet and try again."
   }
   return raw
 }
@@ -35,7 +35,7 @@ function BrandMark() {
       </span>
       <div>
         <h1 className="text-2xl font-semibold leading-tight text-fg">Studio Pulse</h1>
-        <p className="eyebrow mt-1.5">Design team production health</p>
+        <p className="eyebrow mt-1.5">See how the design team is doing</p>
       </div>
     </div>
   )
@@ -66,7 +66,7 @@ export default function LoginPage() {
     if (session && !loading && !role) {
       setSubmitting(false)
       setError(
-        'Signed in, but no Studio Pulse profile is linked to this account — ask your admin to add you.',
+        "You're signed in, but your account isn't set up in Studio Pulse yet — ask your admin to add you.",
       )
     }
   }, [session, loading, role])
@@ -97,12 +97,12 @@ export default function LoginPage() {
               className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3"
             >
               <p className="text-sm font-medium text-fg">
-                Supabase env vars missing — see README.
+                The app isn&apos;t connected to its database yet — see the README.
               </p>
               <p className="mt-1 text-xs leading-relaxed text-muted">
                 Set <code className="font-mono">VITE_SUPABASE_URL</code> and{' '}
                 <code className="font-mono">VITE_SUPABASE_ANON_KEY</code>, then restart the dev
-                server. Sign-in is disabled until then.
+                server. Sign-in stays off until that&apos;s done.
               </p>
             </div>
           ) : (
@@ -155,7 +155,7 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-4 text-center text-xs text-muted">
-          Role-scoped access — designers see their own numbers only.
+          Everyone sees only their own part — designers see just their own numbers.
         </p>
       </div>
     </main>
