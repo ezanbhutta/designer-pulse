@@ -56,6 +56,21 @@ import {
 } from './opsData'
 
 /**
+ * Label + ⓘ for StatTile's string-typed `eyebrow` (copy-pass workaround, local
+ * to this file — StatTile's props are owned elsewhere). The node keeps a
+ * readable toString so StatTile's template-literal aria-labels stay sensible.
+ */
+function labelTip(label: string, tip: string): string {
+  const node = (
+    <span className="inline-flex items-center gap-1">
+      {label}
+      <InfoTip text={tip} />
+    </span>
+  )
+  return Object.assign({}, node, { toString: () => label }) as unknown as string
+}
+
+/**
  * The Ops attention surface (spec §13.1 / §20.11): what needs a human NOW,
  * ranked — assignment gaps, aging tasks (the client-response swamp called
  * out), fresh cancellations, attendance flags — then today's numbers with
@@ -162,13 +177,13 @@ export default function OpsHome() {
         severity: 'warning',
         text:
           a.message ??
-          `${d?.name ?? 'A designer'} is under quota past shift-start +${cfg.assignment_gap_check_offset_min}m`,
+          `${d?.name ?? 'A designer'} has open slots — they can take more projects today`,
         detail: row
-          ? `${row.assigned} assigned of ${row.expected} expected today — idle paid capacity, attributed to assignment, not the designer`
+          ? `Given ${row.assigned} of ${row.expected} projects for today. Handing out work is the team lead's job, not theirs.`
           : undefined,
         action: href
           ? { label: `Open ${d ? firstName(d.name) : 'the'} list in ClickUp`, href }
-          : { label: 'Review in Alerts', onClick: () => navigate('/ops/alerts') },
+          : { label: 'Open Alerts', onClick: () => navigate('/ops/alerts') },
       })
     }
 
@@ -181,19 +196,19 @@ export default function OpsHome() {
         items.push({
           id: `age-${task.task_id}`,
           severity: age >= threshold * 2 ? 'critical' : 'warning',
-          text: `Nudge client — "${task.name ?? task.task_id}" parked ${days} day${days === 1 ? '' : 's'} in client response`,
-          detail: `${d?.name ?? 'Unassigned'} · client-owned wait; never counts against the designer (§4.1)`,
-          action: href ? { label: 'Open task in ClickUp', href } : undefined,
+          text: `Ask the client to reply — "${task.name ?? task.task_id}" has been waiting ${days} day${days === 1 ? '' : 's'}`,
+          detail: `${d?.name ?? 'No one yet'} · The client has it — this wait never counts against the designer.`,
+          action: href ? { label: 'Open in ClickUp', href } : undefined,
         })
       } else {
         items.push({
           id: `age-${task.task_id}`,
           severity: age >= threshold * 2 ? 'critical' : 'warning',
           text: `"${task.name ?? task.task_id}" stuck in ${
-            task.current_status ? STATUS_LABELS[task.current_status] : 'its status'
+            task.current_status ? STATUS_LABELS[task.current_status] : 'one stage'
           } for ${fmtDuration(age)}`,
-          detail: `${d?.name ?? 'Unassigned'} · threshold ${Math.round(threshold / (24 * 60))} days`,
-          action: href ? { label: 'Open task in ClickUp', href } : undefined,
+          detail: `${d?.name ?? 'No one yet'} · flagged after ${Math.round(threshold / (24 * 60))} days without moving`,
+          action: href ? { label: 'Open in ClickUp', href } : undefined,
         })
       }
     }
@@ -210,8 +225,8 @@ export default function OpsHome() {
         id: `cancel-${t.task_id}`,
         severity: 'critical',
         text: `Cancelled: "${t.name ?? t.task_id}"${d ? ` — ${d.name}` : ''}`,
-        detail: 'Designer-fault terminal loss by definition (§2) — review the trail before judging (§4.4)',
-        action: href ? { label: 'Open task in ClickUp', href } : undefined,
+        detail: 'The order was lost because of a design problem. Check the project history before judging anyone.',
+        action: href ? { label: 'Open in ClickUp', href } : undefined,
       })
     }
 
@@ -221,9 +236,9 @@ export default function OpsHome() {
       items.push({
         id: `review-${row.id}`,
         severity: 'info',
-        text: `Verify ${d?.name ?? 'a designer'}'s day — auto-closed at shift end with no ClickUp activity`,
-        detail: 'No check-out and nothing corroborates work (§9.2) — confirm before it counts',
-        action: { label: 'Open attendance', onClick: () => navigate('/ops/attendance') },
+        text: `Double-check ${d?.name ?? 'a designer'}'s day — the system closed it because they forgot to press Check out`,
+        detail: 'There was no check-out and no sign of work. Please confirm before the day counts.',
+        action: { label: 'Open Attendance', onClick: () => navigate('/ops/attendance') },
       })
     }
 
@@ -240,10 +255,10 @@ export default function OpsHome() {
       items.push({
         id: `slots-${r.designer.id}`,
         severity: 'info',
-        text: `${r.designer.name} has ${slots} open slot${slots === 1 ? '' : 's'} — open ${
+        text: `${r.designer.name} has ${slots} open slot${slots === 1 ? '' : 's'} — ${
           firstName(r.designer.name)
-        }'s list in ClickUp`,
-        detail: `${r.assigned} assigned of ${r.expected} expected · shift started ${
+        } can take more projects today`,
+        detail: `Given ${r.assigned} of ${r.expected} for today · day started ${
           r.schedule ? fmtShiftTime(r.schedule.shift_start) : '—'
         } PKT`,
         action: href ? { label: 'Open list in ClickUp', href } : undefined,
@@ -300,13 +315,16 @@ export default function OpsHome() {
   return (
     <div className="space-y-8">
       <header>
-        <p className="eyebrow">Ops cockpit · {fmtDate(today)} · all times PKT</p>
-        <h1 className="mt-1 text-3xl font-semibold text-fg">Today</h1>
+        <p className="eyebrow">Team overview · {fmtDate(today)} · all times PKT</p>
+        <h1 className="mt-1 inline-flex items-center gap-2 text-3xl font-semibold text-fg">
+          Today
+          <InfoTip text="A live picture of today — what needs you, today's numbers, who has room for more work, and what is stuck." />
+        </h1>
       </header>
 
       {openTasksQ.error && (
         <ErrorBanner
-          message="Couldn't refresh the live board — showing the last loaded tasks."
+          message="Could not load the latest projects — you are seeing the last saved view."
           asOf={
             openTasksQ.dataUpdatedAt > 0
               ? fmtTime(new Date(openTasksQ.dataUpdatedAt).toISOString())
@@ -319,14 +337,17 @@ export default function OpsHome() {
       <VerdictBlock
         title="Needs attention now"
         items={verdictItems}
-        emptyMessage="All designers staffed to quota, no aging tasks."
+        emptyMessage="Nothing needs you right now — everyone has enough work and nothing is stuck."
         loading={loading || alertsQ.isLoading}
       />
 
       {/* ── Today's numbers (§20.2: delta + cause on every tile) ── */}
       <section aria-label="Today's numbers" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
-          eyebrow="Assigned today"
+          eyebrow={labelTip(
+            'Given out today',
+            "How many new projects were handed to designers today, out of the team's total for the day.",
+          )}
           icon={PackagePlus}
           value={`${derived.totalAssignedToday} of ${derived.totalExpected}`}
           delta={metricDelta(derived.totalAssignedToday, derived.assignedYesterday, {
@@ -335,14 +356,14 @@ export default function OpsHome() {
           })}
           cause={
             underQuotaCount > 0
-              ? `${underQuotaCount} designer${underQuotaCount === 1 ? '' : 's'} under quota past shift +${cfg.assignment_gap_check_offset_min}m`
-              : 'every running shift staffed to quota'
+              ? `${underQuotaCount} ${underQuotaCount === 1 ? 'person still needs' : 'people still need'} more work`
+              : 'everyone working today has enough work'
           }
           state={underQuotaCount > 0 ? 'watch' : 'ok'}
           loading={tasksQ.isLoading}
         />
         <StatTile
-          eyebrow="Completed today"
+          eyebrow={labelTip('Finished today', 'Projects closed as done today.')}
           icon={CheckCircle2}
           value={String(derived.completedTodayTasks.length)}
           delta={metricDelta(derived.completedTodayTasks.length, derived.completedYesterday, {
@@ -351,36 +372,44 @@ export default function OpsHome() {
           })}
           cause={
             derived.completedTodayTasks.length > 0
-              ? `${completedClean} of ${derived.completedTodayTasks.length} first-pass clean — complete ≠ business win (§2)`
-              : 'nothing closed yet today'
+              ? `${completedClean} of ${derived.completedTodayTasks.length} were right first time — no changes asked`
+              : 'nothing finished yet today'
           }
           loading={tasksQ.isLoading || metricsQ.isLoading}
         />
         <StatTile
-          eyebrow="Open revisions"
+          eyebrow={labelTip(
+            'Fixes in progress',
+            'Projects where someone asked for changes and the designer is fixing them now.',
+          )}
           icon={RotateCcw}
           value={String(openRevisions.length)}
           delta={metricDelta(openRevisions.length, revisionsAtDayStart, {
             goodWhen: 'down',
-            vs: 'vs carried in from yesterday',
+            vs: 'vs start of day',
           })}
           cause={
             openRevisions.length > 0
-              ? `${csrRounds} CSR-caught · ${clientRounds} client-caught rounds on these tasks — designer clock running`
-              : 'no recoverable defects in flight'
+              ? `${csrRounds} caught by our checkers · ${clientRounds} caught by clients`
+              : 'no fixes in progress right now'
           }
           state={openRevisions.length > 0 ? 'watch' : 'ok'}
           loading={openTasksQ.isLoading}
           onClick={() => navigate('/ops/board')}
         />
         <StatTile
-          eyebrow="Live utilization"
+          eyebrow={labelTip(
+            'Busy level',
+            "How full the team's plate is right now, compared to today's total target.",
+          )}
           icon={Gauge}
           value={fmtPct(utilization)}
-          cause={`${derived.totalLoad} active tasks (pickup · in progress · revision) across ${designers.length} designers`}
+          cause={`${derived.totalLoad} projects being worked on across ${designers.length} ${
+            designers.length === 1 ? 'person' : 'people'
+          }`}
           reference={
             heaviest && heaviest.util != null
-              ? `heaviest: ${heaviest.designer.name} at ${heaviest.util}%`
+              ? `busiest: ${heaviest.designer.name} at ${heaviest.util}%`
               : null
           }
           state={utilization == null ? null : utilization > 120 ? 'watch' : 'ok'}
@@ -392,8 +421,11 @@ export default function OpsHome() {
         {/* ── Spare capacity right now (§20.11 hidden insight) ── */}
         <section className="card p-5">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="text-lg font-semibold text-fg">Spare capacity right now</h2>
-            <span className="text-xs text-muted">active load vs today's quota · most idle first</span>
+            <h2 className="inline-flex items-center gap-1 text-lg font-semibold text-fg">
+              Who has room for more
+              <InfoTip text="People who can take more projects today. Giving them work is the team lead's job, not theirs." />
+            </h2>
+            <span className="text-xs text-muted">most free first</span>
           </div>
           <div className="mt-4 space-y-1">
             {loading ? (
@@ -401,14 +433,14 @@ export default function OpsHome() {
             ) : spareRows.length === 0 ? (
               <EmptyState
                 icon={Inbox}
-                title="No one is scheduled today"
-                hint="Quotas resolve to zero on holidays, leave and weekly offs."
+                title="No one is scheduled to work today"
+                hint="This happens on holidays, days off and leave."
               />
             ) : !anySpare ? (
               <EmptyState
                 icon={CheckCircle2}
-                title="No spare capacity"
-                hint="Every scheduled designer is at or above today's quota — overflow needs the next shift or a rebalance."
+                title="Everyone's plate is full"
+                hint="Everyone has reached their target for today. Extra work will need to wait or be shared out differently."
               />
             ) : (
               spareRows.map((r) => {
@@ -429,12 +461,12 @@ export default function OpsHome() {
                         <span className="ml-2 text-xs font-normal text-muted">{r.designer.team}</span>
                       </p>
                       <p className="tnum text-xs text-muted">
-                        {r.load} active of {r.expected} quota
+                        {r.load} on their plate, target {r.expected}
                         {r.spare > 0
-                          ? ` — ${r.spare} slot${r.spare === 1 ? '' : 's'} open`
+                          ? ` — ${r.spare} open slot${r.spare === 1 ? '' : 's'}`
                           : r.spare < 0
-                            ? ` — ${-r.spare} over (drowning)`
-                            : ' — at quota'}
+                            ? ` — ${-r.spare} over their target`
+                            : ' — at their target'}
                       </p>
                     </button>
                     <span
@@ -466,12 +498,15 @@ export default function OpsHome() {
         {/* ── Aging preview ── */}
         <section className="card p-5">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="text-lg font-semibold text-fg">Aging tasks</h2>
+            <h2 className="inline-flex items-center gap-1 text-lg font-semibold text-fg">
+              Stuck projects
+              <InfoTip text="Projects that have not moved for too long. The ones waiting on clients are the most important to chase." />
+            </h2>
             <Link
               to="/ops/board"
               className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
             >
-              Full board <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              Open the board <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Link>
           </div>
           <div className="mt-4 space-y-2">
@@ -480,8 +515,8 @@ export default function OpsHome() {
             ) : derived.agingTasks.length === 0 ? (
               <EmptyState
                 icon={CheckCircle2}
-                title="No aging tasks — the board is clean"
-                hint={`Nothing has crossed ${cfg.aging_days_default} days in a status (${cfg.aging_days_client_response} for client response).`}
+                title="Nothing is stuck"
+                hint={`Nothing has sat still for more than ${cfg.aging_days_default} days (${cfg.aging_days_client_response} days when waiting for a client).`}
               />
             ) : (
               derived.agingTasks.slice(0, 5).map(({ task }) => (
@@ -497,7 +532,7 @@ export default function OpsHome() {
             )}
             {derived.agingTasks.length > 5 && (
               <p className="text-xs text-muted">
-                +{derived.agingTasks.length - 5} more on the board
+                +{derived.agingTasks.length - 5} more on the Board page
               </p>
             )}
           </div>
@@ -507,7 +542,7 @@ export default function OpsHome() {
       <Drawer
         open={trailTask != null}
         onClose={() => setTrailTask(null)}
-        title={trailTask?.name ?? 'Task trail'}
+        title={trailTask?.name ?? 'Project history'}
       >
         {trailTask && (
           <div className="space-y-4">

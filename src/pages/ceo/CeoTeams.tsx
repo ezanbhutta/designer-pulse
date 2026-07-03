@@ -11,6 +11,7 @@ import { useMemo } from 'react'
 import { Users } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { DeltaChip } from '../../components/ui/DeltaChip'
+import { InfoTip } from '../../components/ui/InfoTip'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Skeleton } from '../../components/ui/Skeleton'
@@ -125,16 +126,20 @@ export default function CeoTeams() {
             cur.delivered >= 2
           ) {
             flags.push({
-              label: `Quality −${prev.firstPassQualityPct - cur.firstPassQualityPct}pp`,
+              label: `Quality dropping −${prev.firstPassQualityPct - cur.firstPassQualityPct} pts`,
               tone: 'warning',
             })
           }
-          if (cur.cancelled > 0) flags.push({ label: `${cur.cancelled} cancelled`, tone: 'danger' })
+          if (cur.cancelled > 0)
+            flags.push({
+              label: `${cur.cancelled} lost order${cur.cancelled === 1 ? '' : 's'}`,
+              tone: 'danger',
+            })
           if (cur.clientCaughtRounds >= 2 && cur.clientCaughtRounds > cur.csrCaughtRounds) {
-            flags.push({ label: `Client-caught ×${cur.clientCaughtRounds}`, tone: 'warning' })
+            flags.push({ label: `${cur.clientCaughtRounds} caught by clients`, tone: 'warning' })
           }
           if (cur.expectedQuota > 0 && cur.attainmentPct != null && cur.attainmentPct < 60) {
-            flags.push({ label: 'Under quota', tone: 'warning' })
+            flags.push({ label: 'Below target', tone: 'warning' })
           }
           if (flags.length === 0 && (cur.delivered > 0 || cur.completed > 0)) {
             flags.push({ label: 'Steady', tone: 'success' })
@@ -156,8 +161,8 @@ export default function CeoTeams() {
         fpqDelta: metricDelta(fpqNow.pct, fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v}pp` }),
         fpqCause:
           fpqNow.delivered > 0
-            ? `${fpqNow.clean} of ${fpqNow.delivered} clean — ${fpqNow.csrCaughtRounds} CSR-caught, ${fpqNow.clientCaughtRounds} client-caught rounds`
-            : 'Nothing delivered yet this week',
+            ? `${fpqNow.clean} of ${fpqNow.delivered} accepted with no changes — ${fpqNow.csrCaughtRounds} change requests from our checkers, ${fpqNow.clientCaughtRounds} from clients`
+            : 'No designs sent yet this week',
         clientWait: clientWaitMedianInPeriod(metrics, ids, week),
         clientWaitDelta: metricDelta(
           clientWaitMedianInPeriod(metrics, ids, week),
@@ -181,28 +186,32 @@ export default function CeoTeams() {
   const lead = useMemo(() => {
     if (!teams || teams.length === 0) return null
     const withFpq = teams.filter((t) => t.fpqPct != null)
-    if (withFpq.length === 0) return 'No deliveries yet this week — team quality reads will appear as work lands.'
+    if (withFpq.length === 0)
+      return 'No designs sent yet this week — team quality will show up here as work gets delivered.'
     const best = [...withFpq].sort((a, b) => (b.fpqPct ?? 0) - (a.fpqPct ?? 0))[0]
     const worst = [...withFpq].sort((a, b) => (a.fpqPct ?? 0) - (b.fpqPct ?? 0))[0]
     if (best.team === worst.team)
-      return `${best.team} is the only team with deliveries this week — first-pass quality ${best.fpqPct}%.`
-    return `${best.team} leads on first-pass quality this week (${best.fpqPct}%); ${worst.team} trails (${worst.fpqPct}%) — coach inside the team, don't compare raw output across teams.`
+      return `${best.team} is the only team that sent designs this week — ${best.fpqPct}% were right first time.`
+    return `${best.team} has the best "right first time" score this week (${best.fpqPct}%); ${worst.team} has the lowest (${worst.fpqPct}%). Coach within each team — never compare raw output across teams.`
   }, [teams])
 
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-3xl font-semibold text-fg">Teams</h1>
+        <h1 className="inline-flex items-center gap-2 text-3xl font-semibold text-fg">
+          Teams{' '}
+          <InfoTip text="How each team is doing this week — quality, waiting times, and every designer's numbers." />
+        </h1>
         <p className="mt-1 text-sm text-muted">
-          Week of {fmtDate(week.start)} vs the same point last week · grouped by team — a logo, a
-          brand guide, and an animation are different units, so only attainment crosses team lines
-          (§2)
+          Week of {fmtDate(week.start)}, compared with the same days last week · shown team by team
+          — a logo, a brand guide and an animation are different amounts of work, so only
+          &quot;Target met&quot; is fair to compare across teams
         </p>
       </header>
 
       {failed != null && (
         <ErrorBanner
-          message={`Couldn't load team data — ${(failed as Error).message}`}
+          message={`Could not load the team numbers — ${(failed as Error).message}`}
           asOf={tasksQ.dataUpdatedAt > 0 ? fmtTime(new Date(tasksQ.dataUpdatedAt).toISOString()) : null}
           onRetry={() => {
             void designersQ.refetch()
@@ -230,8 +239,8 @@ export default function CeoTeams() {
       {!loading && teams && teams.length === 0 && (
         <EmptyState
           icon={Users}
-          title="No active designers on the roster"
-          hint="Once Ops adds designers, per-team health appears here automatically."
+          title="No designers on the roster yet"
+          hint="As soon as designers are added, each team will show up here on its own."
         />
       )}
 

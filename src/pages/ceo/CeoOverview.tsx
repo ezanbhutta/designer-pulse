@@ -6,9 +6,10 @@
  * privately — never on any designer-visible surface (§22.10).
  */
 
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Clock, GitBranch, Package, ShieldCheck, Sparkles } from 'lucide-react'
+import { InfoTip } from '../../components/ui/InfoTip'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { StatTile } from '../../components/ui/StatTile'
 import { HBar, type HBarRow } from '../../components/ui/HBar'
@@ -155,9 +156,9 @@ export default function CeoOverview() {
       verdicts.push({
         id: 'cancellations',
         severity: 'critical',
-        text: `${cancelledNow.length} cancellation${cancelledNow.length === 1 ? '' : 's'} this week (${names}) — designer-fault terminal losses by definition.`,
-        detail: `${cancelledPrev.length} at this point last week. Fault is CSR-judged at close — review each trail, act on the trend (§4.4).`,
-        action: { label: 'Review trails', onClick: () => navigate('/ceo/cancellations') },
+        text: `${cancelledNow.length} order${cancelledNow.length === 1 ? '' : 's'} lost this week because of design problems (${names}).`,
+        detail: `${cancelledPrev.length} at this point last week. Open each one and read its full story before judging anyone — look for a pattern, not one bad week.`,
+        action: { label: 'Review them', onClick: () => navigate('/ceo/cancellations') },
       })
     }
 
@@ -179,22 +180,22 @@ export default function CeoOverview() {
       const revised = c.delivered - c.firstPassClean
       const sourceClause =
         c.clientCaughtRounds === 0 && c.csrCaughtRounds > 0
-          ? ', all CSR-caught'
+          ? ' — all caught by our own checkers'
           : c.csrCaughtRounds === 0 && c.clientCaughtRounds > 0
-            ? ', all client-caught'
+            ? ' — all caught by clients'
             : c.csrCaughtRounds + c.clientCaughtRounds > 0
-              ? `, ${c.csrCaughtRounds} CSR-caught / ${c.clientCaughtRounds} client-caught`
+              ? ` — ${c.csrCaughtRounds} caught by our checkers, ${c.clientCaughtRounds} by clients`
               : ''
       const call =
         c.clientCaughtRounds > c.csrCaughtRounds
-          ? 'Check the CSR gate and the brief.' // §4.2 — client-caught heavy points at the gate, not only the designer
-          : 'Coaching flag.'
+          ? 'Clients caught most of these, so also check our own checking step and the brief.' // §4.2 — client-caught heavy points at the gate, not only the designer
+          : 'Worth a coaching chat.'
       verdicts.push({
         id: `decay-${d.id}`,
         severity: 'warning',
-        text: `${firstName(d.name)}'s first-pass quality fell ${drop}pp this week — ${revised} of ${c.delivered} delivered went to revision${sourceClause}. ${call}`,
-        detail: `${p.firstPassQualityPct}% → ${c.firstPassQualityPct}%, past the ${cfg.quality_decay_pct}pp decay threshold (${d.team} team).`,
-        action: { label: 'Open trends', onClick: () => navigate('/ceo/trends') },
+        text: `${firstName(d.name)}'s designs are getting sent back more often this week — ${revised} of ${c.delivered} needed changes${sourceClause}. ${call}`,
+        detail: `"Right first time" fell from ${p.firstPassQualityPct}% to ${c.firstPassQualityPct}% — a bigger drop than we normally allow (${d.team} team).`,
+        action: { label: 'See trends', onClick: () => navigate('/ceo/trends') },
       })
     }
 
@@ -221,9 +222,9 @@ export default function CeoOverview() {
           verdicts.push({
             id: 'constraint',
             severity: 'warning',
-            text: `${team} team is the constraint — ${share}% of its ${teamAging.length} aging tasks sit in ${STATUS_LABELS[topStatus[0] as keyof typeof STATUS_LABELS].toLowerCase()}.`,
-            detail: `${aging.length} tasks past the aging threshold studio-wide.${constraint ? ` ${constraint.line}` : ''}`,
-            action: { label: 'Open teams', onClick: () => navigate('/ceo/teams') },
+            text: `Work is piling up in the ${team} team — ${share}% of its ${teamAging.length} slow-moving projects are stuck at "${STATUS_LABELS[topStatus[0] as keyof typeof STATUS_LABELS].toLowerCase()}".`,
+            detail: `${aging.length} project${aging.length === 1 ? ' has' : 's have'} been sitting longer than they should across the studio.${constraint ? ` ${constraint.line}` : ''}`,
+            action: { label: 'See teams', onClick: () => navigate('/ceo/teams') },
           })
         }
       }
@@ -234,9 +235,9 @@ export default function CeoOverview() {
       verdicts.push({
         id: 'forecast',
         severity: 'warning',
-        text: `Inflow ${forecast.inflowPerDay}/day vs completion ${forecast.completionPerDay}/day — projected backlog ${forecast.projectedBacklog} by next week. Consider capacity or a rebalance.`,
-        detail: `${forecast.openNow} open now · ${forecast.horizonDays}-day horizon · alert threshold ${cfg.forecast_threshold}.`,
-        action: { label: 'Open forecast', onClick: () => navigate('/ceo/trends') },
+        text: `New projects are coming in faster than they get finished — ${forecast.inflowPerDay} in vs ${forecast.completionPerDay} done per day. If this keeps up, about ${forecast.projectedBacklog} projects will be waiting by next week. Consider adding help or moving work around.`,
+        detail: `${forecast.openNow} projects open right now · looking ${forecast.horizonDays} days ahead · we raise a flag above ${cfg.forecast_threshold}.`,
+        action: { label: 'See forecast', onClick: () => navigate('/ceo/trends') },
       })
     }
 
@@ -246,16 +247,16 @@ export default function CeoOverview() {
         verdicts.push({
           id: 'positive-fpq',
           severity: 'info',
-          text: `First-pass quality ${fpqNow.pct > fpqPrev.pct ? `rose ${fpqNow.pct - fpqPrev.pct}pp to` : 'is holding at'} ${fpqNow.pct}% — ${fpqNow.clean} of ${fpqNow.delivered} delivered clean this week. Nothing needs a decision.`,
-          detail: 'No quality decay, no forecast breach, no cancellations, no aging pile-up.',
+          text: `${fpqNow.pct > fpqPrev.pct ? `More designs are being accepted first time — ${fpqNow.pct}% this week, up from ${fpqPrev.pct}%` : `Designs accepted first time are holding steady at ${fpqNow.pct}%`} (${fpqNow.clean} of ${fpqNow.delivered}). Nothing needs your attention.`,
+          detail: 'No quality dropping, no pile-up coming, no lost orders, no stuck projects.',
           action: { label: 'See trends', onClick: () => navigate('/ceo/trends') },
         })
       } else {
         verdicts.push({
           id: 'positive-throughput',
           severity: 'info',
-          text: `${completionsNow} completion${completionsNow === 1 ? '' : 's'} so far this week (${completionsPrev} at this point last week) with no cancellations or quality flags. Calm week.`,
-          detail: 'No quality decay, no forecast breach, no aging pile-up.',
+          text: `${completionsNow} project${completionsNow === 1 ? '' : 's'} finished so far this week (${completionsPrev} at this point last week), with no lost orders and no quality worries. A calm week.`,
+          detail: 'No quality dropping, no pile-up coming, no stuck projects.',
           action: { label: 'See teams', onClick: () => navigate('/ceo/teams') },
         })
       }
@@ -273,7 +274,7 @@ export default function CeoOverview() {
       .map((x) => ({
         designer: x.d,
         value: x.c.firstPassQualityPct!,
-        sample: `${x.c.firstPassClean}/${x.c.delivered} clean`,
+        sample: `${x.c.firstPassClean} of ${x.c.delivered} designs needed no changes`,
         delta: metricDelta(x.c.firstPassQualityPct, x.p.firstPassQualityPct, {
           goodWhen: 'up',
           format: (v) => `${v}pp`,
@@ -287,7 +288,7 @@ export default function CeoOverview() {
       .map((x) => ({
         designer: x.d,
         value: x.c.attainmentPct!,
-        sample: `${x.c.completed} of ${x.c.expectedQuota} expected`,
+        sample: `${x.c.completed} of ${x.c.expectedQuota} planned projects finished`,
         delta: metricDelta(x.c.attainmentPct, x.p.attainmentPct, {
           goodWhen: 'up',
           format: (v) => `${v}pp`,
@@ -332,16 +333,19 @@ export default function CeoOverview() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-3xl font-semibold text-fg">Overview</h1>
+        <h1 className="inline-flex items-center gap-2 text-3xl font-semibold text-fg">
+          Overview{' '}
+          <InfoTip text="A quick look at the whole studio this week — what is going well and what needs your attention." />
+        </h1>
         <p className="mt-1 text-sm text-muted">
-          Week of {fmtDate(week.start)} vs the same point last week · all times PKT · read-only
-          decision cockpit — assignment happens in ClickUp
+          Week of {fmtDate(week.start)}, compared with the same days last week · all times are
+          Pakistan time · this page is view-only — work is assigned in ClickUp
         </p>
       </header>
 
       {failed != null && (
         <ErrorBanner
-          message={`Couldn't load studio data — ${(failed as Error).message}`}
+          message={`Could not load the studio numbers — ${(failed as Error).message}`}
           asOf={lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null}
           onRetry={() => {
             void designersQ.refetch()
@@ -352,96 +356,109 @@ export default function CeoOverview() {
         />
       )}
 
-      <VerdictBlock
-        title="This week's calls"
-        items={model?.verdicts ?? []}
-        emptyMessage="No calls this week — quality, capacity, and the pipeline are all steady."
-        loading={loading}
-      />
+      <CornerTip tip="Up to five plain-language points about this week, worst first. Each one says what happened and what you can do next.">
+        <VerdictBlock
+          title="What to know this week"
+          items={model?.verdicts ?? []}
+          emptyMessage="Nothing needs your attention this week — quality, speed and workload all look steady."
+          loading={loading}
+        />
+      </CornerTip>
 
       {/* ── Team health (§13.2): every number with delta + cause + reference ── */}
-      <section aria-label="Team health" className="grid gap-4 md:grid-cols-3">
-        <StatTile
-          eyebrow="Team throughput"
-          icon={Package}
-          value={String(model?.completionsNow ?? 0)}
-          delta={model ? metricDelta(model.completionsNow, model.completionsPrev, { goodWhen: 'up' }) : null}
-          cause={
-            model
-              ? model.teamCompletionsLine
-                ? `Completions this week — ${model.teamCompletionsLine}`
-                : 'No completions yet this week'
-              : null
-          }
-          reference={model ? `8-week average ${model.weeklyAvg}/wk` : null}
-          sparkline={model?.weeklyCompletions}
-          loading={loading}
-        />
-        <StatTile
-          eyebrow="Team first-pass quality"
-          icon={ShieldCheck}
-          value={fmtPct(model?.fpqNow.pct ?? null)}
-          delta={
-            model
-              ? metricDelta(model.fpqNow.pct, model.fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v}pp` })
-              : null
-          }
-          cause={
-            model && model.fpqNow.delivered > 0
-              ? `${model.fpqNow.clean} of ${model.fpqNow.delivered} delivered clean — ${model.fpqNow.csrCaughtRounds} CSR-caught, ${model.fpqNow.clientCaughtRounds} client-caught rounds`
-              : 'Nothing delivered yet this week'
-          }
-          reference={model?.teamFpqLine ? `By team: ${model.teamFpqLine}` : null}
-          state={
-            model?.fpqNow.pct == null
-              ? null
-              : fpqDrop > cfg.quality_decay_pct
-                ? 'flag'
-                : fpqDrop > cfg.quality_decay_pct / 2
-                  ? 'watch'
-                  : 'ok'
-          }
-          loading={loading}
-        />
-        <StatTile
-          eyebrow="Client wait (median)"
-          icon={Clock}
-          value={fmtDuration(model?.clientWaitNow ?? null)}
-          delta={
-            model
-              ? metricDelta(model.clientWaitNow, model.clientWaitPrev, {
-                  goodWhen: 'down',
-                  format: (v) => fmtDuration(v),
-                })
-              : null
-          }
-          cause="Client-owned clock — isolated so client drag never reads as team drag (§4.1)"
-          reference={
-            model
-              ? `${model.clientWaitSample} delivered task${model.clientWaitSample === 1 ? '' : 's'} waited on a client in this window`
-              : null
-          }
-          loading={loading}
-        />
+      <section aria-label="Studio health this week" className="grid gap-4 md:grid-cols-3">
+        <CornerTip tip="How many projects the team closes each week.">
+          <StatTile
+            eyebrow="Finished per week"
+            icon={Package}
+            value={String(model?.completionsNow ?? 0)}
+            delta={model ? metricDelta(model.completionsNow, model.completionsPrev, { goodWhen: 'up' }) : null}
+            cause={
+              model
+                ? model.teamCompletionsLine
+                  ? `Finished so far this week — ${model.teamCompletionsLine}`
+                  : 'Nothing finished yet this week'
+                : null
+            }
+            reference={model ? `8-week average ${model.weeklyAvg}/wk` : null}
+            sparkline={model?.weeklyCompletions}
+            loading={loading}
+          />
+        </CornerTip>
+        <CornerTip
+          tip="How many designs were accepted without anyone asking for changes. Higher is better."
+          below
+        >
+          <StatTile
+            eyebrow="Right first time"
+            icon={ShieldCheck}
+            value={fmtPct(model?.fpqNow.pct ?? null)}
+            delta={
+              model
+                ? metricDelta(model.fpqNow.pct, model.fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v}pp` })
+                : null
+            }
+            cause={
+              model && model.fpqNow.delivered > 0
+                ? `${model.fpqNow.clean} of ${model.fpqNow.delivered} designs accepted with no changes — ${model.fpqNow.csrCaughtRounds} change requests from our checkers, ${model.fpqNow.clientCaughtRounds} from clients`
+                : 'No designs sent yet this week'
+            }
+            reference={model?.teamFpqLine ? `By team: ${model.teamFpqLine}` : null}
+            state={
+              model?.fpqNow.pct == null
+                ? null
+                : fpqDrop > cfg.quality_decay_pct
+                  ? 'flag'
+                  : fpqDrop > cfg.quality_decay_pct / 2
+                    ? 'watch'
+                    : 'ok'
+            }
+            loading={loading}
+          />
+        </CornerTip>
+        <CornerTip tip="How long clients take to reply. This is the client's time, not the team's.">
+          <StatTile
+            eyebrow="Client waiting time"
+            icon={Clock}
+            value={fmtDuration(model?.clientWaitNow ?? null)}
+            delta={
+              model
+                ? metricDelta(model.clientWaitNow, model.clientWaitPrev, {
+                    goodWhen: 'down',
+                    format: (v) => fmtDuration(v),
+                  })
+                : null
+            }
+            cause="Time spent waiting for clients to reply — it never counts against the team"
+            reference={
+              model
+                ? `${model.clientWaitSample} project${model.clientWaitSample === 1 ? '' : 's'} waited on a client reply in this window`
+                : null
+            }
+            loading={loading}
+          />
+        </CornerTip>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
-        {/* ── Pipeline Bottleneck (§22.5 — named exactly this) ─────────────── */}
+        {/* ── Pipeline Bottleneck (§22.5) — shown as "Where work waits" ────── */}
         <div className="card p-6">
           <div className="flex items-center gap-2">
             <GitBranch className="h-4 w-4 text-muted" aria-hidden="true" />
-            <h2 className="eyebrow">Pipeline Bottleneck</h2>
+            <h2 className="eyebrow inline-flex items-center gap-1">
+              Where work waits{' '}
+              <InfoTip text="Shows which step projects sit in the longest — making, checking, or waiting for clients." />
+            </h2>
           </div>
           <p className="mt-2 text-sm font-medium text-fg">
-            {model?.constraint?.line ?? (loading ? '' : 'No open tasks — the pipeline is clear.')}
+            {model?.constraint?.line ?? (loading ? '' : 'No open projects right now — nothing is waiting.')}
           </p>
           <p className="mt-1 text-xs text-muted">
-            Median time-in-status per open status; open count secondary. Answers whether the
-            constraint is production, the CSR gate, or the client.
+            For each step, the bar shows how long open projects have usually been sitting there.
           </p>
           <div className="mt-4">
             {loading ? (
-              <div className="space-y-2" role="status" aria-label="Loading pipeline">
+              <div className="space-y-2" role="status" aria-label="Loading the waiting picture">
                 {[0, 1, 2, 3].map((i) => (
                   <Skeleton key={i} className="h-6 w-full" />
                 ))}
@@ -450,7 +467,7 @@ export default function CeoOverview() {
               <HBar
                 rows={model?.bottleneckRows ?? []}
                 formatValue={(v) => fmtDuration(v)}
-                ariaLabel="Median time in each pipeline status"
+                ariaLabel="How long projects usually sit in each step"
               />
             )}
           </div>
@@ -460,27 +477,38 @@ export default function CeoOverview() {
         <div className="card p-6">
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-muted" aria-hidden="true" />
-            <h2 className="eyebrow">Outliers — this week</h2>
+            <h2 className="eyebrow inline-flex items-center gap-1">
+              Stand-outs this week{' '}
+              <InfoTip text="The strongest and weakest results this week, using fair measures only — never raw project counts." />
+            </h2>
           </div>
           <p className="mt-1 text-xs text-muted">
-            First-pass quality and attainment only — never raw counts; a logo and a 25-page brand
-            guide are different units (§2).
+            Compared on &quot;Right first time&quot; and &quot;Target met&quot; only — never raw
+            counts, because a small logo and a 25-page brand guide are not the same amount of work.
           </p>
           {loading ? (
-            <div className="mt-4 space-y-2" role="status" aria-label="Loading outliers">
+            <div className="mt-4 space-y-2" role="status" aria-label="Loading stand-outs">
               {[0, 1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-6 w-full" />
               ))}
             </div>
           ) : (
             <div className="mt-4 grid gap-6 sm:grid-cols-2">
-              <OutlierList title="First-pass quality" rows={model?.fpqRanked ?? []} />
-              <OutlierList title="Quota attainment" rows={model?.attRanked ?? []} />
+              <OutlierList
+                title="Right first time"
+                tip="How many designs were accepted without anyone asking for changes. Higher is better."
+                rows={model?.fpqRanked ?? []}
+              />
+              <OutlierList
+                title="Target met"
+                tip="Out of the projects they were supposed to take, how many they finished. This is the only fair way to compare different teams."
+                rows={model?.attRanked ?? []}
+              />
             </div>
           )}
           <p className="mt-4 border-t border-border pt-3 text-xs text-muted">
-            Private to this surface — designers are never shown rankings; metrics aim coaching,
-            not shaming (§22.10).
+            Only you can see this list — designers are never shown rankings. Use it for coaching,
+            not shaming.
           </p>
         </div>
       </section>
@@ -488,13 +516,34 @@ export default function CeoOverview() {
   )
 }
 
+/**
+ * Places a small ⓘ in the corner of a card whose component only accepts a
+ * plain-string heading (StatTile, VerdictBlock). `below` drops the icon under
+ * the tile's top-right state pill so the two never overlap.
+ */
+function CornerTip({ tip, below, children }: { tip: string; below?: boolean; children: ReactNode }) {
+  return (
+    <div className="relative">
+      {children}
+      <span className={`absolute right-4 ${below ? 'top-11' : 'top-4'}`}>
+        <InfoTip text={tip} />
+      </span>
+    </div>
+  )
+}
+
 /** Top-3 / bottom-3 compact list. Bottom half is worst-first — the eye lands on the problem. */
-function OutlierList({ title, rows }: { title: string; rows: OutlierRow[] }) {
+function OutlierList({ title, tip, rows }: { title: string; tip: string; rows: OutlierRow[] }) {
+  const heading = (
+    <h3 className="inline-flex items-center gap-1 text-sm font-semibold text-fg">
+      {title} <InfoTip text={tip} />
+    </h3>
+  )
   if (rows.length === 0) {
     return (
       <div>
-        <h3 className="text-sm font-semibold text-fg">{title}</h3>
-        <p className="mt-2 text-sm text-muted">No data yet this week.</p>
+        {heading}
+        <p className="mt-2 text-sm text-muted">Nothing to show yet this week.</p>
       </div>
     )
   }
@@ -502,8 +551,8 @@ function OutlierList({ title, rows }: { title: string; rows: OutlierRow[] }) {
   const bottom = rows.length > 3 ? rows.slice(-Math.min(3, rows.length - top.length)).reverse() : []
   return (
     <div>
-      <h3 className="text-sm font-semibold text-fg">{title}</h3>
-      <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-success">Top</p>
+      {heading}
+      <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-success">Best</p>
       <ul className="mt-1">
         {top.map((r) => (
           <OutlierItem key={r.designer.id} row={r} />

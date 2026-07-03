@@ -56,20 +56,20 @@ export default function OpsLayout() {
   const commands: Command[] = useMemo(() => {
     const go = (path: string) => () => navigate(path)
     const pages: Command[] = [
-      { id: 'nav-home', label: 'Go to Home', hint: 'needs attention now', keywords: 'home attention verdict today', run: go('/ops') },
-      { id: 'nav-board', label: 'Go to Board', hint: 'live status board', keywords: 'board kanban tasks status live', run: go('/ops/board') },
-      { id: 'nav-roster', label: 'Go to Roster', hint: 'designers, quotas, shifts', keywords: 'roster designers schedule quota shift', run: go('/ops/roster') },
-      { id: 'nav-attendance', label: 'Go to Attendance', hint: 'presence + warm-up gaps', keywords: 'attendance presence check-in warmup', run: go('/ops/attendance') },
-      { id: 'nav-leave', label: 'Go to Leave', hint: 'leave, half-days, holidays', keywords: 'leave holiday half-day calendar', run: go('/ops/leave') },
-      { id: 'nav-alerts', label: 'Go to Alerts', hint: openAlertCount ? `${openAlertCount} open` : 'inbox zero', keywords: 'alerts inbox acknowledge resolve', run: go('/ops/alerts') },
-      { id: 'nav-reports', label: 'Go to Reports', hint: 'per-designer summaries + PDF', keywords: 'reports weekly pdf export attainment', run: go('/ops/reports') },
+      { id: 'nav-home', label: 'Go to Home', hint: 'what needs you right now', keywords: 'home attention verdict today', run: go('/ops') },
+      { id: 'nav-board', label: 'Go to Board', hint: 'every open project and its stage', keywords: 'board kanban tasks status live', run: go('/ops/board') },
+      { id: 'nav-roster', label: 'Go to Roster', hint: 'people, daily targets, work hours', keywords: 'roster designers schedule quota shift', run: go('/ops/roster') },
+      { id: 'nav-attendance', label: 'Go to Attendance', hint: 'who is in and when they started', keywords: 'attendance presence check-in warmup', run: go('/ops/attendance') },
+      { id: 'nav-leave', label: 'Go to Leave', hint: 'time off, half-days, holidays', keywords: 'leave holiday half-day calendar', run: go('/ops/leave') },
+      { id: 'nav-alerts', label: 'Go to Alerts', hint: openAlertCount ? `${openAlertCount} waiting` : 'nothing waiting', keywords: 'alerts inbox acknowledge resolve', run: go('/ops/alerts') },
+      { id: 'nav-reports', label: 'Go to Reports', hint: 'how each person did, with a PDF', keywords: 'reports weekly pdf export attainment', run: go('/ops/reports') },
     ]
     // Frequent actions, one keystroke away (§20.6 / §21.6).
     const actions: Command[] = [
       {
         id: 'action-log-leave',
-        label: 'Log leave',
-        hint: 'opens the add-leave drawer',
+        label: 'Add leave',
+        hint: 'record time off for someone',
         keywords: 'leave log record add time off holiday absence',
         run: go('/ops/leave?new=leave'),
       },
