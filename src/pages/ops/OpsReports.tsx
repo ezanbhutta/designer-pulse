@@ -238,45 +238,54 @@ export default function OpsReports() {
       )}
 
       <VerdictBlock
-        title={`Calls for ${period.label.toLowerCase()}`}
+        title={`What stands out — ${period.label.toLowerCase()}`}
         items={verdictItems}
-        emptyMessage="Every designer on target this period — no attainment, quality or cancellation flags."
+        emptyMessage="Everyone is on track this period — nothing stands out."
         loading={loading}
       />
 
       {/* ── Studio rollup (§20.2) ── */}
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Studio rollup">
         <StatTile
-          eyebrow="Studio attainment"
+          eyebrow={labelTip(
+            'Target met — whole studio',
+            'Out of all the projects the team was supposed to take, how many they finished.',
+          )}
           icon={Gauge}
           value={fmtPct(totals.attainment.cur)}
           delta={metricDelta(totals.attainment.cur, totals.attainment.prev, {
             goodWhen: 'up',
             format: (v) => `${v} pts`,
           })}
-          cause={`${totals.completed.cur} completed of ${totals.expected.cur} expected — the only fair cross-team number (§2)`}
+          cause={`finished ${totals.completed.cur} of ${totals.expected.cur} expected — the fairest way to compare teams`}
           loading={loading}
         />
         <StatTile
-          eyebrow="Studio first-pass quality"
+          eyebrow={labelTip(
+            'Right first time — whole studio',
+            'How many designs were accepted without anyone asking for changes. Higher is better.',
+          )}
           icon={ShieldCheck}
           value={fmtPct(totals.fpq.cur)}
           delta={metricDelta(totals.fpq.cur, totals.fpq.prev, {
             goodWhen: 'up',
             format: (v) => `${v} pts`,
           })}
-          cause={`${totals.clean.cur} of ${totals.delivered.cur} deliveries clean`}
+          cause={`${totals.clean.cur} of ${totals.delivered.cur} designs needed no changes`}
           loading={loading}
         />
         <StatTile
-          eyebrow="Cancellations"
+          eyebrow={labelTip(
+            'Cancelled orders',
+            'Orders lost because of a design problem. Check the project history before judging anyone.',
+          )}
           icon={TriangleAlert}
           value={String(totals.cancelled.cur)}
           delta={metricDelta(totals.cancelled.cur, totals.cancelled.prev, { goodWhen: 'down' })}
           cause={
             totals.assigned.cur > 0
-              ? `${Math.round((totals.cancelled.cur / totals.assigned.cur) * 100)}% of ${totals.assigned.cur} assigned — designer-fault terminal losses`
-              : 'nothing assigned in period'
+              ? `${Math.round((totals.cancelled.cur / totals.assigned.cur) * 100)}% of ${totals.assigned.cur} projects given — lost to design problems`
+              : 'no projects given in this period'
           }
           state={totals.cancelled.cur > 0 ? 'flag' : 'ok'}
           loading={loading}
@@ -284,9 +293,9 @@ export default function OpsReports() {
       </section>
 
       <p className="rounded-xl bg-surface-2 px-3 py-2.5 text-sm text-muted">
-        A logo, a 25-page brand guide and an animation are different units — raw counts are never
-        comparable across teams. Compare <strong className="text-fg">Attainment %</strong> only
-        (§2).
+        A logo, a 25-page brand guide and an animation take very different amounts of work — so
+        never compare raw counts between teams. Compare{' '}
+        <strong className="text-fg">Target met %</strong> only.
       </p>
 
       {loading ? (
@@ -297,8 +306,8 @@ export default function OpsReports() {
         </div>
       ) : rows.length === 0 ? (
         <EmptyState
-          title="No active designers"
-          hint="Add designers on the Roster page to build the period report."
+          title="No designers yet"
+          hint="Add people on the Roster page to see their reports here."
         />
       ) : (
         [...byTeam.entries()].map(([team, teamRows]) => (
@@ -310,11 +319,36 @@ export default function OpsReports() {
                   <tr className="border-b border-border/60 text-xs text-muted">
                     <th scope="col" className="w-10 px-3 py-2.5"><span className="sr-only">State</span></th>
                     <th scope="col" className="px-3 py-2.5 font-medium">Designer</th>
-                    <th scope="col" className="px-3 py-2.5 text-right font-medium">Attainment</th>
-                    <th scope="col" className="px-3 py-2.5 text-right font-medium">First-pass quality</th>
-                    <th scope="col" className="px-3 py-2.5 text-right font-medium">Production median</th>
-                    <th scope="col" className="px-3 py-2.5 text-right font-medium">Revision turnaround</th>
-                    <th scope="col" className="px-3 py-2.5 text-right font-medium">Cancelled</th>
+                    <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        Target met
+                        <InfoTip text="Out of the projects this person was supposed to take, how many they finished." />
+                      </span>
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        Right first time
+                        <InfoTip text="How many designs were accepted without anyone asking for changes. Higher is better." />
+                      </span>
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        Work time
+                        <InfoTip text="The usual time from getting a project to sending the first design. Waiting for the client is not counted." />
+                      </span>
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        Fix time
+                        <InfoTip text="The usual time to finish changes after someone asks for them." />
+                      </span>
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        Cancelled
+                        <InfoTip text="Orders lost because of a design problem." />
+                      </span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
