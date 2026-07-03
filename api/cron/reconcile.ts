@@ -26,6 +26,7 @@ import {
 } from '../_lib/clickup'
 import { getLastSync, setLastSync } from '../_lib/config'
 import {
+  autoLinkDesignerLists,
   backfillTaskHistory,
   handleCancellation,
   insertEvent,
@@ -76,6 +77,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       discoverSpaceLists(DESIGNERS_SPACE_ID),
       listDesignerMap(supa),
     ])
+
+    // Self-extending mapping: link name-matching lists to unlinked designers
+    // so their history starts flowing without anyone typing list ids.
+    const autoLinked = await autoLinkDesignerLists(supa, lists, designers)
 
     let mappedLists = 0
     let tasksChecked = 0
@@ -207,6 +212,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       since: new Date(sinceMs).toISOString(),
       lists: lists.length,
       mappedLists,
+      autoLinked,
       tasksChecked,
       backfilled,
       healed,

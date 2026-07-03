@@ -52,6 +52,57 @@ export async function listDesignerMap(supa: SupabaseAdmin): Promise<Map<string, 
 }
 
 /**
+ * Auto-link discovered lists to roster designers BY NAME: a list called
+ * "Khubaib" belongs to the designer named "Khubaib". Runs on every
+ * reconciliation, so nobody has to hand-type list ids — the system extends
+ * its own mapping as lists appear. Only links when the match is unambiguous
+ * (exactly one unlinked designer with that name, list not already claimed);
+ * every link is a DB write and lands in the audit log via triggers.
+ */
+export async function autoLinkDesignerLists(
+  supa: SupabaseAdmin,
+  lists: Array<{ id: string; name: string }>,
+  mapped: Map<string, Designer>,
+): Promise<Array<{ list_id: string; list_name: string; designer: string }>> {
+  const { data, error } = await supa
+    .from('designers')
+    .select('*')
+    .is('clickup_list_id', null)
+    .neq('status', 'deleted')
+  expectOk(error, 'unlinked designers read')
+  const unlinked = (data ?? []) as Designer[]
+  if (!unlinked.length) return []
+
+  const byName = new Map<string, Designer[]>()
+  for (const d of unlinked) {
+    const key = d.name.trim().toLowerCase()
+    byName.set(key, [...(byName.get(key) ?? []), d])
+  }
+
+  const linked: Array<{ list_id: string; list_name: string; designer: string }> = []
+  for (const list of lists) {
+    if (mapped.has(list.id)) continue
+    const candidates = byName.get(list.name.trim().toLowerCase())
+    if (!candidates || candidates.length !== 1) continue // ambiguous or no match
+    const designer = candidates[0]
+    const { error: linkErr } = await supa
+      .from('designers')
+      .update({ clickup_list_id: list.id, updated_at: new Date().toISOString() })
+      .eq('id', designer.id)
+      .is('clickup_list_id', null)
+    if (linkErr) {
+      console.error(`[ingest] auto-link failed for ${designer.name}`, linkErr)
+      continue
+    }
+    byName.delete(list.name.trim().toLowerCase())
+    mapped.set(list.id, { ...designer, clickup_list_id: list.id })
+    linked.push({ list_id: list.id, list_name: list.name, designer: designer.name })
+    console.log(`[ingest] auto-linked list "${list.name}" (${list.id}) → designer ${designer.name}`)
+  }
+  return linked
+}
+
+/**
  * Upsert the task_state snapshot from a full ClickUp task payload:
  * name / status / priority / tags → scope_tags + concept_count /
  * date_created (assignment time, spec §2) / due_date / date_closed.

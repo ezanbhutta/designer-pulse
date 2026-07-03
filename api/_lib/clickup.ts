@@ -151,29 +151,49 @@ async function request<T>(
 
 // ── Hierarchy (list auto-discovery, spec §3.1) ────────────────────────────────
 
-export async function getSpaceFolders(spaceId: string): Promise<ClickUpFolder[]> {
+export async function getSpaceFolders(
+  spaceId: string,
+  archived = false,
+): Promise<ClickUpFolder[]> {
   const data = await request<{ folders?: ClickUpFolder[] }>(
-    `/space/${spaceId}/folder?archived=false`,
+    `/space/${spaceId}/folder?archived=${archived}`,
   )
   return data.folders ?? []
 }
 
-export async function getFolderlessLists(spaceId: string): Promise<ClickUpList[]> {
-  const data = await request<{ lists?: ClickUpList[] }>(`/space/${spaceId}/list?archived=false`)
+export async function getFolderlessLists(
+  spaceId: string,
+  archived = false,
+): Promise<ClickUpList[]> {
+  const data = await request<{ lists?: ClickUpList[] }>(
+    `/space/${spaceId}/list?archived=${archived}`,
+  )
   return data.lists ?? []
 }
 
-/** All lists in the space — folders' lists plus folderless, de-duplicated. */
+/**
+ * All lists in the space — folders' lists plus folderless, ACTIVE AND
+ * ARCHIVED, de-duplicated. Archived structures still hold task history (and
+ * their tasks still surface in space-wide views), so skipping them silently
+ * hides whole designers from the system.
+ */
 export async function discoverSpaceLists(
   spaceId: string = DESIGNERS_SPACE_ID,
 ): Promise<ClickUpList[]> {
-  const [folders, folderless] = await Promise.all([
-    getSpaceFolders(spaceId),
-    getFolderlessLists(spaceId),
+  const [folders, archivedFolders, folderless, archivedFolderless] = await Promise.all([
+    getSpaceFolders(spaceId, false),
+    getSpaceFolders(spaceId, true).catch(() => [] as ClickUpFolder[]),
+    getFolderlessLists(spaceId, false),
+    getFolderlessLists(spaceId, true).catch(() => [] as ClickUpList[]),
   ])
   const out: ClickUpList[] = []
   const seen = new Set<string>()
-  for (const list of [...folders.flatMap((f) => f.lists ?? []), ...folderless]) {
+  for (const list of [
+    ...folders.flatMap((f) => f.lists ?? []),
+    ...archivedFolders.flatMap((f) => f.lists ?? []),
+    ...folderless,
+    ...archivedFolderless,
+  ]) {
     if (!seen.has(list.id)) {
       seen.add(list.id)
       out.push(list)
