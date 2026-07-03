@@ -115,12 +115,24 @@ async function request<T>(
   const method = init?.method ?? 'GET'
   for (let attempt = 0; ; attempt++) {
     if (remainingMs() < 2_000) throw new ClickUpBudgetError()
-    const res = await fetch(`${BASE}${path}`, {
-      method,
-      headers: { Authorization: token, 'Content-Type': 'application/json' },
-      body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
-      signal: AbortSignal.timeout(Math.min(Math.max(remainingMs() - 1_000, 1_000), 25_000)),
-    })
+    let res: Response
+    try {
+      res = await fetch(`${BASE}${path}`, {
+        method,
+        headers: { Authorization: token, 'Content-Type': 'application/json' },
+        body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+        signal: AbortSignal.timeout(Math.min(Math.max(remainingMs() - 1_000, 1_000), 25_000)),
+      })
+    } catch (err) {
+      // A slow ClickUp response hitting the abort cap is a budget condition,
+      // not a failure — sliced callers answer done:false and resume next call.
+      const name = (err as { name?: string })?.name
+      const causeName = (err as { cause?: { name?: string } })?.cause?.name
+      if (name === 'TimeoutError' || name === 'AbortError' || causeName === 'TimeoutError') {
+        throw new ClickUpBudgetError(`ClickUp ${method} ${path} exceeded the invocation budget`)
+      }
+      throw err
+    }
     if (res.status === 429 && attempt < 3) {
       const retryAfter = Number(res.headers.get('retry-after'))
       const waitMs =

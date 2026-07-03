@@ -27,7 +27,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { canonicalizeStatus, parseConceptCount } from '../../shared/statuses'
 import { computeTaskMetrics, reconstructBackfillEvents, type TransitionEvent } from '../../shared/metrics'
-import { json, requireCronAuth } from '../_lib/http'
+import { APP_VERSION, json, requireCronAuth } from '../_lib/http'
 import { expectOk, supabaseAdmin, type SupabaseAdmin } from '../_lib/supabaseAdmin'
 import {
   ClickUpBudgetError,
@@ -85,6 +85,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     json(res, 200, {
       ok: true,
       done,
+      version: APP_VERSION,
       lists: results,
       skipped,
       timings,
