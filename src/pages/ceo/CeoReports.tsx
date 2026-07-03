@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
+import { InfoTip } from '../../components/ui/InfoTip'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/ToastProvider'
 import {

@@ -17,6 +17,7 @@ import type { LucideIcon } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
+import { InfoTip } from '../../components/ui/InfoTip'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { StatTile } from '../../components/ui/StatTile'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
@@ -50,6 +51,32 @@ const STATUS_META: Record<
   WeeklyOff: { tone: 'neutral', icon: CalendarX, letter: 'W', cell: 'bg-surface-2 text-muted' },
   Absent: { tone: 'danger', icon: TriangleAlert, letter: 'A', cell: 'bg-danger-soft text-danger' },
   Incomplete: { tone: 'warning', icon: Hourglass, letter: 'I', cell: 'bg-warning-soft text-warning' },
+}
+
+/** Plain-English display names for attendance statuses (visible text only). */
+const STATUS_DISPLAY: Record<AttendanceStatus, string> = {
+  Present: 'Present',
+  HolidayWorked: 'Holiday worked',
+  Leave: 'Leave',
+  Holiday: 'Holiday',
+  WeeklyOff: 'Day off',
+  Absent: 'Absent',
+  Incomplete: 'Incomplete',
+}
+
+/**
+ * Label + ⓘ for StatTile's string-typed `eyebrow` (copy-pass workaround, local
+ * to this file — StatTile's props are owned elsewhere). The node keeps a
+ * readable toString so StatTile's template-literal aria-labels stay sensible.
+ */
+function labelTip(label: string, tip: string): string {
+  const node = (
+    <span className="inline-flex items-center gap-1">
+      {label}
+      <InfoTip text={tip} />
+    </span>
+  )
+  return Object.assign({}, node, { toString: () => label }) as unknown as string
 }
 
 interface DayRow {
@@ -192,23 +219,23 @@ export default function OpsAttendance() {
         items.push({
           id: `review-${row.id}`,
           severity: 'warning',
-          text: `Verify ${designer.name} — auto-closed at shift end with no ClickUp activity`,
-          detail: 'A check-in with nothing corroborating work (§9.2). Confirm before the day counts.',
+          text: `Double-check ${designer.name}'s day — the system closed it because they forgot to press Check out`,
+          detail: 'They pressed Check in, but no work showed up after that. Please confirm before the day counts.',
           action: { label: 'Open details', onClick: () => openDesigner(designer.id) },
         })
       } else if (row.status === 'Incomplete') {
         items.push({
           id: `incomplete-${row.id}`,
           severity: 'warning',
-          text: `${designer.name}'s day is incomplete — checked in, never out, no activity`,
+          text: `${designer.name} checked in but never checked out, and no work showed up`,
           action: { label: 'Open details', onClick: () => openDesigner(designer.id) },
         })
       } else if (row.status === 'Absent') {
         items.push({
           id: `absent-${row.id}`,
           severity: 'warning',
-          text: `${designer.name} absent — no marks and no ClickUp activity in the shift window`,
-          detail: 'Holiday, leave and weekly off were checked first — this is unexplained.',
+          text: `${designer.name} was absent — no check-in and no work during their hours`,
+          detail: 'It was not a holiday, leave or day off — so this is unexplained.',
           action: { label: 'Open details', onClick: () => openDesigner(designer.id) },
         })
       } else if (
@@ -220,8 +247,8 @@ export default function OpsAttendance() {
           severity: 'info',
           text: `${designer.name} checked in at ${fmtTime(row.declared_in)} but took ${fmtDuration(
             row.warmup_gap_min,
-          )} to start — check in with them`,
-          detail: 'Warm-up gap = check-in → first ClickUp activity (§9.3). A green light with idle hours is paid idle time.',
+          )} to start working — worth a quick chat`,
+          detail: 'Start delay is the time between pressing Check in and doing the first real work in ClickUp.',
           action: { label: 'Open details', onClick: () => openDesigner(designer.id) },
         })
       }
@@ -243,7 +270,7 @@ export default function OpsAttendance() {
       void queryClient.invalidateQueries({ queryKey: ['shift-marks'] })
       const label = vars.markType === 'check_in' ? 'check-in' : 'check-out'
       toast({
-        message: `Manual ${label} recorded at ${fmtTime(vars.markedAt)}`,
+        message: `${vars.markType === 'check_in' ? 'Check-in' : 'Check-out'} saved for ${fmtTime(vars.markedAt)}`,
         undo: async () => {
           // The delete works server-side for ops roles — but a failure must be
           // seen, never swallowed (§20.6): surface the exact error and leave
@@ -251,7 +278,7 @@ export default function OpsAttendance() {
           try {
             await deleteManualShiftMark(vars.designerId, vars.markedAt)
           } catch (e) {
-            toast({ message: `Couldn't undo the manual ${label} — ${(e as Error).message}` })
+            toast({ message: `Could not undo the ${label} — ${(e as Error).message}` })
             return
           }
           void queryClient.invalidateQueries({ queryKey: ['attendance'] })
@@ -259,7 +286,7 @@ export default function OpsAttendance() {
         },
       })
     },
-    onError: (e: Error) => toast({ message: `Couldn't record the mark — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `Could not save it — ${e.message}` }),
   })
 
   const mark = (designerId: string, markType: 'check_in' | 'check_out') =>
@@ -272,19 +299,25 @@ export default function OpsAttendance() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="eyebrow">Attendance · dual signal — declared marks × ClickUp activity (§9)</p>
-          <h1 className="mt-1 text-3xl font-semibold text-fg">Attendance</h1>
+          <p className="eyebrow">Attendance · check-ins matched against real work in ClickUp</p>
+          <h1 className="mt-1 inline-flex items-center gap-2 text-3xl font-semibold text-fg">
+            Attendance
+            <InfoTip text="Who is in, when they started and stopped, and how long after checking in they began real work." />
+          </h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <SegmentedControl<View>
-            options={[
-              { value: 'day', label: 'Day' },
-              { value: 'week', label: 'Week grid' },
-            ]}
-            value={view}
-            onChange={setView}
-            ariaLabel="Attendance view"
-          />
+          <div className="flex items-center gap-1">
+            <SegmentedControl<View>
+              options={[
+                { value: 'day', label: 'Day' },
+                { value: 'week', label: 'Week' },
+              ]}
+              value={view}
+              onChange={setView}
+              ariaLabel="Attendance view"
+            />
+            <InfoTip text="See one day in detail, or the whole week at a glance." />
+          </div>
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -326,7 +359,7 @@ export default function OpsAttendance() {
 
       {attendanceQ.error && (
         <ErrorBanner
-          message="Couldn't refresh attendance — showing the last loaded days."
+          message="Could not load the latest attendance — you are seeing the last saved view."
           asOf={
             attendanceQ.dataUpdatedAt > 0
               ? fmtTime(new Date(attendanceQ.dataUpdatedAt).toISOString())
@@ -339,7 +372,7 @@ export default function OpsAttendance() {
       <VerdictBlock
         title={`Needs a look — ${fmtDate(date)}`}
         items={verdictItems}
-        emptyMessage="Everyone accounted for — presence is clean."
+        emptyMessage="Everyone is accounted for — nothing to check."
         loading={attendanceQ.isLoading || designersQ.isLoading}
       />
 

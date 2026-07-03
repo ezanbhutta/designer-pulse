@@ -260,44 +260,53 @@ function TeamCard({ model: t }: { model: TeamModel }) {
             {t.members.length} designer{t.members.length === 1 ? '' : 's'}
           </span>
         </div>
-        <Badge
-          tone={utilizationPctNow == null ? 'neutral' : utilizationPctNow > 120 ? 'danger' : utilizationPctNow >= 60 ? 'success' : 'neutral'}
-        >
-          {utilizationPctNow == null
-            ? `${t.loadNow} active now · no quota today`
-            : `Utilization ${utilizationPctNow}% — ${t.loadNow} active / ${t.quotaToday} slots today${utilizationPctNow > 120 ? ' · overloaded' : utilizationPctNow < 60 ? ' · spare capacity' : ''}`}
-        </Badge>
+        <span className="inline-flex items-center gap-1">
+          <Badge
+            tone={utilizationPctNow == null ? 'neutral' : utilizationPctNow > 120 ? 'danger' : utilizationPctNow >= 60 ? 'success' : 'neutral'}
+          >
+            {utilizationPctNow == null
+              ? `${t.loadNow} project${t.loadNow === 1 ? '' : 's'} in hand · no planned slots today`
+              : `Busy level ${utilizationPctNow}% — ${t.loadNow} projects in hand for ${t.quotaToday} planned slots today${utilizationPctNow > 120 ? ' · too much on their plate' : utilizationPctNow < 60 ? ' · room for more' : ''}`}
+          </Badge>
+          <InfoTip text="How full the team's plate is right now: projects being worked on, compared with the slots planned for today." />
+        </span>
       </div>
 
       <div className="mt-5 grid gap-6 lg:grid-cols-[1fr,320px]">
         <div className="grid gap-4 sm:grid-cols-3">
           <MiniStat
-            label="First-pass quality"
+            label="Right first time"
+            tip="How many designs were accepted without anyone asking for changes. Higher is better."
             value={fmtPct(t.fpqPct)}
             delta={t.fpqDelta}
             cause={t.fpqCause}
           />
           <MiniStat
-            label="Client wait (median)"
+            label="Client waiting time"
+            tip="How long clients take to reply. This is the client's time, not the team's."
             value={fmtDuration(t.clientWait)}
             delta={t.clientWaitDelta}
-            cause="Client-owned time — excluded from designer speed (§4.1)"
+            cause="Waiting on clients — never counted against the team"
           />
           <MiniStat
-            label="Revision turnaround"
+            label="Fix time"
+            tip="How long changes usually take once someone asks for them. Also called revision turnaround."
             value={fmtDuration(t.revisionTurnaround)}
             delta={t.revisionTurnaroundDelta}
-            cause="Median time revised tasks were held in revision this week"
+            cause="Usual time spent on changes this week"
           />
         </div>
         <div>
-          <p className="eyebrow">Throughput — 8 weeks</p>
+          <p className="eyebrow inline-flex items-center gap-1">
+            Finished per week — last 8 weeks{' '}
+            <InfoTip text="How many projects the team closes each week. The dotted line is the 8-week average." />
+          </p>
           <div className="mt-2">
             <TrendLine
               points={t.trend}
               baseline={t.trendBaseline}
               tone="brand"
-              ariaLabel={`${t.team} weekly completions over the last 8 weeks`}
+              ariaLabel={`${t.team}: projects finished each week over the last 8 weeks`}
             />
           </div>
         </div>
@@ -305,26 +314,35 @@ function TeamCard({ model: t }: { model: TeamModel }) {
 
       {/* §19 — first delivery merges CSR send + client review; CSR speed is only measurable on revision cycles. */}
       <p className="mt-3 text-xs text-muted">
-        CSR send latency is measurable on revision cycles only (§19) — client wait and revision
-        turnaround stand in at team level; no individual CSR is tracked (§1.2).
+        We cannot time our own checkers on first deliveries, so &quot;Client waiting time&quot; and
+        &quot;Fix time&quot; stand in at team level — no individual checker is tracked.
       </p>
 
       <div className="mt-5 border-t border-border pt-4">
-        <div
-          className="hidden gap-2 px-1 pb-2 sm:grid sm:grid-cols-[minmax(0,1fr),6rem,6rem,6rem,minmax(8rem,auto)]"
-          aria-hidden="true"
-        >
+        <div className="hidden gap-2 px-1 pb-2 sm:grid sm:grid-cols-[minmax(0,1fr),7rem,7.5rem,7rem,minmax(8rem,auto)]">
           <span className="eyebrow">Designer</span>
-          <span className="eyebrow text-right">Attainment</span>
-          <span className="eyebrow text-right">First-pass</span>
-          <span className="eyebrow text-right">Production</span>
-          <span className="eyebrow text-right">Flags</span>
+          <span className="eyebrow inline-flex items-center justify-end gap-1 text-right">
+            Target met{' '}
+            <InfoTip text="Out of the projects they were supposed to take, how many they finished. This is the only fair way to compare different teams." />
+          </span>
+          <span className="eyebrow inline-flex items-center justify-end gap-1 text-right">
+            Right first time{' '}
+            <InfoTip text="How many designs were accepted without anyone asking for changes. Higher is better." />
+          </span>
+          <span className="eyebrow inline-flex items-center justify-end gap-1 text-right">
+            Work time{' '}
+            <InfoTip text="Usual time from getting a project to sending the first design. Client waiting time is not counted." />
+          </span>
+          <span className="eyebrow inline-flex items-center justify-end gap-1 text-right">
+            Notes{' '}
+            <InfoTip text="Quick signs from this week — good or worrying. The person who most needs attention is listed first." />
+          </span>
         </div>
         <ul>
           {t.rows.map((r) => (
             <li
               key={r.designer.id}
-              className="grid grid-cols-2 items-center gap-2 border-b border-border/50 px-1 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,1fr),6rem,6rem,6rem,minmax(8rem,auto)]"
+              className="grid grid-cols-2 items-center gap-2 border-b border-border/50 px-1 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,1fr),7rem,7.5rem,7rem,minmax(8rem,auto)]"
             >
               <span className="min-w-0 truncate text-sm font-medium text-fg">
                 {r.designer.name}
@@ -335,13 +353,13 @@ function TeamCard({ model: t }: { model: TeamModel }) {
               <span className="tnum text-right text-sm text-fg">
                 {fmtPct(r.cur.attainmentPct)}
                 <span className="block text-xs text-muted">
-                  {r.cur.expectedQuota > 0 ? `${r.cur.completed} of ${r.cur.expectedQuota}` : 'no quota'}
+                  {r.cur.expectedQuota > 0 ? `${r.cur.completed} of ${r.cur.expectedQuota}` : 'no target set'}
                 </span>
               </span>
               <span className="tnum text-right text-sm text-fg">
                 {fmtPct(r.cur.firstPassQualityPct)}
                 <span className="block text-xs text-muted">
-                  {r.cur.delivered > 0 ? `${r.cur.firstPassClean}/${r.cur.delivered} clean` : 'none delivered'}
+                  {r.cur.delivered > 0 ? `${r.cur.firstPassClean} of ${r.cur.delivered}` : 'none sent'}
                 </span>
               </span>
               <span className="tnum text-right text-sm text-fg">
@@ -368,18 +386,22 @@ function TeamCard({ model: t }: { model: TeamModel }) {
 
 function MiniStat({
   label,
+  tip,
   value,
   delta,
   cause,
 }: {
   label: string
+  tip: string
   value: string
   delta: TileDelta | null
   cause: string
 }) {
   return (
     <div>
-      <p className="eyebrow">{label}</p>
+      <p className="eyebrow inline-flex items-center gap-1">
+        {label} <InfoTip text={tip} />
+      </p>
       <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="tnum text-2xl font-medium text-fg">{value}</span>
         {delta && <DeltaChip direction={delta.direction} good={delta.good} label={delta.label} />}
