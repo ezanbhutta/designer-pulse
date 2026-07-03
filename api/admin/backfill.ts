@@ -35,10 +35,18 @@ import {
   discoverSpaceLists,
   getBulkTimeInStatus,
   getListTasks,
+  getTask,
   setClickUpDeadline,
   type ClickUpTask,
 } from '../_lib/clickup'
-import { insertEvents, listDesignerMap, msToIso, type IngestEvent } from '../_lib/ingest'
+import {
+  backfillTaskHistory,
+  insertEvents,
+  listDesignerMap,
+  msToIso,
+  recomputeTaskMetrics,
+  type IngestEvent,
+} from '../_lib/ingest'
 
 const CURSOR_KEY = 'backfill_cursor'
 
@@ -115,6 +123,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const onlyListId =
       typeof rawParam === 'string' ? rawParam : Array.isArray(rawParam) ? rawParam[0] : null
     const force = req.query.force === '1' || req.query.force === 'true'
+
+    // ── Single-task re-sync (?task_id=): fetch the task live from ClickUp,
+    // rebuild its history (incl. snapshot heal), recompute, and REPORT what
+    // ClickUp says — the precise tool for "why does this one task look wrong".
+    const rawTask = req.query.task_id
+    const onlyTaskId =
+      typeof rawTask === 'string' ? rawTask : Array.isArray(rawTask) ? rawTask[0] : null
+    if (onlyTaskId) {
+      await resyncSingleTask(supa, onlyTaskId, respond)
+      return
+    }
 
     const [lists, designers] = await timed('discover', () =>
       Promise.all([discoverSpaceLists(DESIGNERS_SPACE_ID), listDesignerMap(supa)]),
@@ -397,6 +416,63 @@ async function importChunk(
   expectOk(sErr.error, 'task_state batch refresh')
 
   return createdEvents.length + statusEvents.length
+}
+
+/** Fetch one task live from ClickUp, rebuild its history, report the truth. */
+async function resyncSingleTask(
+  supa: SupabaseAdmin,
+  taskId: string,
+  respond: (done: boolean, extra?: Record<string, unknown>) => void,
+): Promise<void> {
+  let task: ClickUpTask
+  try {
+    task = await getTask(taskId)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('404') || /not found/i.test(msg)) {
+      // Task no longer exists in ClickUp → our snapshot row is a ghost.
+      await supa
+        .from('task_state')
+        .update({ deleted: true, updated_at: new Date().toISOString() })
+        .eq('task_id', taskId)
+      respond(true, {
+        task_id: taskId,
+        action: 'soft-deleted',
+        note: 'Task no longer exists in ClickUp — removed from the live board.',
+      })
+      return
+    }
+    throw err
+  }
+
+  const listId = task.list?.id ?? null
+  const designers = await listDesignerMap(supa)
+  const designer = listId ? designers.get(listId) : undefined
+  if (!listId || !designer) {
+    respond(true, {
+      task_id: taskId,
+      action: 'none',
+      clickup_status: task.status?.status ?? null,
+      clickup_list: { id: listId, name: task.list?.name ?? null },
+      note: 'This task now lives in a list with NO roster designer mapped — the sync jobs never see it. Either map that list to a designer in the Roster, or if the task should not be tracked, its stale row can be ignored/soft-deleted.',
+    })
+    return
+  }
+
+  await backfillTaskHistory(supa, task, listId, designer.id)
+  await recomputeTaskMetrics(supa, taskId)
+  const { data: after } = await supa
+    .from('task_state')
+    .select('current_status,last_event_at')
+    .eq('task_id', taskId)
+    .maybeSingle()
+  respond(true, {
+    task_id: taskId,
+    action: 'resynced',
+    clickup_status: task.status?.status ?? null,
+    system_status_now: (after as { current_status?: string } | null)?.current_status ?? null,
+    designer: designer.name,
+  })
 }
 
 /** Read the persisted (list, page) cursor; null = start from the top. */
