@@ -43,6 +43,26 @@ export interface DueSweepResult {
   partial: boolean
 }
 
+const SWEEP_CURSOR_KEY = 'due_sweep_cursor'
+
+async function loadSweepCursor(supa: SupabaseAdmin): Promise<string | null> {
+  const { data, error } = await supa
+    .from('app_config')
+    .select('value')
+    .eq('key', SWEEP_CURSOR_KEY)
+    .maybeSingle()
+  expectOk(error, 'due-sweep cursor read')
+  const v = data?.value
+  return typeof v === 'string' && v ? v : null
+}
+
+async function saveSweepCursor(supa: SupabaseAdmin, listId: string): Promise<void> {
+  const { error } = await supa
+    .from('app_config')
+    .upsert({ key: SWEEP_CURSOR_KEY, value: listId }, { onConflict: 'key' })
+  expectOk(error, 'due-sweep cursor save')
+}
+
 export async function sweepDueToday(
   supa: SupabaseAdmin,
   lists: Array<{ id: string; name: string }>,
@@ -64,11 +84,17 @@ export async function sweepDueToday(
 
   const mapped = lists.filter((l) => designers.has(l.id))
   if (!mapped.length) return res
-  const rot = Math.floor(Date.now() / 900_000) % mapped.length
-  const order = [...mapped.slice(rot), ...mapped.slice(0, rot)]
+
+  // Persistent ring cursor: every run RESUMES where the previous one stopped
+  // (reconcile and /api/tick share it), so budget-cut sweeps still cover the
+  // whole workspace within a few consecutive runs — no list can be starved.
+  const cursor = await loadSweepCursor(supa)
+  let start = cursor ? mapped.findIndex((l) => l.id === cursor) : 0
+  if (start < 0) start = 0
+  const order = [...mapped.slice(start), ...mapped.slice(0, start)]
 
   try {
-    for (const list of order) {
+    for (const [i, list] of order.entries()) {
       if (endAtMs - Date.now() < 2_500) {
         res.partial = true
         break
@@ -179,10 +205,15 @@ export async function sweepDueToday(
         }
         res.phantoms++
       }
+
+      // List fully swept — advance the resume point. A mid-list budget death
+      // leaves the cursor HERE, so the next run redoes this list (idempotent,
+      // and already-imported work shrinks each retry).
+      await saveSweepCursor(supa, order[(i + 1) % order.length].id)
     }
   } catch (err) {
     if (!(err instanceof ClickUpBudgetError)) throw err
-    res.partial = true // budget gone — the rotation covers the rest next run
+    res.partial = true // budget gone — the cursor resumes the rest next run
   }
   return res
 }
