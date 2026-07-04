@@ -187,30 +187,20 @@ export default function OpsHome() {
       })
     }
 
-    // 2. Aging open tasks, worst first — client response called out (§20.3).
+    // 2. Aging open tasks, worst first. Tasks waiting on the client are never
+    // here — waiting for a reply is normal, not an error.
     for (const { task, age, threshold } of derived.agingTasks.slice(0, 5)) {
       const d = task.designer_id ? designerById.get(task.designer_id) : undefined
-      const days = Math.floor(age / (24 * 60))
       const href = clickupTaskUrl(task.task_id)
-      if (task.current_status === 'client response') {
-        items.push({
-          id: `age-${task.task_id}`,
-          severity: age >= threshold * 2 ? 'critical' : 'warning',
-          text: `Ask the client to reply — "${task.name ?? task.task_id}" has been waiting ${days} day${days === 1 ? '' : 's'}`,
-          detail: `${d?.name ?? 'No one yet'} · The client has it — this wait never counts against the designer.`,
-          action: href ? { label: 'Open in ClickUp', href } : undefined,
-        })
-      } else {
-        items.push({
-          id: `age-${task.task_id}`,
-          severity: age >= threshold * 2 ? 'critical' : 'warning',
-          text: `"${task.name ?? task.task_id}" stuck in ${
-            task.current_status ? STATUS_LABELS[task.current_status] : 'one stage'
-          } for ${fmtDuration(age)}`,
-          detail: `${d?.name ?? 'No one yet'} · flagged after ${Math.round(threshold / (24 * 60))} days without moving`,
-          action: href ? { label: 'Open in ClickUp', href } : undefined,
-        })
-      }
+      items.push({
+        id: `age-${task.task_id}`,
+        severity: age >= threshold * 2 ? 'critical' : 'warning',
+        text: `"${task.name ?? task.task_id}" stuck in ${
+          task.current_status ? STATUS_LABELS[task.current_status] : 'one stage'
+        } for ${fmtDuration(age)}`,
+        detail: `${d?.name ?? 'No one yet'} · flagged after ${Math.round(threshold / (24 * 60))} days without moving`,
+        action: href ? { label: 'Open in ClickUp', href } : undefined,
+      })
     }
 
     // 3. Fresh cancellations — designer-fault terminal loss (last 24h).
@@ -516,7 +506,7 @@ export default function OpsHome() {
               <EmptyState
                 icon={CheckCircle2}
                 title="Nothing is stuck"
-                hint={`Nothing has sat still for more than ${cfg.aging_days_default} days (${cfg.aging_days_client_response} days when waiting for a client).`}
+                hint={`Nothing has sat still for more than ${cfg.aging_days_default} days. Waiting for a client never counts as stuck.`}
               />
             ) : (
               derived.agingTasks.slice(0, 5).map(({ task }) => (

@@ -481,7 +481,9 @@ export function burnoutRisk(
 
 // ── Aging threshold (§11 T3) ──────────────────────────────────────────────────
 
+// Waiting on the client is NEVER stuck (clients reply late — that's normal),
+// so `client response` gets an infinite threshold everywhere.
 export function agingThresholdMin(status: CanonicalStatus | null, cfg: Config): number {
-  const days = status === 'client response' ? cfg.aging_days_client_response : cfg.aging_days_default
-  return days * 24 * 60
+  if (status === 'client response') return Infinity
+  return cfg.aging_days_default * 24 * 60
 }

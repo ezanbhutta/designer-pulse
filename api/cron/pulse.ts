@@ -203,20 +203,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       thresholdDays: number
     }
     const candidates: AgedCandidate[] = []
+    // Waiting on the client is NEVER an error — clients reply late, that's
+    // the business — so client-response tasks can't become alert candidates.
+    // Long client waits are still silently verified against ClickUp so rows
+    // frozen by old imports heal without ever flagging anyone.
+    const silentVerify: TaskState[] = []
     for (const t of openTasks) {
       if (!t.current_status) continue
-      const thresholdDays =
-        t.current_status === 'client response'
-          ? cfg.aging_days_client_response
-          : cfg.aging_days_default
       const age = ageMinutes(t, now)
+      if (t.current_status === 'client response') {
+        if (age >= cfg.aging_days_client_response * 1440) silentVerify.push(t)
+        continue
+      }
+      const thresholdDays = cfg.aging_days_default
       if (age < thresholdDays * 1440) continue
       const days = Math.floor(age / 1440)
       const severity = age >= thresholdDays * 2 * 1440 ? 'critical' : 'warning'
-      const message =
-        t.current_status === 'client response'
-          ? `"${t.name ?? t.task_id}" parked ${days}d in client response — nudge the client`
-          : `"${t.name ?? t.task_id}" has sat ${days}d in ${STATUS_LABELS[t.current_status]}`
+      const message = `"${t.name ?? t.task_id}" has sat ${days}d in ${STATUS_LABELS[t.current_status]}`
       candidates.push({ t, severity, message, days, thresholdDays })
     }
 
@@ -227,7 +230,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     try {
       agedVerify = await verifyAgedOpenTasks(
         supa,
-        candidates.map((c) => c.t),
+        [...candidates.map((c) => c.t), ...silentVerify],
         started + BUDGET_MS - 8_000, // reserve room for attendance + response
       )
       for (const id of agedVerify.removed) agedTaskIds.delete(id)

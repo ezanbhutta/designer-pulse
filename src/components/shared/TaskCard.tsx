@@ -31,10 +31,10 @@ export function TaskCard({ task, onOpen, designerName }: TaskCardProps) {
   const status = task.current_status
   const isOpen = status != null && !TERMINAL_STATUSES.includes(status)
   const age = ageMinutes(task)
+  // Waiting on the client is never "stuck" — clients reply late, that's
+  // normal — so client-response tasks never wear the aging badge.
   const thresholdMin =
-    (status === 'client response' ? cfg.aging_days_client_response : cfg.aging_days_default) *
-    24 *
-    60
+    status === 'client response' ? Infinity : cfg.aging_days_default * 24 * 60
   const aging = isOpen && age >= thresholdMin
   const severe = isOpen && age >= thresholdMin * 2
   const priority = task.priority?.toLowerCase() ?? null
