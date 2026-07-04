@@ -6,12 +6,9 @@
  * (§20.1). Read-only; private manager-facing interpretation (§22.10).
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import {
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
   Download,
   FileText,
   Minus,
@@ -23,6 +20,13 @@ import { ActionButton } from '../../components/ui/ActionButton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
+import {
+  DateRangePicker,
+  resolveRange,
+  type DateRangeValue,
+  type RangeMode,
+} from '../../components/ui/DateRangePicker'
+import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/ToastProvider'
 import { HeroMetric, Reveal, RevealItem } from './ceoKit'
@@ -31,7 +35,7 @@ import {
   summarizeDesigner,
   type DesignerPeriodSummary,
 } from '../../../shared/aggregate'
-import { addDays, pktToday } from '../../../shared/pkt'
+import { pktToday } from '../../../shared/pkt'
 import type { Config, Designer } from '../../../shared/types'
 import { fmtDate, fmtDuration, fmtPct, fmtTime } from '../../lib/format'
 import { generateWeeklyReportPdf } from '../../lib/reportPdf'
@@ -39,7 +43,6 @@ import {
   TEAMS,
   activeDesigners,
   firstName,
-  lastFullWeekRange,
   mergeTasks,
   metricDelta,
   productionMedianInPeriod,
@@ -52,7 +55,6 @@ import {
   type PeriodRange,
 } from './ceoData'
 
-const MAX_WEEKS_BACK = 26
 
 interface ReportRow {
   designer: Designer
@@ -62,16 +64,27 @@ interface ReportRow {
   interpretation: string
 }
 
+/** Human label per preset for the history line. */
+const MODE_LABEL: Record<RangeMode, string> = {
+  today: 'Today',
+  yesterday: 'Yesterday',
+  '7d': 'Last 7 days',
+  '30d': 'Last 30 days',
+  custom: 'Custom range',
+}
+
 export default function CeoReports() {
   const toast = useToast()
   const today = pktToday()
-  // Period picker: 0 = the most recent complete Mon–Sun week (§13.2 default).
-  const [weeksBack, setWeeksBack] = useState(0)
-  const base = lastFullWeekRange(today)
-  const period: PeriodRange = {
-    start: addDays(base.start, -7 * weeksBack),
-    end: addDays(base.end, -7 * weeksBack),
-  }
+  // The CSR-style date filter (identical to Ops Reports): presets re-resolve
+  // to today on load so a stored preset never goes stale; custom keeps its
+  // exact dates. Default 7 days.
+  const [stored, setStored] = useLocalStorage<DateRangeValue>(
+    'pulse.ceo.reports.range',
+    resolveRange('7d', '', '', today),
+  )
+  const value = stored.mode === 'custom' ? stored : resolveRange(stored.mode, stored.start, stored.end, today)
+  const period: PeriodRange = { start: value.start, end: value.end }
   const prior = priorPeriod(period.start, period.end)
 
   const designersQ = useDesigners()
@@ -153,49 +166,27 @@ export default function CeoReports() {
         titleAccessory={
           <InfoTip text="Your Monday review, already prepared — one card per designer with their numbers and a one-line summary." />
         }
-        history="Each designer's week at a glance — target met, right first time, work time, and which way they are heading. Covers a full Monday–Sunday week (Pakistan time)"
+        history={`${MODE_LABEL[value.mode]} · ${fmtDate(period.start)} – ${fmtDate(period.end)}, compared with the same length of time just before. All times Pakistan time.`}
         actions={
-          <ActionButton
-            onAction={() => download()}
-            disabled={loading || !model || model.rows.length === 0}
-            aria-label="Download this week's report as a PDF"
-            className="min-h-11"
-          >
-            <Download className="h-4 w-4" aria-hidden="true" />
-            Download PDF
-          </ActionButton>
+          <>
+            <span className="flex items-center gap-1">
+              <DateRangePicker value={value} onChange={setStored} />
+              <InfoTip text="Pick the time period. Every number is compared with the same length of time just before it." />
+            </span>
+            <ActionButton
+              onAction={() => download()}
+              disabled={loading || !model || model.rows.length === 0}
+              aria-label="Download this report as a PDF"
+              className="min-h-11"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Download PDF
+            </ActionButton>
+          </>
         }
       />
 
-      {/* ── Period picker — defaults to the last full week; never blank (§20.4) ── */}
-      <div className="flex items-center gap-2" role="group" aria-label="Report week">
-        <button
-          type="button"
-          onClick={() => setWeeksBack((w) => Math.min(MAX_WEEKS_BACK, w + 1))}
-          disabled={weeksBack >= MAX_WEEKS_BACK}
-          aria-label="Previous week"
-          className="flex h-11 w-11 items-center justify-center rounded-xl border border-border text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <span className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface px-4 text-caption font-medium text-fg">
-          <Calendar className="h-4 w-4 text-muted" aria-hidden="true" />
-          Mon {fmtDate(period.start)} – Sun {fmtDate(period.end)}
-          {weeksBack === 0 && <span className="text-label font-normal text-muted">· most recent full week</span>}
-          <InfoTip text="The week this report covers. Use the arrows to look at earlier weeks." />
-        </span>
-        <button
-          type="button"
-          onClick={() => setWeeksBack((w) => Math.max(0, w - 1))}
-          disabled={weeksBack === 0}
-          aria-label="Next week"
-          className="flex h-11 w-11 items-center justify-center rounded-xl border border-border text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <ChevronRight className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
-
-      {/* ── The headline number: the studio's week in one figure ───────────── */}
+      {/* ── The headline number: the studio's period in one figure ─────────── */}
       <HeroMetric
         eyebrow="Projects finished"
         tip="How many projects the whole studio closed in the selected week, compared with the week before."

@@ -13,7 +13,12 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
-import { SegmentedControl } from '../../components/ui/SegmentedControl'
+import {
+  DateRangePicker,
+  resolveRange,
+  type DateRangeValue,
+  type RangeMode,
+} from '../../components/ui/DateRangePicker'
 import { StatTile } from '../../components/ui/StatTile'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
@@ -27,26 +32,23 @@ import {
 } from '../../../shared/aggregate'
 import type { Designer } from '../../../shared/types'
 import {
-  lastWeekRange,
   metricDelta,
-  thisMonthRange,
-  thisWeekRange,
   useActiveDesigners,
   useDesigners,
   useDesignerDrawer,
   useMetricsSince,
   useQuotaCtx,
   useTasksSince,
-  type PeriodRange,
 } from './opsData'
 
-type PeriodKey = 'this-week' | 'last-week' | 'this-month'
-
-const PERIODS: { value: PeriodKey; label: string; range: (today: string) => PeriodRange }[] = [
-  { value: 'this-week', label: 'This week', range: thisWeekRange },
-  { value: 'last-week', label: 'Last week', range: lastWeekRange },
-  { value: 'this-month', label: 'This month', range: thisMonthRange },
-]
+/** Human label per preset for the history line + PDF caption. */
+const MODE_LABEL: Record<RangeMode, string> = {
+  today: 'Today',
+  yesterday: 'Yesterday',
+  '7d': 'Last 7 days',
+  '30d': 'Last 30 days',
+  custom: 'Custom range',
+}
 
 interface ReportRow {
   designer: Designer
@@ -64,10 +66,14 @@ export default function OpsReports() {
   const today = pktToday()
   const toast = useToast()
   const openDesigner = useDesignerDrawer()
-  const [periodKey, setPeriodKey] = useLocalStorage<PeriodKey>('pulse.ops.reports.period', 'this-week')
-
-  const period = PERIODS.find((p) => p.value === periodKey) ?? PERIODS[0]
-  const range = period.range(today)
+  // The CSR-style date filter: presets re-resolve to today on every load so a
+  // stored '7d' never goes stale; a custom range keeps its exact dates.
+  const [stored, setStored] = useLocalStorage<DateRangeValue>(
+    'pulse.ops.reports.range',
+    resolveRange('7d', '', '', today),
+  )
+  const value = stored.mode === 'custom' ? stored : resolveRange(stored.mode, stored.start, stored.end, today)
+  const range = { start: value.start, end: value.end }
   const prior = priorPeriod(range.start, range.end)
 
   const designersQ = useDesigners()
@@ -196,24 +202,19 @@ export default function OpsReports() {
         titleAccessory={
           <InfoTip text="How each person did over a period — targets met, quality and speed — with a PDF you can share." />
         }
-        history={`${period.label} · ${rangeLabel}, compared with ${fmtDate(prior.start)} – ${fmtDate(prior.end)}.`}
+        history={`${MODE_LABEL[value.mode]} · ${rangeLabel}, compared with ${fmtDate(prior.start)} – ${fmtDate(prior.end)}.`}
         actions={
           <>
             <span className="flex items-center gap-1">
-              <SegmentedControl<PeriodKey>
-                options={PERIODS.map((p) => ({ value: p.value, label: p.label }))}
-                value={periodKey}
-                onChange={setPeriodKey}
-                ariaLabel="Report period"
-              />
-              <InfoTip text="Pick the time period. Every number is compared with the period before it." />
+              <DateRangePicker value={value} onChange={setStored} />
+              <InfoTip text="Pick the time period. Every number is compared with the same length of time just before it." />
             </span>
             {/* The one brand action on the page — stateful: dots while the PDF
                 builds, a crisp ✓ when it lands (manifesto pillar 8). */}
             <ActionButton
               onAction={exportPdf}
               disabled={loading || rows.length === 0}
-              aria-label={`Download the ${period.label.toLowerCase()} PDF report`}
+              aria-label="Download the PDF report for this period"
               className="min-h-11 rounded-xl"
             >
               <Download className="h-4 w-4" aria-hidden="true" />
@@ -238,7 +239,7 @@ export default function OpsReports() {
       )}
 
       <VerdictBlock
-        title={`What stands out — ${period.label.toLowerCase()}`}
+        title={`What stands out — ${MODE_LABEL[value.mode].toLowerCase()}`}
         items={verdictItems}
         emptyMessage="Everyone is on track this period — nothing stands out."
         loading={loading}
