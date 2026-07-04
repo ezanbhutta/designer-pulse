@@ -141,11 +141,18 @@ export async function syncDesignerNames(
  * Upsert the task_state snapshot from a full ClickUp task payload:
  * name / status / priority / tags → scope_tags + concept_count /
  * date_created (assignment time, spec §2) / due_date / date_closed.
+ *
+ * writeStatus:false skips current_status: callers that are NOT immediately
+ * followed by an event insert + recompute (webhook taskUpdated, reconcile's
+ * mutable-field refresh) must not snap status to ClickUp's live value —
+ * doing so hides the drift from reconcile/deep-verify and the missed
+ * transition event is never healed. Status moves only through events.
  */
 export async function upsertTaskFromClickUp(
   supa: SupabaseAdmin,
   task: ClickUpTask,
   designerId: string,
+  opts: { writeStatus?: boolean } = {},
 ): Promise<void> {
   const listId = task.list?.id
   if (!listId) throw new Error(`ClickUp task ${task.id} carries no list id — cannot upsert`)
@@ -171,7 +178,7 @@ export async function upsertTaskFromClickUp(
     deleted: false,
     updated_at: new Date().toISOString(),
   }
-  if (canonical) row.current_status = canonical
+  if (canonical && opts.writeStatus !== false) row.current_status = canonical
   const { error } = await supa.from('task_state').upsert(row, { onConflict: 'task_id' })
   expectOk(error, `task_state upsert (${task.id})`)
 }
@@ -294,18 +301,25 @@ export async function backfillTaskHistory(
  * physical transition close to this time? Used by the webhook so a late
  * ClickUp redelivery of a dropped event doesn't double-count a revision round
  * the reconciliation cron already healed with a slightly different timestamp.
+ * Matched on the SAME from→to pair within a tight window: a redelivered
+ * duplicate replays the identical physical transition within minutes, while a
+ * genuine re-entry (a second revision round soon after a healed first one)
+ * almost always differs in from_status or time and MUST still count. A null
+ * from (unknown raw before-status) skips the from filter — heals record their
+ * own canonical prior state, so requiring null would break the dedupe.
  */
 export async function hasNearbySyntheticEvent(
   supa: SupabaseAdmin,
   taskId: string,
+  fromStatus: CanonicalStatus | null,
   toStatus: CanonicalStatus,
   eventTime: string,
-  windowMinutes = 45,
+  windowMinutes = 10,
 ): Promise<boolean> {
   const t = new Date(eventTime).getTime()
   const from = new Date(t - windowMinutes * 60_000).toISOString()
   const to = new Date(t + windowMinutes * 60_000).toISOString()
-  const { data, error } = await supa
+  let q = supa
     .from('clickup_events')
     .select('id')
     .eq('task_id', taskId)
@@ -313,7 +327,8 @@ export async function hasNearbySyntheticEvent(
     .in('source', ['reconciliation', 'backfill'])
     .gte('event_time', from)
     .lte('event_time', to)
-    .limit(1)
+  if (fromStatus) q = q.eq('from_status', fromStatus)
+  const { data, error } = await q.limit(1)
   expectOk(error, `clickup_events synthetic match (${taskId})`)
   return (data ?? []).length > 0
 }
@@ -336,15 +351,19 @@ export async function recomputeTaskMetrics(supa: SupabaseAdmin, taskId: string):
   const task = taskRow as TaskState | null
   if (!task || !task.created_at) return
 
+  // Never select raw — it holds full webhook payloads and this is the hottest
+  // read path (every webhook / heal / drift refresh).
   const { data: evRows, error: evErr } = await supa
     .from('clickup_events')
-    .select('*')
+    .select('id,event_type,from_status,to_status,event_time,source')
     .eq('task_id', taskId)
     .order('event_time', { ascending: true })
     .order('id', { ascending: true })
     .limit(2000)
   expectOk(evErr, `clickup_events read (${taskId})`)
-  const events = (evRows ?? []) as ClickupEvent[]
+  const events = (evRows ?? []) as Array<
+    Pick<ClickupEvent, 'id' | 'event_type' | 'from_status' | 'to_status' | 'event_time' | 'source'>
+  >
 
   const transitions: TransitionEvent[] = events.map((e) => ({
     event_type: e.event_type,
@@ -393,6 +412,83 @@ export async function recomputeTaskMetrics(supa: SupabaseAdmin, taskId: string):
     })
     .eq('task_id', taskId)
   expectOk(stateErr, `task_state refresh (${taskId})`)
+}
+
+/**
+ * Batched recomputeTaskMetrics for a chunk of KNOWN task_state rows (the
+ * nightly open-span drift refresh): ONE clickup_events read for the whole
+ * chunk, compute in-process, ONE task_metrics upsert, ONE task_state refresh —
+ * ~4 round trips per chunk instead of per task. Same math and same derived
+ * columns as recomputeTaskMetrics; callers keep chunks ≤ ~50 tasks so the
+ * events read stays under its row limit.
+ */
+export async function recomputeTaskMetricsChunk(
+  supa: SupabaseAdmin,
+  tasks: Array<Pick<TaskState, 'task_id' | 'list_id' | 'designer_id' | 'created_at'>>,
+): Promise<number> {
+  const chunk = tasks.filter((t) => t.created_at)
+  if (!chunk.length) return 0
+  const ids = chunk.map((t) => t.task_id)
+  const { data: evRows, error: evErr } = await supa
+    .from('clickup_events')
+    .select('task_id,event_type,from_status,to_status,event_time,source,id')
+    .in('task_id', ids)
+    .order('task_id')
+    .order('event_time', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(20000)
+  expectOk(evErr, 'clickup_events chunk read')
+
+  const byTask = new Map<string, Array<TransitionEvent & { source: string }>>()
+  for (const row of (evRows ?? []) as Array<TransitionEvent & { task_id: string; source: string }>) {
+    const list = byTask.get(row.task_id) ?? []
+    list.push(row)
+    byTask.set(row.task_id, list)
+  }
+
+  const now = new Date()
+  const metricsRows: Record<string, unknown>[] = []
+  const stateRefresh: Record<string, unknown>[] = []
+  for (const t of chunk) {
+    const events = byTask.get(t.task_id) ?? []
+    const computed = computeTaskMetrics(t.created_at!, events, now)
+    const anyBackfill = events.some((e) => e.source === 'backfill')
+    const statusEvents = events.filter((e) => e.event_type === 'status_change' && e.to_status)
+    const lastEventAt = statusEvents.length
+      ? statusEvents[statusEvents.length - 1].event_time
+      : t.created_at!
+    metricsRows.push({
+      task_id: t.task_id,
+      designer_id: t.designer_id,
+      start_latency_min: computed.start_latency_min,
+      production_min: computed.production_min,
+      first_pass_clean: computed.first_pass_clean,
+      revision_rounds: computed.revision_rounds,
+      csr_caught_rounds: computed.csr_caught_rounds,
+      client_caught_rounds: computed.client_caught_rounds,
+      revision_turnaround_min: computed.revision_turnaround_min,
+      client_wait_min: computed.client_wait_min,
+      first_delivered_at: computed.first_delivered_at,
+      outcome: computed.outcome,
+      is_cancelled: computed.is_cancelled,
+      metrics_confidence: anyBackfill ? 'backfill' : 'live',
+      computed_at: now.toISOString(),
+    })
+    stateRefresh.push({
+      task_id: t.task_id,
+      list_id: t.list_id,
+      designer_id: t.designer_id,
+      current_status: computed.current_status,
+      last_event_at: lastEventAt,
+      closed_at: computed.outcome === 'in_flight' ? null : lastEventAt,
+      updated_at: now.toISOString(),
+    })
+  }
+  const mErr = await supa.from('task_metrics').upsert(metricsRows, { onConflict: 'task_id' })
+  expectOk(mErr.error, 'task_metrics chunk upsert')
+  const sErr = await supa.from('task_state').upsert(stateRefresh, { onConflict: 'task_id' })
+  expectOk(sErr.error, 'task_state chunk refresh')
+  return chunk.length
 }
 
 /**

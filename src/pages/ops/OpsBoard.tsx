@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { CheckCircle2, ChevronDown, ChevronRight, ExternalLink, TriangleAlert } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { Drawer } from '../../components/ui/Drawer'
@@ -24,13 +25,13 @@ import {
 } from '../../../shared/statuses'
 import type { Designer, TaskState } from '../../../shared/types'
 import {
-  activeDesigners,
   agingThresholdMin,
   closedOn,
   createdOn,
   firstName,
   minutesSinceShiftStart,
   slotsFilledToday,
+  useActiveDesigners,
   useConfigValues,
   useDesignerDrawer,
   useDesigners,
@@ -50,7 +51,14 @@ const COLUMN_CAP = 50
  * assignment gaps highlighted on designer groups.
  */
 export default function OpsBoard() {
-  const today = pktToday()
+  // Minute tick so ages, gap checks and the PKT day never freeze on an
+  // unattended board across midnight.
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(t)
+  }, [])
+  const today = pktToday(now)
   const cfg = useConfigValues()
   const openDesigner = useDesignerDrawer()
   const designersQ = useDesigners()
@@ -59,10 +67,24 @@ export default function OpsBoard() {
   const todayTasksQ = useTasksSince(today)
 
   const [groupBy, setGroupBy] = useLocalStorage<GroupBy>('pulse.ops.board.group', 'status')
-  const [showClosed, setShowClosed] = useState(false)
+  // The disclosure remembers last use (§20.4), like the sibling group-by.
+  const [showClosed, setShowClosed] = useLocalStorage<boolean>('pulse.ops.board.closed', false)
   const [trailTask, setTrailTask] = useState<TaskState | null>(null)
 
-  const designers = activeDesigners(designersQ.data)
+  // Drill-in intent (e.g. Home's "Fixes in progress" tile) can force a
+  // grouping via ?group=; it overrides and updates the remembered choice.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const g = searchParams.get('group')
+    if (g === 'status' || g === 'designer') {
+      setGroupBy(g)
+      const next = new URLSearchParams(searchParams)
+      next.delete('group')
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams, setGroupBy])
+
+  const designers = useActiveDesigners()
   const designerById = useMemo(
     () => new Map((designersQ.data ?? []).map((d) => [d.id, d])),
     [designersQ.data],
@@ -78,7 +100,6 @@ export default function OpsBoard() {
   )
 
   const derived = useMemo(() => {
-    const now = new Date()
     const byStatus = new Map<CanonicalStatus, TaskState[]>()
     for (const s of STATUSES) byStatus.set(s, [])
     // Tasks with a null current_status (unmapped ClickUp status name) get
@@ -118,29 +139,36 @@ export default function OpsBoard() {
     const clientWait = openTasks.filter((t) => t.current_status === 'client response').length
 
     return { byStatus, unmapped, assignedToday, gapRows, agingCount, clientWait }
-  }, [openTasks, closedToday, todayTasksQ.data, designers, ctx, cfg, today])
+  }, [openTasks, closedToday, todayTasksQ.data, designers, ctx, cfg, today, now])
 
   const underQuota = derived.gapRows.filter((r) => r.gapLive)
 
   const byDesigner = useMemo(() => {
     const map = new Map<string, TaskState[]>()
+    // Open tasks with no designer, or a designer who is archived/deleted,
+    // must never go invisible in the by-person view (§6.4).
+    const orphaned: TaskState[] = []
     for (const t of openTasks) {
-      if (!t.designer_id) continue
-      const list = map.get(t.designer_id) ?? []
+      const d = t.designer_id ? designerById.get(t.designer_id) : undefined
+      if (!d || d.status !== 'active') {
+        orphaned.push(t)
+        continue
+      }
+      const list = map.get(t.designer_id as string) ?? []
       list.push(t)
-      map.set(t.designer_id, list)
+      map.set(t.designer_id as string, list)
     }
-    const now = new Date()
-    for (const list of map.values()) {
+    const sortTasks = (list: TaskState[]) =>
       list.sort(
         (a, b) =>
           (a.current_status ? STATUS_ORDER[a.current_status] : 9) -
             (b.current_status ? STATUS_ORDER[b.current_status] : 9) ||
           ageMinutes(b, now) - ageMinutes(a, now),
       )
-    }
-    return map
-  }, [openTasks])
+    for (const list of map.values()) sortTasks(list)
+    sortTasks(orphaned)
+    return { map, orphaned }
+  }, [openTasks, designerById, now])
 
   const teams = useMemo(() => {
     const grouped = new Map<string, Designer[]>()
@@ -211,7 +239,7 @@ export default function OpsBoard() {
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => setShowClosed((v) => !v)}
+              onClick={() => setShowClosed(!showClosed)}
               aria-expanded={showClosed}
               className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-2"
             >
@@ -335,7 +363,7 @@ export default function OpsBoard() {
               <h2 className="eyebrow">{team}</h2>
               <div className="mt-3 space-y-5">
                 {members.map((d) => {
-                  const tasks = byDesigner.get(d.id) ?? []
+                  const tasks = byDesigner.map.get(d.id) ?? []
                   const gap = derived.gapRows.find((r) => r.d.id === d.id)
                   const listUrl = clickupListUrl(d.clickup_list_id)
                   return (
@@ -400,6 +428,41 @@ export default function OpsBoard() {
               </div>
             </section>
           ))}
+          {/* ── Orphaned bucket: no designer, or a former designer — never invisible ── */}
+          {byDesigner.orphaned.length > 0 && (
+            <section aria-label="No designer or former designer">
+              <h2 className="eyebrow">No designer / former designer</h2>
+              <div className="card mt-3 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone="warning" icon={TriangleAlert}>
+                    {byDesigner.orphaned.length} open project
+                    {byDesigner.orphaned.length === 1 ? '' : 's'} without an active designer
+                  </Badge>
+                  <span className="text-xs text-muted">
+                    These have no designer, or their designer has left the roster — give them to
+                    someone in ClickUp.
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {byDesigner.orphaned.slice(0, COLUMN_CAP).map((t) => (
+                    <TaskCard
+                      key={t.task_id}
+                      task={t}
+                      designerName={
+                        t.designer_id ? designerById.get(t.designer_id)?.name : undefined
+                      }
+                      onOpen={() => setTrailTask(t)}
+                    />
+                  ))}
+                </div>
+                {byDesigner.orphaned.length > COLUMN_CAP && (
+                  <p className="mt-2 text-xs text-muted">
+                    +{byDesigner.orphaned.length - COLUMN_CAP} more without an active designer
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
           {teams.size === 0 && (
             <EmptyState
               title="No designers yet"
@@ -423,7 +486,7 @@ export default function OpsBoard() {
                 at this stage for {fmtDuration(ageMinutes(trailTask))}
               </span>
             </div>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
               <dt className="text-muted">Designer</dt>
               <dd className="text-fg">
                 {trailTask.designer_id

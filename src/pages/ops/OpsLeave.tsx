@@ -34,12 +34,14 @@ import { fmtDate, fmtShiftTime, fmtTime } from '../../lib/format'
 import { addDays, pktToday } from '../../../shared/pkt'
 import { leaveCovers } from '../../../shared/attendance'
 import type { HalfDay, Holiday, Leave } from '../../../shared/types'
-import { activeDesigners, useDesigners, useQuotaCtx } from './opsData'
+import { useActiveDesigners, useDesigners, useQuotaCtx } from './opsData'
 
 const LEAVE_TYPES = ['annual', 'sick', 'casual', 'unpaid', 'other'] as const
 
+// Same recipe as the roster editor's fields — and no `focus:outline-none`,
+// which would beat the global :focus-visible brand ring (§20.10).
 const inputCls =
-  'mt-1 w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm text-fg focus:outline-none'
+  'mt-1.5 block w-full min-h-[2.75rem] rounded-xl border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted/70'
 
 /**
  * Leave / half-day / holiday management (spec §10). Feeds attendance status
@@ -57,7 +59,7 @@ export default function OpsLeave() {
   const { ctx, isLoading: ctxLoading } = useQuotaCtx()
   const halfDaysQ = useQuery({ queryKey: qk.halfDays, queryFn: fetchHalfDays, staleTime: STALE_ANALYTICS })
 
-  const designers = activeDesigners(designersQ.data)
+  const designers = useActiveDesigners()
   const designerName = useMemo(() => {
     const map = new Map((designersQ.data ?? []).map((d) => [d.id, d.name]))
     return (id: string) => map.get(id) ?? 'Unknown designer'
@@ -120,6 +122,40 @@ export default function OpsLeave() {
         }),
     })
   }
+
+  // ── Approve / decline for designer-requested leave (§22.7) ──
+  // A pending request neutralizes nothing (leaveCovers ignores it), so it
+  // must be decided — approving flips it live, declining removes it (Undo
+  // restores the pending request).
+  const leaveApprove = useMutation({
+    mutationFn: (row: Leave) => upsertLeave({ ...row, status: 'approved' }),
+    onSuccess: () => invalidate(),
+    onError: (e: Error) => toast({ message: `Could not approve — ${e.message}` }),
+  })
+  const approveLeave = (row: Leave) => {
+    leaveApprove.mutate(row, {
+      onSuccess: () =>
+        toast({
+          message: `${designerName(row.designer_id)}'s leave approved — attendance and daily targets adjust on their own`,
+          undo: async () => {
+            await upsertLeave({ ...row, status: 'pending' })
+            invalidate()
+          },
+        }),
+    })
+  }
+  const declineLeave = (row: Leave) => {
+    leaveDelete.mutate(row.id, {
+      onSuccess: () =>
+        toast({
+          message: `Leave request from ${designerName(row.designer_id)} declined`,
+          undo: async () => {
+            await upsertLeave(row)
+            invalidate()
+          },
+        }),
+    })
+  }
   const removeHalf = (row: HalfDay) => {
     halfDelete.mutate(row.id, {
       onSuccess: () =>
@@ -148,6 +184,33 @@ export default function OpsLeave() {
   // ── Verdict: who's off in the next 7 days (§20.1) ──
   const verdictItems = useMemo(() => {
     const items: VerdictItem[] = []
+    // Requests waiting for a decision lead — a pending request changes
+    // nothing until it is approved, so silence here strands the designer.
+    for (const l of ctx.leaves.filter((x) => x.status === 'pending')) {
+      const end = l.end_date ?? l.start_date
+      items.push({
+        id: `pending-${l.id}`,
+        severity: 'warning',
+        text: `${designerName(l.designer_id)} asked for ${
+          l.leave_type ? `${l.leave_type} leave` : 'leave'
+        } ${
+          l.start_date === end ? fmtDate(l.start_date) : `${fmtDate(l.start_date)} – ${fmtDate(end)}`
+        } — approve or decline`,
+        detail: `Until you decide, they still count as expected in on those days${
+          l.reason ? ` · ${l.reason}` : ''
+        }`,
+        action: {
+          label: 'Review',
+          onClick: () =>
+            document.getElementById(`leave-row-${l.id}`)?.scrollIntoView({
+              behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                ? 'auto'
+                : 'smooth',
+              block: 'center',
+            }),
+        },
+      })
+    }
     for (const d of designers) {
       const covering = ctx.leaves.filter(
         (l) =>
@@ -258,9 +321,11 @@ export default function OpsLeave() {
             ) : (
               ctx.leaves.map((l) => {
                 const end = l.end_date ?? l.start_date
+                const pending = l.status === 'pending'
                 return (
                   <li
                     key={l.id}
+                    id={`leave-row-${l.id}`}
                     className="flex items-start justify-between gap-2 rounded-xl bg-surface-2/60 px-3 py-2"
                   >
                     <div className="min-w-0">
@@ -274,16 +339,40 @@ export default function OpsLeave() {
                         {l.reason && ` · ${l.reason}`}
                       </p>
                       <div className="mt-1 flex flex-wrap gap-1">
-                        <Badge tone="neutral">{l.leave_type ?? 'leave'}</Badge>
-                        <Badge tone={l.paid ? 'success' : 'warning'}>
-                          {l.paid ? 'paid' : 'unpaid'} — for records only
+                        <Badge tone="neutral">
+                          <span className="capitalize">{l.leave_type ?? 'Leave'}</span>
                         </Badge>
+                        <Badge tone={l.paid ? 'success' : 'warning'}>
+                          {l.paid ? 'Paid' : 'Unpaid'} — for records only
+                        </Badge>
+                        {pending && <Badge tone="warning">Awaiting approval</Badge>}
+                        {l.status === 'rejected' && <Badge tone="neutral">Declined</Badge>}
                       </div>
+                      {pending && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => approveLeave(l)}
+                            disabled={leaveApprove.isPending || leaveDelete.isPending}
+                            className="inline-flex min-h-[2.75rem] items-center rounded-xl bg-brand px-3 text-xs font-semibold text-brand-fg hover:opacity-90 disabled:opacity-50"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => declineLeave(l)}
+                            disabled={leaveApprove.isPending || leaveDelete.isPending}
+                            className="inline-flex min-h-[2.75rem] items-center rounded-xl border border-border bg-surface px-3 text-xs font-medium text-fg hover:bg-surface-2 disabled:opacity-50"
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <button
                       type="button"
                       onClick={() => removeLeave(l)}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-soft hover:text-danger"
+                      className="-m-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-danger-soft hover:text-danger"
                       aria-label={`Remove leave for ${designerName(l.designer_id)}`}
                     >
                       <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -341,14 +430,14 @@ export default function OpsLeave() {
                     </p>
                     <div className="mt-1">
                       <Badge tone={hd.paid ? 'success' : 'warning'}>
-                        {hd.paid ? 'paid' : 'unpaid'} — for records only
+                        {hd.paid ? 'Paid' : 'Unpaid'} — for records only
                       </Badge>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => removeHalf(hd)}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-soft hover:text-danger"
+                    className="-m-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-danger-soft hover:text-danger"
                     aria-label={`Remove half-day for ${designerName(hd.designer_id)}`}
                   >
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -406,7 +495,7 @@ export default function OpsLeave() {
                         <button
                           type="button"
                           onClick={() => removeHoliday(h)}
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-soft hover:text-danger"
+                          className="-m-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-danger-soft hover:text-danger"
                           aria-label={`Remove holiday ${h.name ?? fmtDate(h.the_date)}`}
                         >
                           <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -431,7 +520,7 @@ export default function OpsLeave() {
                                       working: e.target.checked,
                                     })
                                   }
-                                  className="h-4 w-4 accent-[rgb(var(--color-brand))]"
+                                  className="h-4 w-4 accent-brand"
                                 />
                                 {d.name}
                                 <span className="text-xs text-muted">{d.team}</span>
@@ -486,8 +575,7 @@ function DesignerSelect({
   value: string
   onChange: (v: string) => void
 }) {
-  const designersQ = useDesigners()
-  const designers = activeDesigners(designersQ.data)
+  const designers = useActiveDesigners()
   return (
     <label className="block text-sm font-medium text-fg">
       Designer
@@ -512,7 +600,7 @@ function PaidToggle({ paid, setPaid }: { paid: boolean; setPaid: (v: boolean) =>
         type="checkbox"
         checked={paid}
         onChange={(e) => setPaid(e.target.checked)}
-        className="h-4 w-4 accent-[rgb(var(--color-brand))]"
+        className="h-4 w-4 accent-brand"
       />
       Paid
       <span className="text-xs text-muted">for records only — pay is never changed here</span>

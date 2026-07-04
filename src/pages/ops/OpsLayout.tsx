@@ -15,7 +15,7 @@ import { Drawer } from '../../components/ui/Drawer'
 import { ToastProvider } from '../../components/ui/ToastProvider'
 import { DesignerDetail } from '../../components/shared/DesignerDetail'
 import { clickupListUrl } from '../../lib/queries'
-import { activeDesigners, useDesigners, useOpenAlerts } from './opsData'
+import { useActiveDesigners, useOpenAlerts } from './opsData'
 
 /**
  * The Ops cockpit shell (spec §22.3): persistent nav with the attention surface
@@ -26,21 +26,20 @@ import { activeDesigners, useDesigners, useOpenAlerts } from './opsData'
 export default function OpsLayout() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const designersQ = useDesigners()
   const alertsQ = useOpenAlerts()
 
   const openAlertCount = (alertsQ.data ?? []).filter((a) => a.status === 'open').length
-  const active = activeDesigners(designersQ.data)
+  const active = useActiveDesigners()
 
   const designerId = searchParams.get('d')
-  const detailDesigner = designerId
-    ? (designersQ.data ?? []).find((d) => d.id === designerId)
-    : undefined
 
   const closeDesigner = () => {
     const next = new URLSearchParams(searchParams)
     next.delete('d')
-    setSearchParams(next)
+    // Replace, don't push: closing must not add a history entry, or Back
+    // re-opens the drawer just dismissed. Opening keeps push semantics so
+    // Back still closes an open drawer.
+    setSearchParams(next, { replace: true })
   }
 
   const nav: NavItem[] = [
@@ -110,12 +109,9 @@ export default function OpsLayout() {
       <AppShell title="Studio Pulse — Ops" nav={nav} commands={commands}>
         <Outlet />
       </AppShell>
-      <Drawer
-        open={designerId != null}
-        onClose={closeDesigner}
-        title={detailDesigner?.name ?? 'Designer'}
-        wide
-      >
+      {/* Generic chrome title — DesignerDetail's own header carries the
+          name + team once, so the drawer never says it twice. */}
+      <Drawer open={designerId != null} onClose={closeDesigner} title="Designer details" wide>
         {designerId && <DesignerDetail designerId={designerId} scope="ops" />}
       </Drawer>
     </ToastProvider>

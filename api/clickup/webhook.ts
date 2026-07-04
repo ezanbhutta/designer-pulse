@@ -14,7 +14,7 @@ import { canonicalizeStatus } from '../../shared/statuses'
 import type { TaskState } from '../../shared/types'
 import { json, readRawBody } from '../_lib/http'
 import { expectOk, supabaseAdmin, type SupabaseAdmin } from '../_lib/supabaseAdmin'
-import { getTask } from '../_lib/clickup'
+import { getTask, setClickUpDeadline } from '../_lib/clickup'
 import {
   backfillTaskHistory,
   handleCancellation,
@@ -26,8 +26,12 @@ import {
   upsertTaskFromClickUp,
 } from '../_lib/ingest'
 
-// Keep the raw body readable for HMAC verification.
-export const config = { api: { bodyParser: false } }
+// NOTE: `config.api.bodyParser = false` is NOT honored by @vercel/node (only
+// `config.helpers === false` / NODEJS_HELPERS=0 disable the shim) — readRawBody
+// recovers the exact bytes via the helper's 'data'/'end' replay instead.
+// maxDuration must outlive the 20s ClickUp deadline below; the platform
+// default (10–15s) would kill a rate-limited backfill before the 200 goes out.
+export const config = { maxDuration: 60 }
 
 interface HistoryStatusRef {
   status?: string | null
@@ -64,6 +68,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     json(res, 500, { error: 'CLICKUP_WEBHOOK_SECRET is not set' })
     return
   }
+  // A 429 Retry-After of 60s+ must never out-wait the invocation: cap every
+  // ClickUp call/wait at 20s so the 200 always goes out (ClickUpBudgetError
+  // lands in processEvent's catch; reconciliation heals whatever was skipped).
+  setClickUpDeadline(Date.now() + 20_000)
 
   const raw = await readRawBody(req)
   const sigHeader = req.headers['x-signature']
@@ -196,8 +204,10 @@ async function onStatusUpdated(
       continue
     }
     // A late redelivery of a transition reconciliation already healed (with a
-    // slightly different timestamp) must not double-count the round.
-    if (await hasNearbySyntheticEvent(supa, taskId, to, eventTime)) continue
+    // slightly different timestamp) must not double-count the round. Matched
+    // on the SAME physical from→to pair — a genuine re-entry into the same
+    // status (e.g. a second revision round minutes later) must still count.
+    if (await hasNearbySyntheticEvent(supa, taskId, from, to, eventTime)) continue
     await insertEvent(supa, {
       task_id: taskId,
       list_id: state.list_id,
@@ -246,7 +256,13 @@ async function onTaskDeleted(supa: SupabaseAdmin, taskId: string): Promise<void>
   })
 }
 
-/** taskUpdated → refresh tags / due date / priority / name from ClickUp. */
+/**
+ * taskUpdated → refresh tags / due date / priority / name from ClickUp.
+ * writeStatus:false — snapping current_status here without inserting an event
+ * would make reconcile/deep-verify see "no divergence" for a dropped
+ * taskStatusUpdated (ClickUp commonly delivers taskUpdated alongside it),
+ * permanently losing the missed transition. Status only moves via events.
+ */
 async function onTaskUpdated(supa: SupabaseAdmin, taskId: string): Promise<void> {
   let task
   try {
@@ -259,5 +275,5 @@ async function onTaskUpdated(supa: SupabaseAdmin, taskId: string): Promise<void>
   const designers = await listDesignerMap(supa)
   const designer = designers.get(listId)
   if (!designer) return
-  await upsertTaskFromClickUp(supa, task, designer.id)
+  await upsertTaskFromClickUp(supa, task, designer.id, { writeStatus: false })
 }

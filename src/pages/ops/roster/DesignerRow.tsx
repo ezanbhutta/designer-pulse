@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import {
   Archive,
   BarChart3,
@@ -9,6 +9,7 @@ import {
   Moon,
   Pencil,
 } from 'lucide-react'
+import { Badge } from '../../../components/ui/Badge'
 import { InfoTip } from '../../../components/ui/InfoTip'
 import { clickupListUrl } from '../../../lib/queries'
 import { DOW_LABELS, fmtShiftTime } from '../../../lib/format'
@@ -20,25 +21,6 @@ function initialsOf(name: string): string {
   const first = parts[0]?.[0] ?? '?'
   const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : ''
   return `${first}${last}`.toUpperCase()
-}
-
-/** Quiet labeled chip (§21.4 — whitespace and weight, never a loud badge). */
-function Chip({
-  tone = 'neutral',
-  children,
-}: {
-  tone?: 'neutral' | 'warning'
-  children: ReactNode
-}) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs ${
-        tone === 'warning' ? 'bg-warning-soft text-warning' : 'bg-surface-2 text-muted'
-      }`}
-    >
-      {children}
-    </span>
-  )
 }
 
 export interface DesignerRowProps {
@@ -53,9 +35,10 @@ export interface DesignerRowProps {
 
 /**
  * One designer, scannable in a glance (§21.6 verdict-first rows): status
- * glyph → identity → schedule chips → ClickUp link → actions. The whole row
- * is keyboard-operable and opens the edit drawer; inner controls stop the
- * click from bubbling.
+ * glyph → identity → schedule chips → ClickUp link → actions. The row-wide
+ * click is a mouse convenience only — keyboard and SR users get the dedicated
+ * "Edit {name}" button (a row must never be a button with buttons inside it,
+ * §20.10); inner controls stop the click from bubbling.
  */
 export function DesignerRow({
   designer: d,
@@ -68,14 +51,6 @@ export function DesignerRow({
   const linked = Boolean(d.clickup_list_id)
   const listUrl = clickupListUrl(d.clickup_list_id)
   const overnight = schedule != null && schedule.shift_end <= schedule.shift_start
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.target !== e.currentTarget) return
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      onEdit()
-    }
-  }
 
   const stop = (e: MouseEvent) => e.stopPropagation()
 
@@ -113,12 +88,8 @@ export function DesignerRow({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      aria-label={`Edit ${d.name}`}
       onClick={() => onEdit()}
-      onKeyDown={handleKeyDown}
-      className={`grid min-h-[4rem] cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 transition-colors duration-150 ease-out hover:bg-surface-2 focus-visible:bg-surface-2 lg:grid-cols-[auto_minmax(0,2.5fr)_minmax(0,3fr)_minmax(0,1.5fr)_auto] lg:gap-x-4 ${
+      className={`grid min-h-[4rem] cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 transition-colors duration-150 ease-out hover:bg-surface-2 lg:grid-cols-[auto_minmax(0,2.5fr)_minmax(0,3fr)_minmax(0,1.5fr)_auto] lg:gap-x-4 ${
         archived ? 'opacity-60' : ''
       }`}
     >
@@ -145,32 +116,33 @@ export function DesignerRow({
       <span className="col-span-2 col-start-2 flex flex-wrap items-center gap-1.5 lg:col-span-1 lg:col-start-auto">
         {schedule ? (
           <>
-            <Chip>
+            <Badge tone="neutral">
               <span className="tnum">
                 Target {schedule.daily_quota}/day
               </span>
-            </Chip>
-            <Chip>
-              {overnight && <Moon className="h-3 w-3" aria-hidden="true" />}
+            </Badge>
+            <Badge tone="neutral" icon={overnight ? Moon : undefined}>
               <span className="tnum">
                 {fmtShiftTime(schedule.shift_start)}–{fmtShiftTime(schedule.shift_end)}
               </span>
               {overnight && <span className="sr-only">works past midnight</span>}
-            </Chip>
-            {schedule.weekly_off != null && <Chip>Off {DOW_LABELS[schedule.weekly_off]}</Chip>}
+            </Badge>
+            {schedule.weekly_off != null && (
+              <Badge tone="neutral">Off {DOW_LABELS[schedule.weekly_off]}</Badge>
+            )}
             {exceptionCount > 0 && (
-              <Chip>
+              <Badge tone="neutral">
                 <span className="tnum">{exceptionCount}</span> special day
                 {exceptionCount === 1 ? '' : 's'}
                 <InfoTip
                   text="Days with a different daily target — for example a lighter Friday."
                   label="What are special days?"
                 />
-              </Chip>
+              </Badge>
             )}
           </>
         ) : (
-          <Chip tone="warning">No schedule yet</Chip>
+          <Badge tone="warning">No schedule yet</Badge>
         )}
       </span>
 
@@ -184,7 +156,7 @@ export function DesignerRow({
             onClick={stop}
             aria-label={`Open ${d.name}'s ClickUp list in a new tab`}
             title="Open list in ClickUp"
-            className="-mx-2 inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-lg px-2 text-xs text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
+            className="-mx-2 inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl px-2 text-xs text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
           >
             <span className="tnum">{d.clickup_list_id}</span>
             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />

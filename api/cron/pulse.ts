@@ -16,7 +16,7 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { addDays, pktInstant, pktToday } from '../../shared/pkt'
+import { addDays, pktDateOf, pktInstant, pktToday } from '../../shared/pkt'
 import { STATUS_LABELS } from '../../shared/statuses'
 import {
   ageMinutes,
@@ -27,6 +27,7 @@ import {
 import type {
   Designer,
   DesignerSchedule,
+  HalfDay,
   Holiday,
   HolidayWorker,
   Leave,
@@ -34,10 +35,10 @@ import type {
   TaskState,
 } from '../../shared/types'
 import { createSafetyResponder, requireCronAuth } from '../_lib/http'
-import { expectOk, supabaseAdmin, type SupabaseAdmin } from '../_lib/supabaseAdmin'
+import { expectOk, supabaseAdmin } from '../_lib/supabaseAdmin'
 import { loadConfig } from '../_lib/config'
 import { fireAlert } from '../_lib/alerts'
-import { recomputeWithPriorDay } from '../_lib/attendance-runner'
+import { recomputeWithPriorDay, type AttendancePreload } from '../_lib/attendance-runner'
 import { getListTasks, setClickUpDeadline } from '../_lib/clickup'
 import {
   runDeepVerifySlice,
@@ -67,27 +68,23 @@ const SAFETY_FLUSH_MS = 26_000
 const ATT_PARALLEL = 6
 
 /**
- * Slots filled for a work day (owner's rule): ONLY tasks whose DUE DATE falls
- * on that PKT day are that day's work — status and creation date don't
- * matter. A task due tomorrow, even one being worked right now, belongs to
- * tomorrow.
+ * Slots filled per (designer, PKT work day), owner's rule: ONLY tasks whose
+ * DUE DATE falls on that PKT day are that day's work — status and creation
+ * date don't matter. A task due tomorrow, even one being worked right now,
+ * belongs to tomorrow. Bucketed from ONE prefetch (instead of a head-count
+ * query per designer per date per run) covering yesterday + today, the only
+ * work dates the gap check and gap-alert re-check ever evaluate.
  */
-async function slotsFilledDb(
-  supa: SupabaseAdmin,
-  designerId: string,
-  workDate: string,
-): Promise<number> {
-  const startIso = pktInstant(workDate, '00:00').toISOString()
-  const endIso = pktInstant(addDays(workDate, 1), '00:00').toISOString()
-  const { count, error } = await supa
-    .from('task_state')
-    .select('task_id', { count: 'exact', head: true })
-    .eq('designer_id', designerId)
-    .eq('deleted', false)
-    .gte('due_date', startIso)
-    .lt('due_date', endIso)
-  expectOk(error, `slots-filled read (${designerId})`)
-  return count ?? 0
+function bucketSlotsFilled(
+  rows: Array<{ designer_id: string | null; due_date: string | null }>,
+): Map<string, number> {
+  const filled = new Map<string, number>()
+  for (const r of rows) {
+    if (!r.designer_id || !r.due_date) continue
+    const key = `${r.designer_id}|${pktDateOf(r.due_date)}`
+    filled.set(key, (filled.get(key) ?? 0) + 1)
+  }
+  return filled
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
@@ -106,14 +103,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const now = new Date()
     const today = pktToday(now)
 
-    const [designersRes, schedulesRes, exceptionsRes, leavesRes, holidaysRes, workersRes] =
+    const [designersRes, schedulesRes, exceptionsRes, leavesRes, holidaysRes, workersRes, halfRes, dueRes] =
       await Promise.all([
-        supa.from('designers').select('*').eq('status', 'active'),
+        // Deterministic order: the attendance rotation offset below assumes a
+        // stable sequence across runs, and Postgres returns unordered rows in
+        // varying physical order — an unordered read can starve the same
+        // designer past the budget cut run after run.
+        supa
+          .from('designers')
+          .select('*')
+          .eq('status', 'active')
+          .order('order_index', { ascending: true })
+          .order('id', { ascending: true }),
         supa.from('designer_schedule').select('*').limit(5000),
         supa.from('quota_exceptions').select('*').limit(5000),
         supa.from('leaves').select('*').limit(5000),
         supa.from('holidays').select('*').limit(2000),
         supa.from('holiday_workers').select('*').limit(5000),
+        supa
+          .from('half_days')
+          .select('*')
+          .in('the_date', [addDays(today, -1), today])
+          .limit(2000),
+        // ONE read feeds every slots-filled lookup this run (gap check + gap
+        // re-check): tasks due on yesterday's or today's PKT day.
+        supa
+          .from('task_state')
+          .select('designer_id,due_date')
+          .eq('deleted', false)
+          .gte('due_date', pktInstant(addDays(today, -1), '00:00').toISOString())
+          .lt('due_date', pktInstant(addDays(today, 1), '00:00').toISOString())
+          .limit(10000),
       ])
     expectOk(designersRes.error, 'designers read')
     expectOk(schedulesRes.error, 'designer_schedule read')
@@ -121,6 +141,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     expectOk(leavesRes.error, 'leaves read')
     expectOk(holidaysRes.error, 'holidays read')
     expectOk(workersRes.error, 'holiday_workers read')
+    expectOk(halfRes.error, 'half_days read')
+    expectOk(dueRes.error, 'due tasks read')
 
     const designers = (designersRes.data ?? []) as Designer[]
     const schedules = (schedulesRes.data ?? []) as DesignerSchedule[]
@@ -131,6 +153,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       holidays: (holidaysRes.data ?? []) as Holiday[],
       holidayWorkers: (workersRes.data ?? []) as HolidayWorker[],
     }
+    const slotsByDesignerDay = bucketSlotsFilled(
+      (dueRes.data ?? []) as Array<{ designer_id: string | null; due_date: string | null }>,
+    )
+    const slotsFilledFor = (designerId: string, workDate: string): number =>
+      slotsByDesignerDay.get(`${designerId}|${workDate}`) ?? 0
 
     // ── (1) Assignment gaps at shift-start + offset (spec §11 T3, §12) ────────
     // Both today's and yesterday's shift starts are evaluated so a shift whose
@@ -155,7 +182,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           // Owner's rule: ONLY projects due this work day fill its slots —
           // status and creation date don't matter. A task due tomorrow, even
           // one being worked right now, belongs to tomorrow.
-          let filled = await slotsFilledDb(supa, d.id, workDate)
+          let filled = slotsFilledFor(d.id, workDate)
           if (expected - filled > 0) {
             // Trust but verify against ClickUp live before accusing the
             // assignment team — a dropped webhook or reconcile lag must never
@@ -197,9 +224,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // candidates against ClickUp LIVE before flagging anything. Rows frozen by
     // old imports (copied tasks, empty histories) heal on the spot; deleted
     // ghosts are dropped; only tasks ClickUp confirms as stuck may alert.
+    // Only the fields the aging pass + verify + alert copy consume — '*' would
+    // drag scope_tags/priority/due_date across for up to 5000 rows every run.
     const { data: openRows, error: openErr } = await supa
       .from('task_state')
-      .select('*')
+      .select('task_id,designer_id,name,current_status,created_at,last_event_at,list_id,deleted')
       .eq('deleted', false)
       .not('current_status', 'in', '("complete","cancelled")')
       .limit(5000)
@@ -318,7 +347,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       if (!a.designer_id) continue
       try {
         const expected = expectedQuotaOn(a.designer_id, workDate, quota)
-        const nowFilled = await slotsFilledDb(supa, a.designer_id, workDate)
+        const nowFilled = slotsFilledFor(a.designer_id, workDate)
         if (expected - nowFilled <= 0) gapResolveIds.push(a.id)
       } catch (err) {
         console.error('[cron/pulse] gap re-check failed', err)
@@ -349,6 +378,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // this one's tail was — nobody is starved.
     let attendanceRuns = 0
     let attendancePartial = false
+    // Reference data was loaded once above — each designer-day now costs only
+    // the 3 signal reads (marks / activity / prior row) instead of ~8 queries.
+    const attPreload: AttendancePreload = {
+      schedules,
+      leaves: quota.leaves,
+      holidays: quota.holidays,
+      holidayWorkers: quota.holidayWorkers,
+      halfDays: (halfRes.data ?? []) as HalfDay[],
+    }
     const offset = designers.length ? Math.floor(now.getTime() / 900_000) % designers.length : 0
     const rotated = [...designers.slice(offset), ...designers.slice(0, offset)]
     for (let i = 0; i < rotated.length; i += ATT_PARALLEL) {
@@ -360,7 +398,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       await Promise.all(
         batch.map(async (d) => {
           try {
-            await recomputeWithPriorDay(supa, d, today, cfg)
+            await recomputeWithPriorDay(supa, d, today, cfg, attPreload)
             attendanceRuns += 2
           } catch (err) {
             console.error(`[cron/pulse] attendance recompute failed for ${d.name}`, err)

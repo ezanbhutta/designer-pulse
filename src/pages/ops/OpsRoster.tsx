@@ -45,6 +45,16 @@ export default function OpsRoster() {
 
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Designer | null>(null)
+  // Discard guard (§20.6): Esc/overlay on a dirty 15-field form must never
+  // silently throw the typed work away — a pristine form still closes freely.
+  const [editorDirty, setEditorDirty] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+
+  const closeEditor = () => {
+    setEditor(null)
+    setEditorDirty(false)
+    setConfirmDiscard(false)
+  }
 
   const designers = useMemo(() => designersQ.data ?? [], [designersQ.data])
   const editingDesigner =
@@ -102,7 +112,7 @@ export default function OpsRoster() {
       })
     }
     setDeleteTarget(null)
-    setEditor(null)
+    closeEditor()
   }
 
   return (
@@ -110,7 +120,8 @@ export default function OpsRoster() {
       {/* ── 1 · Header ── */}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="flex items-center gap-2 text-3xl font-semibold text-fg">
+          <p className="eyebrow">Roster · people, daily targets and work hours</p>
+          <h1 className="mt-1 inline-flex items-center gap-2 text-3xl font-semibold text-fg">
             Roster
             <InfoTip
               text="Everyone on the design team, with their daily target and work hours."
@@ -250,7 +261,10 @@ export default function OpsRoster() {
       {/* ── The one drawer for every input ── */}
       <Drawer
         open={editor != null}
-        onClose={() => setEditor(null)}
+        onClose={() => {
+          if (editorDirty) setConfirmDiscard(true)
+          else closeEditor()
+        }}
         title={editor?.mode === 'edit' ? (editingDesigner?.name ?? 'Designer') : 'Add designer'}
         wide
       >
@@ -266,11 +280,27 @@ export default function OpsRoster() {
                 : []
             }
             focusSection={editor.mode === 'edit' ? editor.focus : undefined}
-            onClose={() => setEditor(null)}
+            onDirtyChange={setEditorDirty}
+            onClose={closeEditor}
             onRequestDelete={(d) => setDeleteTarget(d)}
           />
         )}
       </Drawer>
+
+      {/* ── Dirty-form discard guard ── */}
+      <ConfirmDialog
+        open={confirmDiscard}
+        title={
+          editor?.mode === 'edit'
+            ? `Discard unsaved changes to ${editingDesigner?.name ?? 'this designer'}?`
+            : 'Discard this new designer?'
+        }
+        body="You typed changes that have not been saved. Closing now throws them away."
+        confirmLabel="Discard changes"
+        destructive
+        onConfirm={closeEditor}
+        onCancel={() => setConfirmDiscard(false)}
+      />
 
       {/* ── Hard delete (admin only) — explicit confirm, per §20.6 ── */}
       <ConfirmDialog

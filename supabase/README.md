@@ -1,6 +1,6 @@
 # Supabase — Studio Pulse database
 
-Four migrations build the entire data spine (spec §7, §14, §22.7–§22.8). They
+Five migrations build the entire data spine (spec §7, §14, §22.7–§22.8). They
 are ordered and re-runnable:
 
 | File | Contents |
@@ -9,6 +9,7 @@ are ordered and re-runnable:
 | `migrations/002_rls.sql` | RLS on every table, `app_role()` / `get_my_profile()` / `apply_schedule_change()` |
 | `migrations/003_triggers.sql` | Append-only enforcement, audit trigger, realtime publication |
 | `migrations/004_seed.sql` | `app_config` defaults + the §8.4 roster (editable defaults) |
+| `migrations/005_marks_clock_skew.sql` | `shift_marks.marked_at` default + clock-skew-tolerant self-mark policy |
 
 ## Applying the migrations
 

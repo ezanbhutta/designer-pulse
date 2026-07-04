@@ -7,7 +7,7 @@
  * decision-identical to live). All day math is PKT (spec §22.2).
  */
 
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -48,8 +48,14 @@ export function useDesigners() {
   return useQuery({ queryKey: qk.designers, queryFn: fetchDesigners, staleTime: STALE_ANALYTICS })
 }
 
-export function activeDesigners(designers: Designer[] | undefined): Designer[] {
-  return (designers ?? []).filter((d) => d.status === 'active')
+/**
+ * Active designers with a stable identity — memoized on the query data so
+ * downstream useMemo blocks (board groupings, report rows, palette commands)
+ * only recompute when the roster actually changes.
+ */
+export function useActiveDesigners(): Designer[] {
+  const q = useDesigners()
+  return useMemo(() => (q.data ?? []).filter((d) => d.status === 'active'), [q.data])
 }
 
 /** Config with defaults applied while loading — thresholds never blank. */
@@ -73,14 +79,20 @@ export function useQuotaCtx(): { ctx: QuotaContext; isLoading: boolean } {
     queryFn: fetchHolidayWorkers,
     staleTime: STALE_ANALYTICS,
   })
-  return {
-    ctx: {
+  // Memoized so downstream useMemo blocks keyed on `ctx` only recompute when
+  // the underlying data changes — not on every parent render.
+  const ctx = useMemo<QuotaContext>(
+    () => ({
       schedules: schedules.data ?? [],
       exceptions: exceptions.data ?? [],
       leaves: leaves.data ?? [],
       holidays: holidays.data ?? [],
       holidayWorkers: workers.data ?? [],
-    },
+    }),
+    [schedules.data, exceptions.data, leaves.data, holidays.data, workers.data],
+  )
+  return {
+    ctx,
     isLoading:
       schedules.isLoading ||
       exceptions.isLoading ||
@@ -166,11 +178,6 @@ export function lastWeekRange(today: string = pktToday()): PeriodRange {
 
 export function thisMonthRange(today: string = pktToday()): PeriodRange {
   return { start: `${today.slice(0, 8)}01`, end: today }
-}
-
-/** Rolling window of `days` ending today (used by the designer drill-down). */
-export function rollingRange(days: number, today: string = pktToday()): PeriodRange {
-  return { start: addDays(today, -(days - 1)), end: today }
 }
 
 // ── Small derivations shared across pages ─────────────────────────────────────

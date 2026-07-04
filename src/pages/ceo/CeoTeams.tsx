@@ -181,8 +181,10 @@ export default function CeoTeams() {
         rows,
       }
     }).filter((t): t is TeamModel => t != null)
+    // `today` stands in for week/prior/buckets (all pure functions of it) so
+    // the model recomputes at the PKT day/week rollover.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, designersQ.data, tasksQ.data, metricsQ.data, openQ.data, quota, cfg])
+  }, [loading, designersQ.data, tasksQ.data, metricsQ.data, openQ.data, quota, cfg, today])
 
   const lead = useMemo(() => {
     if (!teams || teams.length === 0) return null
@@ -320,7 +322,10 @@ function TeamCard({ model: t }: { model: TeamModel }) {
       </p>
 
       <div className="mt-5 border-t border-border pt-4">
-        <div className="hidden gap-2 px-1 pb-2 sm:grid sm:grid-cols-[minmax(0,1fr),7rem,7.5rem,7rem,minmax(8rem,auto)]">
+        {/* Columned layout waits until lg — below that the auto-growing Notes
+            column starves the Designer name. Notes is capped so badges wrap
+            instead of squeezing the name. */}
+        <div className="hidden gap-2 px-1 pb-2 lg:grid lg:grid-cols-[minmax(0,1fr),8.5rem,10.5rem,7rem,minmax(8rem,12rem)]">
           <span className="eyebrow">Designer</span>
           <span className="eyebrow inline-flex items-center justify-end gap-1 text-right">
             Target met{' '}
@@ -343,7 +348,7 @@ function TeamCard({ model: t }: { model: TeamModel }) {
           {t.rows.map((r) => (
             <li
               key={r.designer.id}
-              className="grid grid-cols-2 items-center gap-2 border-b border-border/50 px-1 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,1fr),7rem,7.5rem,7rem,minmax(8rem,auto)]"
+              className="grid grid-cols-2 items-center gap-2 border-b border-border/50 px-1 py-2.5 last:border-b-0 lg:grid-cols-[minmax(0,1fr),8.5rem,10.5rem,7rem,minmax(8rem,12rem)]"
             >
               <span className="min-w-0 truncate text-sm font-medium text-fg">
                 {r.designer.name}
@@ -366,7 +371,7 @@ function TeamCard({ model: t }: { model: TeamModel }) {
               <span className="tnum text-right text-sm text-fg">
                 {fmtDuration(r.cur.productionMedianMin)}
               </span>
-              <span className="col-span-2 flex flex-wrap justify-start gap-1 sm:col-span-1 sm:justify-end">
+              <span className="col-span-2 flex flex-wrap justify-start gap-1 lg:col-span-1 lg:justify-end">
                 {r.flags.length === 0 ? (
                   <span className="text-xs text-muted">No activity this week</span>
                 ) : (

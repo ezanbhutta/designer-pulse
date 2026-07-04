@@ -13,6 +13,7 @@
  * short-cache — a 5-minute-old average is decision-identical to live.
  */
 
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   STALE_ANALYTICS,
@@ -78,14 +79,21 @@ export function useQuotaCtx(): { ctx: QuotaContext; isLoading: boolean } {
     queryFn: fetchHolidayWorkers,
     staleTime: STALE_ANALYTICS,
   })
-  return {
-    ctx: {
+  // Memoized so page-level useMemo models keyed on `quota` only recompute
+  // when the underlying rows actually change (react-query keeps .data
+  // reference-stable via structural sharing).
+  const ctx = useMemo<QuotaContext>(
+    () => ({
       schedules: schedules.data ?? [],
       exceptions: exceptions.data ?? [],
       leaves: leaves.data ?? [],
       holidays: holidays.data ?? [],
       holidayWorkers: workers.data ?? [],
-    },
+    }),
+    [schedules.data, exceptions.data, leaves.data, holidays.data, workers.data],
+  )
+  return {
+    ctx,
     isLoading:
       schedules.isLoading ||
       exceptions.isLoading ||

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   CircleCheck,
   Download,
@@ -15,7 +15,7 @@ import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { StatTile } from '../../components/ui/StatTile'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
-import { generateWeeklyReportPdf } from '../../lib/reportPdf'
+import { useToast } from '../../components/ui/ToastProvider'
 import { fmtDate, fmtDuration, fmtPct, fmtTime } from '../../lib/format'
 import { pktToday } from '../../../shared/pkt'
 import {
@@ -25,11 +25,11 @@ import {
 } from '../../../shared/aggregate'
 import type { Designer } from '../../../shared/types'
 import {
-  activeDesigners,
   lastWeekRange,
   metricDelta,
   thisMonthRange,
   thisWeekRange,
+  useActiveDesigners,
   useDesigners,
   useDesignerDrawer,
   useMetricsSince,
@@ -75,8 +75,10 @@ function labelTip(label: string, tip: string): string {
  */
 export default function OpsReports() {
   const today = pktToday()
+  const toast = useToast()
   const openDesigner = useDesignerDrawer()
   const [periodKey, setPeriodKey] = useLocalStorage<PeriodKey>('pulse.ops.reports.period', 'this-week')
+  const [pdfPending, setPdfPending] = useState(false)
 
   const period = PERIODS.find((p) => p.value === periodKey) ?? PERIODS[0]
   const range = period.range(today)
@@ -87,7 +89,7 @@ export default function OpsReports() {
   const tasksQ = useTasksSince(prior.start)
   const metricsQ = useMetricsSince(prior.start, range.end)
 
-  const designers = activeDesigners(designersQ.data)
+  const designers = useActiveDesigners()
   const loading = designersQ.isLoading || tasksQ.isLoading || metricsQ.isLoading
 
   const rows: ReportRow[] = useMemo(() => {
@@ -181,15 +183,26 @@ export default function OpsReports() {
     return items
   }, [rows, openDesigner])
 
-  const exportPdf = () => {
-    generateWeeklyReportPdf({
-      period: { start: range.start, end: range.end },
-      rows: rows.map((r) => r.cur),
-      designers: designersQ.data ?? [],
-    })
-  }
-
   const rangeLabel = `${fmtDate(range.start)} – ${fmtDate(range.end)}`
+
+  // The PDF engine (jsPDF, ~120 kB gzip) is fetched only when the button is
+  // pressed — visiting the Reports page never downloads it.
+  const exportPdf = async () => {
+    setPdfPending(true)
+    try {
+      const { generateWeeklyReportPdf } = await import('../../lib/reportPdf')
+      generateWeeklyReportPdf({
+        period: { start: range.start, end: range.end },
+        rows: rows.map((r) => r.cur),
+        designers: designersQ.data ?? [],
+      })
+      toast({ message: `PDF for ${rangeLabel} downloaded` })
+    } catch {
+      toast({ message: 'Could not build the PDF — check your connection and try again' })
+    } finally {
+      setPdfPending(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -213,12 +226,12 @@ export default function OpsReports() {
           </div>
           <button
             type="button"
-            onClick={exportPdf}
-            disabled={loading || rows.length === 0}
+            onClick={() => void exportPdf()}
+            disabled={loading || rows.length === 0 || pdfPending}
             className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg hover:opacity-90 disabled:opacity-50"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
-            Download PDF
+            {pdfPending ? 'Preparing…' : 'Download PDF'}
           </button>
         </div>
       </header>
@@ -359,21 +372,13 @@ export default function OpsReports() {
                       cur.cancelled > 0
                     const watch = !flagged && cur.attainmentPct != null && cur.attainmentPct < 85
                     return (
+                      // Row stays a real table row for AT — the row-wide click
+                      // is a mouse convenience; keyboard/SR drill-down lives on
+                      // the name button below (same pattern as Attendance).
                       <tr
                         key={designer.id}
                         onClick={() => openDesigner(designer.id)}
-                        // Keyboard-operable drill-down (§20.10).
-                        tabIndex={0}
-                        role="button"
-                        aria-label={`Open ${designer.name}'s details`}
-                        onKeyDown={(e) => {
-                          if (e.target !== e.currentTarget) return
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            openDesigner(designer.id)
-                          }
-                        }}
-                        className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-surface-2/60 focus-visible:bg-surface-2/60"
+                        className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-surface-2/60"
                       >
                         <td className="px-3 py-2.5">
                           {flagged ? (
@@ -384,8 +389,17 @@ export default function OpsReports() {
                             <CircleCheck className="h-4 w-4 text-success" aria-label="On track" />
                           )}
                         </td>
-                        <td className="px-3 py-2.5 font-medium text-fg">
-                          {designer.name}
+                        <td className="px-3 py-2.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openDesigner(designer.id)
+                            }}
+                            className="min-h-[2.75rem] text-left font-medium text-fg hover:text-brand"
+                          >
+                            {designer.name}
+                          </button>
                           {designer.specialty && (
                             <span className="ml-2 text-xs font-normal text-muted">{designer.specialty}</span>
                           )}

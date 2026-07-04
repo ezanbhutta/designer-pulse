@@ -39,6 +39,7 @@ import {
   clientWaitMedianInPeriod,
   mergeTasks,
   metricDelta,
+  pktDayIn,
   sameWindowLastWeek,
   thisWeekRange,
   useConfigValues,
@@ -106,12 +107,13 @@ export default function CeoOverview() {
     const completionsPrev = completionsInPeriod(allTasks, activeIds, prior)
     const clientWaitNow = clientWaitMedianInPeriod(metrics, activeIds, week)
     const clientWaitPrev = clientWaitMedianInPeriod(metrics, activeIds, prior)
+    // Sample size for the tile's own period (this week), not the whole fetch window.
     const clientWaitSample = metrics.filter(
       (m) =>
         m.designer_id != null &&
         activeIds.has(m.designer_id) &&
         m.client_wait_min != null &&
-        m.first_delivered_at != null,
+        pktDayIn(m.first_delivered_at, week.start, week.end),
     ).length
 
     const teamOf = new Map(active.map((d) => [d.id, d.team]))
@@ -277,7 +279,7 @@ export default function CeoOverview() {
         sample: `${x.c.firstPassClean} of ${x.c.delivered} designs needed no changes`,
         delta: metricDelta(x.c.firstPassQualityPct, x.p.firstPassQualityPct, {
           goodWhen: 'up',
-          format: (v) => `${v} pts`,
+          format: (v) => String(v), // pts unit is clear from column context
           vs: '',
         }),
       }))
@@ -291,7 +293,7 @@ export default function CeoOverview() {
         sample: `${x.c.completed} of ${x.c.expectedQuota} planned projects finished`,
         delta: metricDelta(x.c.attainmentPct, x.p.attainmentPct, {
           goodWhen: 'up',
-          format: (v) => `${v} pts`,
+          format: (v) => String(v), // pts unit is clear from column context
           vs: '',
         }),
       }))
@@ -324,8 +326,10 @@ export default function CeoOverview() {
       fpqRanked,
       attRanked,
     }
+    // `today` stands in for week/prior/buckets (all pure functions of it) so
+    // the model recomputes at the PKT day/week rollover.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, designersQ.data, tasksQ.data, metricsQ.data, openQ.data, quota, cfg, navigate])
+  }, [loading, designersQ.data, tasksQ.data, metricsQ.data, openQ.data, quota, cfg, navigate, today])
 
   const fpqDrop =
     model?.fpqNow.pct != null && model.fpqPrev.pct != null ? model.fpqPrev.pct - model.fpqNow.pct : 0
@@ -552,7 +556,7 @@ function OutlierList({ title, tip, rows }: { title: string; tip: string; rows: O
   return (
     <div>
       {heading}
-      <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-success">Best</p>
+      <p className="eyebrow mt-1.5 text-success">Best</p>
       <ul className="mt-1">
         {top.map((r) => (
           <OutlierItem key={r.designer.id} row={r} />
@@ -560,9 +564,7 @@ function OutlierList({ title, tip, rows }: { title: string; tip: string; rows: O
       </ul>
       {bottom.length > 0 && (
         <>
-          <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-warning">
-            Needs attention
-          </p>
+          <p className="eyebrow mt-3 text-warning">Needs attention</p>
           <ul className="mt-1">
             {bottom.map((r) => (
               <OutlierItem key={r.designer.id} row={r} />
@@ -574,18 +576,31 @@ function OutlierList({ title, tip, rows }: { title: string; tip: string; rows: O
   )
 }
 
+/** One stand-out row — a drill-down button to the designer's weekly report card. */
 function OutlierItem({ row }: { row: OutlierRow }) {
+  const navigate = useNavigate()
   return (
-    <li className="flex items-center gap-2 py-1.5">
-      <span className="min-w-0 flex-1 truncate text-sm text-fg">
-        {row.designer.name} <span className="text-xs text-muted">{row.designer.team}</span>
-      </span>
-      <span className="tnum shrink-0 text-sm font-medium text-fg" title={row.sample}>
-        {row.value}%
-      </span>
-      {row.delta && row.delta.direction !== 'flat' && (
-        <DeltaChip direction={row.delta.direction} good={row.delta.good} label={row.delta.label.trim()} />
-      )}
+    <li>
+      <button
+        type="button"
+        onClick={() => navigate(`/ceo/reports#${row.designer.id}`)}
+        aria-label={`${row.designer.name} — open their weekly report`}
+        className="flex min-h-[2.75rem] w-full items-center gap-2 rounded-xl px-1 py-1.5 text-left transition-colors duration-150 hover:bg-surface-2"
+      >
+        <span className="min-w-0 flex-1">
+          <span
+            className="block truncate text-sm text-fg"
+            title={`${row.designer.name} — ${row.designer.team}`}
+          >
+            {row.designer.name} <span className="text-xs text-muted">{row.designer.team}</span>
+          </span>
+          <span className="block truncate text-xs text-muted">{row.sample}</span>
+        </span>
+        <span className="tnum shrink-0 text-sm font-medium text-fg">{row.value}%</span>
+        {row.delta && row.delta.direction !== 'flat' && (
+          <DeltaChip direction={row.delta.direction} good={row.delta.good} label={row.delta.label.trim()} />
+        )}
+      </button>
     </li>
   )
 }

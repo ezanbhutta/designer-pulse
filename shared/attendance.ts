@@ -93,9 +93,16 @@ export function computeAttendance(inputs: AttendanceInputs): AttendanceResult {
     return d >= win.from && d <= win.to
   }
 
-  // 3. Gather signals.
+  // 3. Gather signals. A check-out BEFORE the shift's scheduled start is
+  // spillover from the previous shift (e.g. a 15:00–23:00 designer checking
+  // out at 00:30 lands in the NEXT day's window) — it is not presence
+  // evidence for THIS day and must not become its declared_out.
   const windowMarks = marks
     .filter((m) => inWindow(m.marked_at))
+    .filter(
+      (m) =>
+        !(m.mark_type === 'check_out' && win.scheduledIn && new Date(m.marked_at) < win.scheduledIn),
+    )
     .sort((a, b) => a.marked_at.localeCompare(b.marked_at))
   const checkIns = windowMarks.filter((m) => m.mark_type === 'check_in')
   const checkOuts = windowMarks.filter((m) => m.mark_type === 'check_out')

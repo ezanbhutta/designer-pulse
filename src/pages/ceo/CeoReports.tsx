@@ -6,7 +6,8 @@
  * (§20.1). Read-only; private manager-facing interpretation (§22.10).
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   Calendar,
   ChevronLeft,
@@ -113,7 +114,18 @@ export default function CeoReports() {
     )
     return { rows, summary, active }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, designersQ.data, tasksQ.data, metricsQ.data, openQ.data, quota, cfg, period.start])
+  }, [loading, designersQ.data, tasksQ.data, metricsQ.data, openQ.data, quota, cfg, period.start, period.end])
+
+  // Landing here via /ceo/reports#<designerId> (the Overview stand-outs drill)
+  // scrolls to that designer's card once it exists.
+  const { hash } = useLocation()
+  useEffect(() => {
+    if (loading || !model || !hash) return
+    const el = document.getElementById(hash.slice(1))
+    if (!el) return
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+  }, [loading, model, hash])
 
   const download = () => {
     if (!model) return
@@ -128,12 +140,13 @@ export default function CeoReports() {
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="inline-flex items-center gap-2 text-3xl font-semibold text-fg">
             Weekly reports{' '}
             <InfoTip text="Your Monday review, already prepared — one card per designer with their numbers and a one-line summary." />
           </h1>
-          <p className="mt-1 text-sm text-muted">
+          {/* max-w keeps the subtitle from pushing the Download button below the header */}
+          <p className="mt-1 max-w-2xl text-sm text-muted">
             Each designer&apos;s week at a glance — target met, right first time, work time, and
             which way they are heading. Covers a full Monday–Sunday week (Pakistan time)
           </p>
@@ -263,10 +276,15 @@ function ReportCard({ row }: { row: ReportRow }) {
   const meta = TREND_META[row.trend]
   const TrendIcon = meta.icon
   return (
-    <article className="card animate-fade-in p-5">
+    // The id is the anchor the Overview stand-outs drill into (/ceo/reports#<id>).
+    <article id={row.designer.id} className="card animate-fade-in scroll-mt-6 p-5">
       <div className="flex items-start justify-between gap-2">
         <h3 className="min-w-0 truncate text-base font-semibold text-fg">{row.designer.name}</h3>
-        <span className={`flex shrink-0 items-center gap-1 text-xs font-medium ${meta.className}`}>
+        {/* Soft chip so a flat "—" reads as a deliberate status token, with the meaning on hover */}
+        <span
+          title={meta.label}
+          className={`flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-1.5 py-0.5 text-xs font-medium ${meta.className}`}
+        >
           <TrendIcon className="h-4 w-4" aria-hidden="true" />
           <span className="sr-only">{meta.label}</span>
         </span>

@@ -54,8 +54,8 @@ const TYPE_EXPLAINERS: Record<AlertType, string> = {
 
 const SEVERITY_RANK = { critical: 0, warning: 1, info: 2 } as const
 const SEVERITY_TONE = { info: 'brand', warning: 'warning', critical: 'danger' } as const
-/** Plain words for severity levels (visible text only). */
-const SEVERITY_LABELS = { info: 'FYI', warning: 'warning', critical: 'urgent' } as const
+/** Plain words for severity levels (visible text only, sentence case like every other badge). */
+const SEVERITY_LABELS = { info: 'FYI', warning: 'Warning', critical: 'Urgent' } as const
 
 /**
  * Alerts inbox (spec §12): detection rows carry their prescription (§20.3) via
@@ -80,6 +80,14 @@ export default function OpsAlerts() {
 
   // Newly-arrived alerts pulse once (§21.7). First load never pulses.
   const seenIds = useRef<Set<number> | null>(null)
+  // Toggling Open/All swaps in a different list — reset the baseline
+  // synchronously (before the memo below runs, even with cached data) so the
+  // first render of each view seeds without pulsing dozens of old rows.
+  const prevView = useRef(view)
+  if (prevView.current !== view) {
+    prevView.current = view
+    seenIds.current = null
+  }
   const freshIds = useMemo(() => {
     const fresh = new Set<number>()
     if (!alertsQ.data) return fresh
@@ -226,7 +234,17 @@ export default function OpsAlerts() {
         />
       )}
 
-      <div aria-live="polite" aria-label="Alerts inbox" className="space-y-8">
+      {/* One quiet announcement — the waiting count — instead of re-reading
+          the whole inbox on every refetch or filter toggle. */}
+      <div aria-live="polite" className="sr-only">
+        {openCount === 0
+          ? 'No alerts waiting'
+          : `${openCount} alert${openCount === 1 ? '' : 's'} waiting${
+              criticalCount > 0 ? `, ${criticalCount} urgent` : ''
+            }`}
+      </div>
+
+      <div className="space-y-8">
         {alertsQ.isLoading ? (
           <div className="space-y-2" role="status" aria-label="Loading alerts">
             {[0, 1, 2, 3].map((i) => (
@@ -288,8 +306,8 @@ export default function OpsAlerts() {
                         {p.suggestion && <p className="mt-0.5 text-sm text-muted">{p.suggestion}</p>}
                         <p className="tnum mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
                           <Badge tone={SEVERITY_TONE[a.severity]}>{SEVERITY_LABELS[a.severity]}</Badge>
-                          {a.status === 'acknowledged' && <Badge tone="neutral">seen</Badge>}
-                          {resolved && <Badge tone="success" icon={CheckCheck}>done</Badge>}
+                          {a.status === 'acknowledged' && <Badge tone="neutral">Seen</Badge>}
+                          {resolved && <Badge tone="success" icon={CheckCheck}>Done</Badge>}
                           <span>raised {fmtDateTime(a.fired_at)}</span>
                           {resolved && a.resolved_at && <span>· done {fmtDateTime(a.resolved_at)}</span>}
                         </p>

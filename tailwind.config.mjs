@@ -24,7 +24,16 @@ export default {
         warning: t('warning'),
         'warning-soft': t('warning-soft'),
         danger: t('danger'),
+        'danger-fg': t('danger-fg'),
         'danger-soft': t('danger-soft'),
+      },
+      /** Named overlay stack (one ordering contract, no magic z numbers):
+       *  overlay (drawers/dialogs) < palette < toast < tip. */
+      zIndex: {
+        overlay: '50',
+        palette: '55',
+        toast: '60',
+        tip: '70',
       },
       fontFamily: {
         sans: ['"Inter Variable"', 'Inter', 'system-ui', 'sans-serif'],
@@ -42,6 +51,12 @@ export default {
           from: { opacity: '0', transform: 'translateY(4px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
         },
+        // Opacity-only fade for elements positioned with transform utilities
+        // (e.g. the InfoTip note) — `fade-in` would override their transform.
+        'tip-in': {
+          from: { opacity: '0' },
+          to: { opacity: '1' },
+        },
         pulseOnce: {
           '0%': { boxShadow: '0 0 0 0 rgb(var(--color-brand) / 0.45)' },
           '100%': { boxShadow: '0 0 0 12px rgb(var(--color-brand) / 0)' },
@@ -53,6 +68,7 @@ export default {
       },
       animation: {
         'fade-in': 'fade-in 200ms ease-out both',
+        'tip-in': 'tip-in 150ms ease-out',
         'pulse-once': 'pulseOnce 600ms ease-out 1',
         shimmer: 'shimmer 1.6s linear infinite',
       },

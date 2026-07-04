@@ -8,7 +8,7 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 /** Bumped on API behavior changes — lets `curl -i` prove which build is live. */
-export const APP_VERSION = 'sp-20'
+export const APP_VERSION = 'sp-21'
 
 /** JSON response helper. */
 export function json(res: VercelResponse, status: number, body: unknown): void {
@@ -62,18 +62,33 @@ export function requireCronAuth(req: VercelRequest, res: VercelResponse): boolea
 
 /**
  * Raw request body — needed to verify the ClickUp webhook HMAC over the exact
- * bytes as sent. Reads the stream; if a body parser already consumed it, falls
- * back to the parsed body (ClickUp sends compact JSON, so a compact
- * re-serialization byte-matches in practice).
+ * bytes as sent. Vercel's Node helpers (always on for our functions — a
+ * `config.api.bodyParser` export is NOT honored by @vercel/node) consume the
+ * stream and replay it byte-exact ONLY to 'data'/'end' listeners via a
+ * PassThrough shim; `for await (const c of req)` bypasses that shim and yields
+ * nothing. So collect via event listeners, and keep the parsed-body
+ * re-serialization strictly as a last resort (it byte-matches only when the
+ * original JSON carried no \/ or \uXXXX escapes).
  */
 export async function readRawBody(req: VercelRequest): Promise<Buffer> {
   const chunks: Buffer[] = []
   try {
-    for await (const chunk of req) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-    }
+    await new Promise<void>((resolve, reject) => {
+      req.on('data', (chunk: Buffer | string) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+      })
+      req.on('end', () => resolve())
+      req.on('error', reject)
+      // Un-shimmed stream that something already drained: it will never emit
+      // 'end' again — bail to the fallback instead of hanging. The shim's
+      // PassThrough replays on the nextTick queue, which runs BEFORE
+      // setImmediate, so a replayed body is never cut short by this.
+      setImmediate(() => {
+        if (req.readableEnded && chunks.length === 0) resolve()
+      })
+    })
   } catch {
-    /* stream already consumed — fall through to the parsed-body fallback */
+    /* stream error — fall through to the parsed-body fallback */
   }
   if (chunks.length) return Buffer.concat(chunks)
   const body: unknown = (req as VercelRequest & { body?: unknown }).body

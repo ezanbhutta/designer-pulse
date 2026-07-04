@@ -141,6 +141,9 @@ export interface DesignerEditorProps {
   exceptions: QuotaException[]
   /** Scroll + focus a section on open (the "Link list" / Fix paths). */
   focusSection?: 'clickup' | 'schedule'
+  /** Reports whether the form differs from its opening snapshot, so the
+   * drawer can guard Esc/overlay-close behind a discard confirmation. */
+  onDirtyChange?: (dirty: boolean) => void
   onClose: () => void
   onRequestDelete: (d: Designer) => void
 }
@@ -157,6 +160,7 @@ export function DesignerEditor({
   currentSchedule,
   exceptions,
   focusSection,
+  onDirtyChange,
   onClose,
   onRequestDelete,
 }: DesignerEditorProps) {
@@ -375,6 +379,20 @@ export function DesignerEditor({
   const [exReason, setExReason] = useState('')
   const exQuotaRef = useRef<HTMLInputElement>(null)
 
+  // Dirty tracking for the drawer's discard guard (§20.6 — never lose typed
+  // work silently): compare the form and any typed special-day draft against
+  // the snapshot taken when the drawer opened.
+  const initialFormRef = useRef(form)
+  const dirty =
+    exQuota.trim() !== '' ||
+    exReason.trim() !== '' ||
+    (Object.keys(form) as (keyof EditorForm)[]).some(
+      (k) => form[k] !== initialFormRef.current[k],
+    )
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+  }, [dirty, onDirtyChange])
+
   const exceptionAdd = useMutation({
     mutationFn: () =>
       upsertQuotaException({
@@ -507,7 +525,9 @@ export function DesignerEditor({
                 patch({ order_index: String(Math.max(0, Math.round(Number(form.order_index) || 0))) })
               }
               aria-describedby={`${id('order')}-hint`}
-              className={`${inputCls()} tnum w-28`}
+              // max-width wins over the recipe's w-full — a 1–2 digit field
+              // must not stretch across the whole drawer.
+              className={`${inputCls()} tnum max-w-[7rem]`}
             />
           </Field>
         </section>
@@ -870,7 +890,7 @@ export function DesignerEditor({
             Save
             <kbd
               aria-hidden="true"
-              className="rounded border border-brand-fg/40 px-1 text-[10px] font-medium opacity-90"
+              className="rounded-md border border-brand-fg/40 bg-transparent px-1.5 py-0.5 text-[11px] font-medium opacity-90"
             >
               ⌘↵
             </kbd>
@@ -883,7 +903,7 @@ export function DesignerEditor({
             Cancel
             <kbd
               aria-hidden="true"
-              className="rounded border border-border px-1 text-[10px] font-medium"
+              className="rounded-md border border-border bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted"
             >
               Esc
             </kbd>

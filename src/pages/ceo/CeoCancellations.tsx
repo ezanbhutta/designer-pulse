@@ -121,8 +121,10 @@ export default function CeoCancellations() {
     }
 
     return { groups, verdicts, total: cancelledQ.data.length }
+    // `today` stands in for week/prior/windowStart (all pure functions of it)
+    // so the model recomputes at the PKT day/week rollover.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, designersQ.data, cancelledQ.data, tasksQ.data, openQ.data])
+  }, [loading, designersQ.data, cancelledQ.data, tasksQ.data, openQ.data, today])
 
   const selectedDesigner =
     selected?.designer_id && designersQ.data

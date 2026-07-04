@@ -6,6 +6,9 @@
 /* ── Semantic tokens (§21.1): R G B triplets, consumed as rgb(var(--t) / a).
    Light theme — the Designer self-view default (glance-and-check-in). */
 :root {
+  /* Native widgets (date pickers, selects, scrollbars) follow the APP theme,
+     not the OS — the theme is class-driven, so pin color-scheme per class. */
+  color-scheme: light;
   --color-bg: 250 250 252;
   --color-surface: 255 255 255;
   --color-surface-2: 244 242 250;
@@ -15,16 +18,18 @@
   --color-brand: 114 41 255; /* #7229FF */
   --color-brand-fg: 255 255 255;
   --color-brand-soft: 241 234 255;
-  --color-success: 21 128 61;
+  --color-success: 22 101 52; /* #166534 — 6.4:1 on success-soft (12px pills) */
   --color-success-soft: 230 246 236;
   --color-warning: 180 83 9;
   --color-warning-soft: 253 243 226;
-  --color-danger: 220 38 38;
+  --color-danger: 185 28 28; /* #B91C1C — 5.6:1 on danger-soft (12px pills) */
+  --color-danger-fg: 255 255 255;
   --color-danger-soft: 253 233 233;
 }
 
 /* Dark theme — the all-day Ops/CEO cockpit default (§21.9). */
 .dark {
+  color-scheme: dark;
   --color-bg: 11 6 24; /* #0B0618 */
   --color-surface: 22 10 51; /* #160A33 */
   --color-surface-2: 31 17 71;
@@ -33,12 +38,13 @@
   --color-muted: 167 159 199;
   --color-brand: 159 102 255; /* glow violet #9F66FF */
   --color-brand-fg: 18 6 43;
-  --color-brand-soft: 42 23 88;
+  --color-brand-soft: 34 17 74; /* brand-on-soft 4.7:1 for 14px nav/pill text */
   --color-success: 74 222 128;
   --color-success-soft: 16 51 31;
   --color-warning: 251 191 36;
   --color-warning-soft: 64 47 10;
   --color-danger: 248 113 113;
+  --color-danger-fg: 18 6 43;
   --color-danger-soft: 68 21 21;
 }
 

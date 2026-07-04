@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
@@ -26,26 +26,39 @@ export function Drawer({ open, onClose, title, wide = false, children }: DrawerP
   const lastActive = useRef<HTMLElement | null>(null)
   // Keep mounted 200ms after close so the slide-out is visible.
   const [rendered, setRendered] = useState(open)
+  // `shown` flips one frame AFTER mount so the panel paints its off-screen
+  // start state first — otherwise the slide-IN never animates.
+  const [shown, setShown] = useState(false)
 
   useEffect(() => {
     if (open) {
       setRendered(true)
       return
     }
+    setShown(false)
     const t = setTimeout(() => setRendered(false), 200)
     return () => clearTimeout(t)
   }, [open])
 
-  // Focus management: capture the opener, focus the panel, restore on close.
   useEffect(() => {
-    if (!open) return
+    if (!open || !rendered) return
+    const raf = requestAnimationFrame(() => setShown(true))
+    return () => cancelAnimationFrame(raf)
+  }, [open, rendered])
+
+  // Focus management: capture the opener, focus the panel once it is actually
+  // MOUNTED (gating on `rendered` — on the `open` commit the panel may not
+  // exist yet, and focusing nothing leaves Tab and Escape on the page behind),
+  // restore on close.
+  useEffect(() => {
+    if (!open || !rendered) return
     lastActive.current = (document.activeElement as HTMLElement | null) ?? null
     const raf = requestAnimationFrame(() => panelRef.current?.focus())
     return () => {
       cancelAnimationFrame(raf)
       lastActive.current?.focus()
     }
-  }, [open])
+  }, [open, rendered])
 
   // Body scroll lock while open.
   useEffect(() => {
@@ -57,38 +70,53 @@ export function Drawer({ open, onClose, title, wide = false, children }: DrawerP
     }
   }, [open])
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape') {
-      e.stopPropagation()
-      onClose()
-      return
+  // Escape / Tab containment at the DOCUMENT level while open: aria-modal
+  // promises the page behind is inert, so the trap must hold even if focus
+  // ever ends up outside the panel.
+  useEffect(() => {
+    if (!open || !rendered) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+        return
+      }
+      if (e.key !== 'Tab' || !panelRef.current) return
+      const panel = panelRef.current
+      const focusables = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      )
+      if (focusables.length === 0) {
+        e.preventDefault()
+        return
+      }
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const active = document.activeElement
+      // Focus escaped the dialog entirely — pull it back in.
+      if (active && !panel.contains(active) && active !== panel) {
+        e.preventDefault()
+        first.focus()
+        return
+      }
+      if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
-    if (e.key !== 'Tab' || !panelRef.current) return
-    const focusables = Array.from(
-      panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE),
-    ).filter((el) => el.offsetParent !== null || el === document.activeElement)
-    if (focusables.length === 0) {
-      e.preventDefault()
-      return
-    }
-    const first = focusables[0]
-    const last = focusables[focusables.length - 1]
-    const active = document.activeElement
-    if (e.shiftKey && (active === first || active === panelRef.current)) {
-      e.preventDefault()
-      last.focus()
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault()
-      first.focus()
-    }
-  }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [open, rendered, onClose])
 
   if (!rendered) return null
 
   return createPortal(
     <div className="fixed inset-0 z-50">
       <div
-        className={`absolute inset-0 bg-bg/60 backdrop-blur-sm transition-opacity duration-200 ease-out ${open ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 bg-bg/60 backdrop-blur-sm transition-opacity duration-200 ease-out ${shown && open ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose}
         aria-hidden="true"
       />
@@ -98,10 +126,9 @@ export function Drawer({ open, onClose, title, wide = false, children }: DrawerP
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        onKeyDown={handleKeyDown}
         className={`absolute inset-y-0 right-0 flex w-full flex-col border-l border-border bg-surface shadow-raised transition-transform duration-200 ease-out ${
           wide ? 'sm:max-w-2xl' : 'sm:max-w-md'
-        } ${open ? 'translate-x-0' : 'translate-x-full'}`}
+        } ${shown && open ? 'translate-x-0' : 'translate-x-full'}`}
       >
         <header className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-6 py-4">
           <h2 id={titleId} className="truncate text-lg font-semibold text-fg">

@@ -16,6 +16,8 @@ import type {
   Designer,
   DesignerSchedule,
   HalfDay,
+  Holiday,
+  HolidayWorker,
   Leave,
   ShiftMark,
 } from '../../shared/types'
@@ -28,6 +30,23 @@ function pktClock(iso: string): string {
 }
 
 /**
+ * Loop-invariant reference data a sweep caller (pulse / nightly /
+ * recompute-attendance) already holds. Each field is optional: when supplied,
+ * the corresponding per-designer-day query is skipped and the array is
+ * filtered in memory — a fleet sweep drops from ~8 round trips per
+ * designer-day to the 3 signal reads (marks / activity / prior row).
+ * Preloaded arrays must cover EVERY designer and EVERY work date the sweep
+ * touches (full-table loads, or range loads spanning the sweep window).
+ */
+export interface AttendancePreload {
+  schedules?: DesignerSchedule[]
+  leaves?: Leave[]
+  holidays?: Holiday[]
+  holidayWorkers?: HolidayWorker[]
+  halfDays?: HalfDay[]
+}
+
+/**
  * Compute + persist attendance for one designer on one work_date (the
  * shift-START day, spec §9.2). Returns the computed result.
  */
@@ -36,6 +55,7 @@ export async function computeAttendanceFor(
   designer: Designer,
   workDate: string,
   config: Config,
+  preloaded: AttendancePreload = {},
 ): Promise<AttendanceResult> {
   const now = new Date()
   // Collection span [workDate−1d, workDate+2d] comfortably covers the engine's
@@ -44,9 +64,64 @@ export async function computeAttendanceFor(
   const fromIso = pktInstant(addDays(workDate, -1), '00:00').toISOString()
   const toIso = pktInstant(addDays(workDate, 2), '23:59:59').toISOString()
 
-  const [schedRes, markRes, actRes, holidayRes, volunteerRes, leaveRes, halfRes, priorRes] =
+  const loadSchedules = async (): Promise<DesignerSchedule[]> => {
+    if (preloaded.schedules) return preloaded.schedules
+    const r = await supa.from('designer_schedule').select('*').eq('designer_id', designer.id)
+    expectOk(r.error, `designer_schedule read (${designer.name})`)
+    return (r.data ?? []) as DesignerSchedule[]
+  }
+  const loadIsHoliday = async (): Promise<boolean> => {
+    if (preloaded.holidays) return preloaded.holidays.some((h) => h.the_date === workDate)
+    const r = await supa.from('holidays').select('the_date').eq('the_date', workDate).limit(1)
+    expectOk(r.error, 'holidays read')
+    return (r.data ?? []).length > 0
+  }
+  const loadIsVolunteer = async (): Promise<boolean> => {
+    if (preloaded.holidayWorkers) {
+      return preloaded.holidayWorkers.some(
+        (w) => w.the_date === workDate && w.designer_id === designer.id,
+      )
+    }
+    const r = await supa
+      .from('holiday_workers')
+      .select('designer_id')
+      .eq('the_date', workDate)
+      .eq('designer_id', designer.id)
+      .limit(1)
+    expectOk(r.error, 'holiday_workers read')
+    return (r.data ?? []).length > 0
+  }
+  const loadLeaves = async (): Promise<Leave[]> => {
+    if (preloaded.leaves) return preloaded.leaves.filter((l) => l.designer_id === designer.id)
+    const r = await supa
+      .from('leaves')
+      .select('*')
+      .eq('designer_id', designer.id)
+      .lte('start_date', workDate)
+      .limit(500)
+    expectOk(r.error, `leaves read (${designer.name})`)
+    return (r.data ?? []) as Leave[]
+  }
+  const loadHalfDay = async (): Promise<HalfDay | null> => {
+    if (preloaded.halfDays) {
+      return (
+        preloaded.halfDays.find(
+          (h) => h.designer_id === designer.id && h.the_date === workDate,
+        ) ?? null
+      )
+    }
+    const r = await supa
+      .from('half_days')
+      .select('*')
+      .eq('designer_id', designer.id)
+      .eq('the_date', workDate)
+      .limit(1)
+    expectOk(r.error, `half_days read (${designer.name})`)
+    return ((r.data ?? []) as HalfDay[])[0] ?? null
+  }
+
+  const [markRes, actRes, priorRes, schedules, isHoliday, isHolidayVolunteer, leaves, halfRow] =
     await Promise.all([
-      supa.from('designer_schedule').select('*').eq('designer_id', designer.id),
       supa
         .from('shift_marks')
         .select('mark_type,marked_at,source')
@@ -55,40 +130,37 @@ export async function computeAttendanceFor(
         .lte('marked_at', toIso)
         .order('marked_at')
         .limit(2000),
+      // The 'activity' half of the §9 dual signal: only real designer-driven
+      // status changes count. 'created' events are the PM assigning work, and
+      // snapshotHeal / forcedHeal rows carry fabricated event times — any of
+      // them would mark an absent designer Present.
       supa
         .from('clickup_events')
         .select('event_time')
         .eq('designer_id', designer.id)
+        .eq('event_type', 'status_change')
+        .is('raw->snapshotHeal', null)
+        .is('raw->forcedHeal', null)
         .gte('event_time', fromIso)
         .lte('event_time', toIso)
         .order('event_time')
         .limit(5000),
-      supa.from('holidays').select('the_date').eq('the_date', workDate).limit(1),
-      supa
-        .from('holiday_workers')
-        .select('designer_id')
-        .eq('the_date', workDate)
-        .eq('designer_id', designer.id)
-        .limit(1),
-      supa.from('leaves').select('*').eq('designer_id', designer.id).lte('start_date', workDate).limit(500),
-      supa.from('half_days').select('*').eq('designer_id', designer.id).eq('the_date', workDate).limit(1),
       supa
         .from('attendance_daily')
         .select('*')
         .eq('designer_id', designer.id)
         .eq('work_date', workDate)
         .maybeSingle(),
+      loadSchedules(),
+      loadIsHoliday(),
+      loadIsVolunteer(),
+      loadLeaves(),
+      loadHalfDay(),
     ])
-  expectOk(schedRes.error, `designer_schedule read (${designer.name})`)
   expectOk(markRes.error, `shift_marks read (${designer.name})`)
   expectOk(actRes.error, `clickup_events read (${designer.name})`)
-  expectOk(holidayRes.error, 'holidays read')
-  expectOk(volunteerRes.error, 'holiday_workers read')
-  expectOk(leaveRes.error, `leaves read (${designer.name})`)
-  expectOk(halfRes.error, `half_days read (${designer.name})`)
   expectOk(priorRes.error, `attendance_daily read (${designer.name})`)
 
-  const schedules = (schedRes.data ?? []) as DesignerSchedule[]
   const schedule = scheduleFor(schedules, designer.id, workDate)
 
   // Auto check-out marks are audit records of a previous auto-close — never
@@ -102,8 +174,6 @@ export async function computeAttendanceFor(
   const activityTimes = ((actRes.data ?? []) as Array<{ event_time: string }>).map(
     (e) => e.event_time,
   )
-  const leaves = (leaveRes.data ?? []) as Leave[]
-  const halfRow = ((halfRes.data ?? []) as HalfDay[])[0] ?? null
   const prior = (priorRes.data as AttendanceDaily | null) ?? null
 
   const result = computeAttendance({
@@ -119,8 +189,8 @@ export async function computeAttendanceFor(
       : null,
     marks,
     activityTimes,
-    isHoliday: (holidayRes.data ?? []).length > 0,
-    isHolidayVolunteer: (volunteerRes.data ?? []).length > 0,
+    isHoliday,
+    isHolidayVolunteer,
     onLeave: leaves.some((l) => leaveCovers(l, workDate)),
     halfDay: halfRow ? { from_time: halfRow.from_time, to_time: halfRow.to_time } : null,
     forgottenCheckoutMode: config.forgotten_checkout_mode,
@@ -196,7 +266,8 @@ export async function recomputeWithPriorDay(
   designer: Designer,
   workDate: string,
   config: Config,
+  preloaded: AttendancePreload = {},
 ): Promise<AttendanceResult> {
-  await computeAttendanceFor(supa, designer, addDays(workDate, -1), config)
-  return computeAttendanceFor(supa, designer, workDate, config)
+  await computeAttendanceFor(supa, designer, addDays(workDate, -1), config, preloaded)
+  return computeAttendanceFor(supa, designer, workDate, config, preloaded)
 }

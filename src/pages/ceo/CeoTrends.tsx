@@ -8,7 +8,7 @@
 
 import { useMemo, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Flame, TrendingUp } from 'lucide-react'
+import { CheckCircle2, Flame, TrendingUp } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
@@ -32,7 +32,6 @@ import {
   burnoutRisk,
   fpqInPeriod,
   mergeTasks,
-  metricDelta,
   productionMedianInPeriod,
   useAttendanceWindow,
   useConfigValues,
@@ -156,8 +155,10 @@ export default function CeoTrends() {
     }))
 
     return { qualityPoints, qualityBaseline, speedPoints, speedBaseline, risks, forecast, inflowSeries, completionSeries }
+    // `today` stands in for buckets/cur14/prior14 (all pure functions of it)
+    // so the model recomputes at the PKT day/week rollover.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, designersQ.data, tasksQ.data, metricsQ.data, openQ.data, attendanceQ.data, quota, cfg, scope])
+  }, [loading, designersQ.data, tasksQ.data, metricsQ.data, openQ.data, attendanceQ.data, quota, cfg, scope, today])
 
   const qualityRead = readVsBaseline(model?.qualityPoints, model?.qualityBaseline, {
     goodWhen: 'up',
@@ -174,8 +175,10 @@ export default function CeoTrends() {
 
   // ── Page verdict (§20.1): synthesize the per-card reads into 2–4 calls ────
   const scopeLabel = scope === 'All' ? 'Whole studio' : `${scope} team`
-  const scrollTo = (id: string) => () =>
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const scrollTo = (id: string) => () => {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    document.getElementById(id)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+  }
   const verdictItems: VerdictItem[] = []
   if (!loading && model) {
     if (qualityRead) {
@@ -336,7 +339,7 @@ export default function CeoTrends() {
             <Flame className="h-4 w-4 text-muted" aria-hidden="true" />
             <h2 className="eyebrow inline-flex items-center gap-1">
               Overload warning — last 2 weeks vs the 2 before{' '}
-              <InfoTip text="Early signs someone may be running out of steam: fixes taking longer, fewer projects finished, but still online long hours." />
+              <InfoTip text="Early signs someone may be running out of steam: fixes taking longer, fewer projects finished, but still showing up as usual." />
             </h2>
           </div>
           {!loading && flaggedCount > 0 && (
@@ -347,8 +350,8 @@ export default function CeoTrends() {
         </div>
         <p className="mt-1 text-xs text-muted">
           A score from 0 to 100, built from three signs: fixes taking longer (40%), fewer projects
-          finished (40%), and still online as usual but producing less (20%). An early warning,
-          not a judgement — only you can see this.
+          finished (35%), and still showing up at least as often — starting work sooner, yet
+          finishing less (25%). An early warning, not a judgement — only you can see this.
         </p>
 
         {loading ? (
@@ -358,9 +361,12 @@ export default function CeoTrends() {
             ))}
           </div>
         ) : (model?.risks.length ?? 0) === 0 ? (
-          <p className="mt-4 rounded-xl bg-success-soft/60 p-4 text-sm font-medium text-fg">
-            No overload signs — nobody is trending the wrong way. Good news.
-          </p>
+          <div className="mt-4 flex items-center gap-3 rounded-xl bg-success-soft/60 p-4">
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-success" aria-hidden="true" />
+            <p className="text-sm font-medium text-fg">
+              No overload signs — nobody is trending the wrong way. Good news.
+            </p>
+          </div>
         ) : (
           <ul className="mt-4 divide-y divide-border/50">
             {model!.risks.map((r) => (
@@ -390,21 +396,15 @@ export default function CeoTrends() {
           tip="If new projects keep coming in faster than they get finished, this shows the pile-up coming."
           below
         >
+          {/* No delta chip here — a red "+N" beside a green "On track" pill reads as
+              two contradictory signals; the comparison lives in the cause line. */}
           <StatTile
             eyebrow="Next week's load"
             icon={TrendingUp}
             value={String(model?.forecast.projectedBacklog ?? 0)}
-            delta={
-              model
-                ? metricDelta(model.forecast.projectedBacklog, model.forecast.openNow, {
-                    goodWhen: 'down',
-                    vs: `vs ${model.forecast.openNow} open now`,
-                  })
-                : null
-            }
             cause={
               model
-                ? `${model.forecast.inflowPerDay} new per day vs ${model.forecast.completionPerDay} finished per day over the last 7 days`
+                ? `vs ${model.forecast.openNow} open now — ${model.forecast.inflowPerDay} new per day vs ${model.forecast.completionPerDay} finished per day over the last 7 days`
                 : null
             }
             reference={model ? `Looking ${model.forecast.horizonDays} days ahead · we flag above ${cfg.forecast_threshold}` : null}

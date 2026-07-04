@@ -1,7 +1,8 @@
-import { Fragment, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarX,
+  Check,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
@@ -12,6 +13,7 @@ import {
   PartyPopper,
   TriangleAlert,
   UserCheck,
+  X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
@@ -25,13 +27,18 @@ import { useToast } from '../../components/ui/ToastProvider'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { insertShiftMark } from '../../lib/queries'
 import { DOW_LABELS, fmtDate, fmtDuration, fmtShiftTime, fmtTime } from '../../lib/format'
-import { addDays, dateRange, pktToday } from '../../../shared/pkt'
+import { addDays, dateRange, pktInstant, pktToday } from '../../../shared/pkt'
 import { expectedQuotaOn, median, scheduleFor } from '../../../shared/aggregate'
-import type { AttendanceDaily, AttendanceStatus, Designer } from '../../../shared/types'
+import type {
+  AttendanceDaily,
+  AttendanceStatus,
+  Designer,
+  DesignerSchedule,
+} from '../../../shared/types'
 import {
-  activeDesigners,
   deleteManualShiftMark,
   metricDelta,
+  useActiveDesigners,
   useAttendanceRange,
   useDesigners,
   useDesignerDrawer,
@@ -83,7 +90,15 @@ interface DayRow {
   designer: Designer
   row: AttendanceDaily | undefined
   expected: number
+  schedule: DesignerSchedule | null
   shiftLabel: string | null
+}
+
+interface MarkVars {
+  designerId: string
+  markType: 'check_in' | 'check_out'
+  markedAt: string
+  workDate: string
 }
 
 /**
@@ -106,7 +121,7 @@ export default function OpsAttendance() {
   const { ctx } = useQuotaCtx()
   const attendanceQ = useAttendanceRange(weekStart, date)
 
-  const designers = activeDesigners(designersQ.data)
+  const designers = useActiveDesigners()
   const rowsByKey = useMemo(() => {
     const map = new Map<string, AttendanceDaily>()
     for (const r of attendanceQ.data ?? []) map.set(`${r.designer_id}|${r.work_date}`, r)
@@ -138,6 +153,7 @@ export default function OpsAttendance() {
           designer: d,
           row: rowsByKey.get(`${d.id}|${date}`),
           expected: expectedQuotaOn(d.id, date, ctx),
+          schedule,
           shiftLabel: schedule
             ? `${fmtShiftTime(schedule.shift_start)}–${fmtShiftTime(schedule.shift_end)}`
             : null,
@@ -165,8 +181,11 @@ export default function OpsAttendance() {
   const warmupMedian = median(warmups(date))
   const warmupPrev = median(warmups(prevDate))
 
-  const checkedIn = dayRows.filter((r) => r.row?.declared_in != null).length
+  // Numerator and denominator over the SAME population (people expected in) —
+  // off-day and holiday volunteers are surfaced separately, never "5 of 3".
+  const checkedIn = dayRows.filter((r) => r.expected > 0 && r.row?.declared_in != null).length
   const scheduledCount = dayRows.filter((r) => r.expected > 0).length
+  const extraCheckIns = dayRows.filter((r) => r.expected === 0 && r.row?.declared_in != null).length
   const needsReview = dayRows.filter((r) => r.row?.needs_review).length
   const lateCount = dayRows.filter((r) => (r.row?.late_minutes ?? 0) > 0).length
 
@@ -177,12 +196,13 @@ export default function OpsAttendance() {
     let review = 0
     for (const d of designers) {
       const r = rowsByKey.get(`${d.id}|${prevDate}`)
-      if (r?.declared_in != null) checked++
+      // Same population rule as today's tile: only people expected in count.
+      if (r?.declared_in != null && expectedQuotaOn(d.id, prevDate, ctx) > 0) checked++
       if ((r?.late_minutes ?? 0) > 0) late++
       if (r?.needs_review) review++
     }
     return { checked, late, review }
-  }, [designers, rowsByKey, prevDate])
+  }, [designers, rowsByKey, prevDate, ctx])
 
   // Week grid grouping (§20.4): by team, worst week first within each team.
   const weekGroups = useMemo(() => {
@@ -257,17 +277,78 @@ export default function OpsAttendance() {
   }, [dayRows, openDesigner])
 
   // ── Manual marks (undo = fingerprint delete; errors surface, §20.6) ──
+  // attendance_daily is recomputed by the 15-minute pulse cron, so a refetch
+  // right after a mark returns the SAME stale rows. The mark is therefore
+  // reflected in the cache optimistically and kept until the recompute lands;
+  // `recalcPending` keeps the pressed button from being pressable twice.
+  const [recalcPending, setRecalcPending] = useState<Set<string>>(() => new Set())
+  const recalcKey = (designerId: string, workDate: string, markType: string) =>
+    `${designerId}|${workDate}|${markType}`
+
+  const applyMarkToCache = (vars: MarkVars) => {
+    for (const [key] of queryClient.getQueriesData<AttendanceDaily[]>({ queryKey: ['attendance'] })) {
+      const [, start, end] = key as readonly unknown[]
+      if (typeof start !== 'string' || typeof end !== 'string') continue
+      if (vars.workDate < start || vars.workDate > end) continue
+      queryClient.setQueryData<AttendanceDaily[]>(key, (rows) => {
+        const list = rows ?? []
+        const idx = list.findIndex(
+          (r) => r.designer_id === vars.designerId && r.work_date === vars.workDate,
+        )
+        if (idx >= 0) {
+          return list.map((r, i) =>
+            i !== idx
+              ? r
+              : vars.markType === 'check_in'
+                ? { ...r, declared_in: r.declared_in ?? vars.markedAt, status: r.status ?? 'Present' }
+                : { ...r, declared_out: vars.markedAt, checkout_source: 'manual' },
+          )
+        }
+        const synthetic: AttendanceDaily = {
+          id: -Date.now(), // negative sentinel — replaced by the next recompute
+          designer_id: vars.designerId,
+          work_date: vars.workDate,
+          declared_in: vars.markType === 'check_in' ? vars.markedAt : null,
+          declared_out: vars.markType === 'check_out' ? vars.markedAt : null,
+          first_activity: null,
+          last_activity: null,
+          scheduled_in: null,
+          scheduled_out: null,
+          worked_minutes: 0,
+          warmup_gap_min: null,
+          late_minutes: 0,
+          early_leave_minutes: 0,
+          is_half_day: false,
+          needs_review: false,
+          checkout_source: vars.markType === 'check_out' ? 'manual' : null,
+          status: vars.markType === 'check_in' ? 'Present' : null,
+          computed_at: new Date().toISOString(),
+        }
+        return [...list, synthetic]
+      })
+    }
+  }
+
   const markMutation = useMutation({
-    mutationFn: (vars: { designerId: string; markType: 'check_in' | 'check_out'; markedAt: string }) =>
+    mutationFn: (vars: MarkVars) =>
       insertShiftMark({
         designer_id: vars.designerId,
         mark_type: vars.markType,
         source: 'manual',
         marked_at: vars.markedAt,
       }),
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ['attendance'] })
+      const snapshots = queryClient.getQueriesData<AttendanceDaily[]>({ queryKey: ['attendance'] })
+      applyMarkToCache(vars)
+      return { snapshots }
+    },
     onSuccess: (_data, vars) => {
-      void queryClient.invalidateQueries({ queryKey: ['attendance'] })
+      // Deliberately NOT invalidating ['attendance'] here — the server rows
+      // stay stale until the pulse cron recomputes, and a refetch now would
+      // clobber the optimistic mark and resurrect the button just pressed.
       void queryClient.invalidateQueries({ queryKey: ['shift-marks'] })
+      setRecalcPending((s) => new Set(s).add(recalcKey(vars.designerId, vars.workDate, vars.markType)))
       const label = vars.markType === 'check_in' ? 'check-in' : 'check-out'
       toast({
         message: `${vars.markType === 'check_in' ? 'Check-in' : 'Check-out'} saved for ${fmtTime(vars.markedAt)}`,
@@ -281,19 +362,72 @@ export default function OpsAttendance() {
             toast({ message: `Could not undo the ${label} — ${(e as Error).message}` })
             return
           }
+          setRecalcPending((s) => {
+            const next = new Set(s)
+            next.delete(recalcKey(vars.designerId, vars.workDate, vars.markType))
+            return next
+          })
+          // Here a refetch is exactly right: server rows without the deleted
+          // mark ARE the reverted state.
           void queryClient.invalidateQueries({ queryKey: ['attendance'] })
           void queryClient.invalidateQueries({ queryKey: ['shift-marks'] })
         },
       })
     },
-    onError: (e: Error) => toast({ message: `Could not save it — ${e.message}` }),
+    onError: (e: Error, _vars, mctx) => {
+      for (const [key, data] of mctx?.snapshots ?? []) queryClient.setQueryData(key, data)
+      toast({ message: `Could not save it — ${e.message}` })
+    },
   })
 
   const mark = (designerId: string, markType: 'check_in' | 'check_out') =>
-    markMutation.mutate({ designerId, markType, markedAt: new Date().toISOString() })
+    markMutation.mutate({
+      designerId,
+      markType,
+      markedAt: new Date().toISOString(),
+      workDate: date,
+    })
 
   const isToday = date === today
   const weekDates = dateRange(weekStart, date)
+
+  // ── Fixing a past day: pick the time the mark really happened (§20.6) ──
+  const [fixDraft, setFixDraft] = useState<{
+    designerId: string
+    markType: 'check_in' | 'check_out'
+    time: string
+  } | null>(null)
+  useEffect(() => setFixDraft(null), [date])
+
+  const openFix = (r: DayRow, markType: 'check_in' | 'check_out') =>
+    setFixDraft({
+      designerId: r.designer.id,
+      markType,
+      time:
+        (markType === 'check_in' ? r.schedule?.shift_start : r.schedule?.shift_end)?.slice(0, 5) ??
+        (markType === 'check_in' ? '09:00' : '17:00'),
+    })
+
+  const saveFix = (r: DayRow) => {
+    if (!fixDraft || !fixDraft.time) return
+    // Overnight shifts cross midnight: a checkout at/before the start time
+    // belongs to the NEXT calendar date, though it still fixes this work day.
+    const overnight = r.schedule != null && r.schedule.shift_end <= r.schedule.shift_start
+    const onDate =
+      fixDraft.markType === 'check_out' &&
+      overnight &&
+      r.schedule != null &&
+      `${fixDraft.time}:00` <= r.schedule.shift_start
+        ? addDays(date, 1)
+        : date
+    markMutation.mutate({
+      designerId: fixDraft.designerId,
+      markType: fixDraft.markType,
+      markedAt: pktInstant(onDate, fixDraft.time).toISOString(),
+      workDate: date,
+    })
+    setFixDraft(null)
+  }
 
   return (
     <div className="space-y-6">
@@ -321,9 +455,9 @@ export default function OpsAttendance() {
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => setDate(addDays(date, -1))}
+              onClick={() => setDate(addDays(date, view === 'week' ? -7 : -1))}
               className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-surface text-fg hover:bg-surface-2"
-              aria-label="Previous day"
+              aria-label={view === 'week' ? 'Previous week' : 'Previous day'}
             >
               <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -337,10 +471,13 @@ export default function OpsAttendance() {
             />
             <button
               type="button"
-              onClick={() => setDate(addDays(date, 1))}
+              onClick={() => {
+                const next = addDays(date, view === 'week' ? 7 : 1)
+                setDate(next > today ? today : next)
+              }}
               disabled={isToday}
               className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-surface text-fg hover:bg-surface-2 disabled:opacity-40"
-              aria-label="Next day"
+              aria-label={view === 'week' ? 'Next week' : 'Next day'}
             >
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -348,7 +485,7 @@ export default function OpsAttendance() {
               <button
                 type="button"
                 onClick={() => setDate(today)}
-                className="min-h-[2.75rem] rounded-xl px-3 text-sm font-medium text-brand hover:underline"
+                className="min-h-[2.75rem] rounded-xl px-3 text-sm font-medium text-brand hover:bg-brand-soft"
               >
                 Today
               </button>
@@ -402,11 +539,11 @@ export default function OpsAttendance() {
           icon={UserCheck}
           value={`${checkedIn} of ${scheduledCount}`}
           delta={metricDelta(checkedIn, prevStats.checked, { goodWhen: 'up', vs: 'vs prior day' })}
-          cause={
+          cause={`${
             scheduledCount - checkedIn > 0
               ? `${scheduledCount - checkedIn} still to check in`
               : 'everyone scheduled today has checked in'
-          }
+          }${extraCheckIns > 0 ? ` · plus ${extraCheckIns} in on a day off` : ''}`}
           state={scheduledCount > 0 && checkedIn < scheduledCount ? 'watch' : 'ok'}
           loading={attendanceQ.isLoading}
         />
@@ -454,156 +591,197 @@ export default function OpsAttendance() {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-border/60 text-xs text-muted">
-                <th scope="col" className="px-3 py-2.5 font-medium">Designer</th>
-                <th scope="col" className="px-3 py-2.5 font-medium">
+                <th scope="col" className="whitespace-nowrap px-3 py-2.5 font-medium">Designer</th>
+                <th scope="col" className="whitespace-nowrap px-3 py-2.5 font-medium">
                   <span className="inline-flex items-center gap-1">
                     Status
                     <InfoTip text="What kind of day it was — worked, on leave, day off, absent, and so on." />
                   </span>
                 </th>
-                <th scope="col" className="px-3 py-2.5 font-medium">
+                <th scope="col" className="whitespace-nowrap px-3 py-2.5 text-right font-medium">
                   <span className="inline-flex items-center gap-1">
                     In
                     <InfoTip text="The time they pressed Check in." />
                   </span>
                 </th>
-                <th scope="col" className="px-3 py-2.5 font-medium">
+                <th scope="col" className="whitespace-nowrap px-3 py-2.5 text-right font-medium">
                   <span className="inline-flex items-center gap-1">
                     Out
                     <InfoTip text="The time they pressed Check out. If they forgot, the system fills it in and marks the day for a double-check." />
                   </span>
                 </th>
-                <th scope="col" className="bg-surface-2/70 px-3 py-2.5 font-semibold text-fg">
+                <th scope="col" className="whitespace-nowrap bg-surface-2/70 px-3 py-2.5 text-right font-semibold text-fg">
                   <span className="inline-flex items-center gap-1">
                     Start delay
                     <InfoTip text="The time between pressing Check in and doing the first real work in ClickUp." />
                   </span>
                 </th>
-                <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                <th scope="col" className="whitespace-nowrap px-3 py-2.5 text-right font-medium">
                   <span className="inline-flex items-center gap-1">
                     Worked
                     <InfoTip text="Total time worked that day." />
                   </span>
                 </th>
-                <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                <th scope="col" className="whitespace-nowrap px-3 py-2.5 text-right font-medium">
                   <span className="inline-flex items-center gap-1">
                     Late / early
                     <InfoTip text="Started late or left early, and by how much." />
                   </span>
                 </th>
-                {isToday && (
-                  <th scope="col" className="px-3 py-2.5 text-right font-medium">
-                    <span className="inline-flex items-center gap-1">
-                      Mark for them
-                      <InfoTip text="Press Check in or Check out for someone who forgot." />
-                    </span>
-                  </th>
-                )}
+                <th scope="col" className="whitespace-nowrap px-3 py-2.5 text-right font-medium">
+                  <span className="inline-flex items-center gap-1">
+                    {isToday ? 'Mark for them' : 'Fix their day'}
+                    <InfoTip
+                      text={
+                        isToday
+                          ? 'Press Check in or Check out for someone who forgot.'
+                          : 'Add a missed check-in or check-out for this date — pick the time it really happened.'
+                      }
+                    />
+                  </span>
+                </th>
               </tr>
             </thead>
-            <tbody>
-              {/* Team section headers, worst-first within each team (§20.4). */}
-              {dayGroups.map(([team, rows]) => (
-                <Fragment key={team}>
-                  <tr className="border-b border-border/40 bg-surface-2/40">
-                    <th scope="colgroup" colSpan={isToday ? 8 : 7} className="px-3 py-2 text-left">
-                      <span className="eyebrow">{team}</span>
-                    </th>
-                  </tr>
-                  {rows.map(({ designer, row, expected, shiftLabel }) => {
-                const meta = row?.status ? STATUS_META[row.status] : null
-                const warmup = row?.warmup_gap_min ?? null
-                const warmupFlagged = warmup != null && warmup > 60
-                return (
-                  <tr key={designer.id} className="border-b border-border/40 last:border-0 hover:bg-surface-2/60">
-                    <td className="px-3 py-2.5">
-                      <button
-                        type="button"
-                        onClick={() => openDesigner(designer.id)}
-                        className="min-h-[2.75rem] text-left font-medium text-fg hover:text-brand"
-                      >
-                        {designer.name}
-                        <span className="ml-2 text-xs font-normal text-muted">{designer.team}</span>
-                      </button>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {meta && row?.status ? (
-                        <div>
-                          <Badge tone={meta.tone} icon={meta.icon}>
-                            {STATUS_DISPLAY[row.status]}
-                            {row.is_half_day ? ' · half day' : ''}
-                          </Badge>
-                          {row.needs_review && (
-                            <p className="mt-1 text-xs text-warning">
-                              closed by the system — please double-check
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted">
-                          {shiftLabel ? `Hours ${shiftLabel} PKT — nothing yet` : 'No work hours set'}
-                          {expected === 0 && shiftLabel ? ' · not expected in today' : ''}
-                        </span>
-                      )}
-                    </td>
-                    <td className="tnum px-3 py-2.5 text-muted">{fmtTime(row?.declared_in)}</td>
-                    <td className="px-3 py-2.5">
-                      <span className="tnum text-muted">{fmtTime(row?.declared_out)}</span>
-                      {row?.declared_out && row.checkout_source === 'auto_clickup' && (
-                        <p className="text-[11px] text-muted">filled in — their last work activity</p>
-                      )}
-                      {row?.declared_out && row.checkout_source === 'auto_shift_end' && (
-                        <p className="text-[11px] text-warning">filled in by the system — double-check</p>
-                      )}
-                    </td>
-                    <td className={`px-3 py-2.5 ${warmupFlagged ? 'bg-warning-soft/60' : 'bg-surface-2/40'}`}>
-                      {warmup == null ? (
-                        <span className="text-muted">—</span>
-                      ) : (
-                        <div>
-                          <span className={`tnum font-medium ${warmupFlagged ? 'text-warning' : 'text-fg'}`}>
-                            {fmtDuration(warmup)}
+            {/* One tbody per team so the team name is a row-group header, not a
+                bogus column-group (§20.10); rows stay worst-first (§20.4). */}
+            {dayGroups.map(([team, rows]) => (
+              <tbody key={team}>
+                <tr className="border-b border-border/40 bg-surface-2/40">
+                  <th scope="rowgroup" colSpan={8} className="px-3 py-2 text-left">
+                    <span className="eyebrow">{team}</span>
+                  </th>
+                </tr>
+                {rows.map((dayRow) => {
+                  const { designer, row, expected, shiftLabel } = dayRow
+                  const meta = row?.status ? STATUS_META[row.status] : null
+                  const warmup = row?.warmup_gap_min ?? null
+                  const warmupFlagged = warmup != null && warmup > 60
+                  const editing = fixDraft != null && fixDraft.designerId === designer.id
+                  const outSaved = recalcPending.has(recalcKey(designer.id, date, 'check_out'))
+                  return (
+                    <tr key={designer.id} className="border-b border-border/40 last:border-0 hover:bg-surface-2/60">
+                      <td className="px-3 py-2.5">
+                        <button
+                          type="button"
+                          onClick={() => openDesigner(designer.id)}
+                          className="min-h-[2.75rem] text-left font-medium text-fg hover:text-brand"
+                        >
+                          {designer.name}
+                          <span className="ml-2 text-xs font-normal text-muted">{designer.team}</span>
+                        </button>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {meta && row?.status ? (
+                          <div>
+                            <Badge tone={meta.tone} icon={meta.icon}>
+                              {STATUS_DISPLAY[row.status]}
+                              {row.is_half_day ? ' · half day' : ''}
+                            </Badge>
+                            {row.needs_review && (
+                              <p className="mt-1 text-xs text-warning">
+                                closed by the system — please double-check
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted">
+                            {shiftLabel ? `Hours ${shiftLabel} PKT — nothing yet` : 'No work hours set'}
+                            {expected === 0 && shiftLabel ? ' · not expected in today' : ''}
                           </span>
-                          {warmupFlagged && (
-                            <p className="text-[11px] text-warning">
-                              in at {fmtTime(row?.declared_in)}, first work {fmtTime(row?.first_activity)}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="tnum px-3 py-2.5 text-right text-muted">
-                      {row && (row.worked_minutes > 0 || row.status === 'Present' || row.status === 'HolidayWorked')
-                        ? fmtDuration(row.worked_minutes)
-                        : '—'}
-                    </td>
-                    <td className="tnum px-3 py-2.5 text-right text-muted">
-                      {row && (row.late_minutes > 0 || row.early_leave_minutes > 0) ? (
-                        <span className="text-warning">
-                          {row.late_minutes > 0 ? `+${fmtDuration(row.late_minutes)} late` : ''}
-                          {row.late_minutes > 0 && row.early_leave_minutes > 0 ? ' · ' : ''}
-                          {row.early_leave_minutes > 0 ? `${fmtDuration(row.early_leave_minutes)} early` : ''}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    {isToday && (
+                        )}
+                      </td>
+                      <td className="tnum px-3 py-2.5 text-right text-muted">{fmtTime(row?.declared_in)}</td>
                       <td className="px-3 py-2.5 text-right">
-                        {!row?.declared_in ? (
+                        <span className="tnum text-muted">{fmtTime(row?.declared_out)}</span>
+                        {row?.declared_out && row.checkout_source === 'auto_clickup' && (
+                          <p className="text-[11px] text-muted">filled in — their last work activity</p>
+                        )}
+                        {row?.declared_out && row.checkout_source === 'auto_shift_end' && (
+                          <p className="text-[11px] text-warning">filled in by the system — double-check</p>
+                        )}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right ${warmupFlagged ? 'bg-warning-soft/60' : 'bg-surface-2/40'}`}>
+                        {warmup == null ? (
+                          <span className="text-muted">—</span>
+                        ) : (
+                          <div>
+                            <span className={`tnum font-medium ${warmupFlagged ? 'text-warning' : 'text-fg'}`}>
+                              {fmtDuration(warmup)}
+                            </span>
+                            {warmupFlagged && (
+                              <p className="text-[11px] text-warning">
+                                in at {fmtTime(row?.declared_in)}, first work {fmtTime(row?.first_activity)}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="tnum px-3 py-2.5 text-right text-muted">
+                        {row && (row.worked_minutes > 0 || row.status === 'Present' || row.status === 'HolidayWorked')
+                          ? fmtDuration(row.worked_minutes)
+                          : '—'}
+                      </td>
+                      <td className="tnum px-3 py-2.5 text-right text-muted">
+                        {row && (row.late_minutes > 0 || row.early_leave_minutes > 0) ? (
+                          <span className="text-warning">
+                            {row.late_minutes > 0 ? `+${fmtDuration(row.late_minutes)} late` : ''}
+                            {row.late_minutes > 0 && row.early_leave_minutes > 0 ? ' · ' : ''}
+                            {row.early_leave_minutes > 0 ? `${fmtDuration(row.early_leave_minutes)} early` : ''}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {editing && fixDraft ? (
+                          <span className="inline-flex items-center justify-end gap-1">
+                            <input
+                              type="time"
+                              value={fixDraft.time}
+                              onChange={(e) => setFixDraft({ ...fixDraft, time: e.target.value })}
+                              aria-label={`${
+                                fixDraft.markType === 'check_in' ? 'Check-in' : 'Check-out'
+                              } time for ${designer.name} (PKT)`}
+                              className="tnum min-h-[2.75rem] rounded-xl border border-border bg-surface px-2 text-xs text-fg"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => saveFix(dayRow)}
+                              disabled={markMutation.isPending || !fixDraft.time}
+                              className="inline-flex min-h-[2.75rem] items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-xs font-medium text-fg hover:bg-surface-2 disabled:opacity-50"
+                            >
+                              <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFixDraft(null)}
+                              aria-label={`Cancel fixing ${designer.name}'s day`}
+                              className="flex h-11 w-11 items-center justify-center rounded-xl text-muted hover:bg-surface-2 hover:text-fg"
+                            >
+                              <X className="h-4 w-4" aria-hidden="true" />
+                            </button>
+                          </span>
+                        ) : !row?.declared_in ? (
                           <button
                             type="button"
-                            onClick={() => mark(designer.id, 'check_in')}
+                            onClick={() =>
+                              isToday ? mark(designer.id, 'check_in') : openFix(dayRow, 'check_in')
+                            }
                             disabled={markMutation.isPending}
                             className="inline-flex min-h-[2.75rem] items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-xs font-medium text-fg hover:bg-surface-2 disabled:opacity-50"
                           >
                             <LogIn className="h-3.5 w-3.5" aria-hidden="true" />
                             Check in
                           </button>
+                        ) : outSaved ? (
+                          <span className="text-xs text-muted">saved — updating shortly</span>
                         ) : !row.declared_out || row.checkout_source !== 'self' ? (
                           <button
                             type="button"
-                            onClick={() => mark(designer.id, 'check_out')}
+                            onClick={() =>
+                              isToday ? mark(designer.id, 'check_out') : openFix(dayRow, 'check_out')
+                            }
                             disabled={markMutation.isPending}
                             className="inline-flex min-h-[2.75rem] items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-xs font-medium text-fg hover:bg-surface-2 disabled:opacity-50"
                           >
@@ -614,18 +792,19 @@ export default function OpsAttendance() {
                           <span className="text-xs text-muted">done</span>
                         )}
                       </td>
-                    )}
-                  </tr>
-                )
-              })}
-                </Fragment>
-              ))}
-            </tbody>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            ))}
           </table>
         </div>
       ) : (
         // ── Week grid: 7 days × designers, letters not color-only (§20.10) ──
         <div className="card overflow-x-auto p-4">
+          <p className="tnum mb-3 text-xs text-muted">
+            Showing the 7 days {fmtDate(weekStart)} – {fmtDate(date)}
+          </p>
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="text-xs text-muted">
@@ -638,54 +817,62 @@ export default function OpsAttendance() {
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {/* Team section headers, worst week first within each team (§20.4). */}
-              {weekGroups.map(({ team, members }) => (
-                <Fragment key={team}>
-                  <tr className="border-t border-border/40 bg-surface-2/40">
-                    <th
-                      scope="colgroup"
-                      colSpan={weekDates.length + 1}
-                      className="px-2 py-2 text-left"
-                    >
-                      <span className="eyebrow">{team}</span>
-                    </th>
-                  </tr>
-                  {members.map((d) => (
-                    <tr key={d.id} className="border-t border-border/40">
-                      <td className="px-2 py-2">
-                        <button
-                          type="button"
-                          onClick={() => openDesigner(d.id)}
-                          className="min-h-[2.75rem] text-left font-medium text-fg hover:text-brand"
-                        >
-                          {d.name}
-                        </button>
-                      </td>
-                      {weekDates.map((wd) => {
-                        const r = rowsByKey.get(`${d.id}|${wd}`)
-                        const meta = r?.status ? STATUS_META[r.status] : null
-                        return (
-                          <td key={wd} className="px-2 py-2 text-center">
-                            <span
-                              className={`tnum inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg px-1 text-xs font-semibold ${
-                                meta ? meta.cell : 'bg-surface-2/50 text-muted/50'
-                              }`}
-                              title={`${fmtDate(wd)}: ${r?.status ? STATUS_DISPLAY[r.status] : 'no record'}${
-                                r?.warmup_gap_min != null ? ` · start delay ${fmtDuration(r.warmup_gap_min)}` : ''
-                              }${r?.needs_review ? ' · double-check' : ''}`}
-                            >
+            {/* One tbody per team so the team name is a row-group header, not a
+                bogus column-group (§20.10); worst week first per team (§20.4). */}
+            {weekGroups.map(({ team, members }) => (
+              <tbody key={team}>
+                <tr className="border-t border-border/40 bg-surface-2/40">
+                  <th
+                    scope="rowgroup"
+                    colSpan={weekDates.length + 1}
+                    className="px-2 py-2 text-left"
+                  >
+                    <span className="eyebrow">{team}</span>
+                  </th>
+                </tr>
+                {members.map((d) => (
+                  <tr key={d.id} className="border-t border-border/40">
+                    <td className="px-2 py-2">
+                      <button
+                        type="button"
+                        onClick={() => openDesigner(d.id)}
+                        className="min-h-[2.75rem] text-left font-medium text-fg hover:text-brand"
+                      >
+                        {d.name}
+                      </button>
+                    </td>
+                    {weekDates.map((wd) => {
+                      const r = rowsByKey.get(`${d.id}|${wd}`)
+                      const meta = r?.status ? STATUS_META[r.status] : null
+                      const cellText = `${fmtDate(wd)}: ${
+                        r?.status ? STATUS_DISPLAY[r.status] : 'no record'
+                      }${
+                        r?.warmup_gap_min != null
+                          ? ` · start delay ${fmtDuration(r.warmup_gap_min)}`
+                          : ''
+                      }${r?.needs_review ? ' · double-check' : ''}`
+                      return (
+                        <td key={wd} className="px-2 py-2 text-center">
+                          <span
+                            className={`tnum inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg px-1 text-xs font-semibold ${
+                              meta ? meta.cell : 'bg-surface-2/50 text-muted/50'
+                            }`}
+                            title={cellText}
+                          >
+                            <span aria-hidden="true">
                               {meta ? meta.letter : '·'}
                               {r?.needs_review ? '!' : ''}
                             </span>
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-                </Fragment>
-              ))}
-            </tbody>
+                            {/* The full meaning, not just the letter, for AT (§20.10). */}
+                            <span className="sr-only">{cellText}</span>
+                          </span>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            ))}
           </table>
           <p className="mt-3 text-xs text-muted">
             P present · HW worked on a holiday · L leave · H holiday · W weekly day off · A absent ·

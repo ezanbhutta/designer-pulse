@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -35,7 +35,6 @@ import {
 import { STATUS_LABELS } from '../../../shared/statuses'
 import type { TaskState } from '../../../shared/types'
 import {
-  activeDesigners,
   agingThresholdMin,
   closedOn,
   createdOn,
@@ -43,6 +42,7 @@ import {
   metricDelta,
   minutesSinceShiftStart,
   slotsFilledToday,
+  useActiveDesigners,
   useAttendanceRange,
   useConfigValues,
   useDesignerDrawer,
@@ -79,7 +79,14 @@ export default function OpsHome() {
   const navigate = useNavigate()
   const openDesigner = useDesignerDrawer()
   const cfg = useConfigValues()
-  const today = pktToday()
+  // Minute tick so an unattended cockpit rolls over PKT midnight and task
+  // ages/shift math never freeze at the last render.
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(t)
+  }, [])
+  const today = pktToday(now)
   const yesterday = addDays(today, -1)
 
   const designersQ = useDesigners()
@@ -99,7 +106,7 @@ export default function OpsHome() {
 
   const [trailTask, setTrailTask] = useState<TaskState | null>(null)
 
-  const designers = activeDesigners(designersQ.data)
+  const designers = useActiveDesigners()
   const designerById = useMemo(
     () => new Map((designersQ.data ?? []).map((d) => [d.id, d])),
     [designersQ.data],
@@ -108,7 +115,6 @@ export default function OpsHome() {
   const recentTasks = tasksQ.data ?? []
 
   const derived = useMemo(() => {
-    const now = new Date()
     const assignedToday = new Map<string, number>()
     for (const t of recentTasks) {
       if (t.designer_id && createdOn(t, today)) {
@@ -145,11 +151,22 @@ export default function OpsHome() {
     const totalAssignedToday = rows.reduce((s, r) => s + r.assigned, 0)
     const totalFilled = rows.reduce((s, r) => s + r.filled, 0)
 
+    // Like-for-like deltas: today-so-far is compared with yesterday UP TO THE
+    // SAME TIME OF DAY, never with all of yesterday — otherwise every morning
+    // reads as a big fake drop.
+    const cutoffMs = now.getTime() - 86_400_000
     const assignedYesterday = recentTasks.filter(
-      (t) => t.designer_id && createdOn(t, yesterday),
+      (t) =>
+        t.designer_id &&
+        createdOn(t, yesterday) &&
+        new Date(t.created_at as string).getTime() <= cutoffMs,
     ).length
     const completedTodayTasks = recentTasks.filter((t) => closedOn(t, today, 'complete'))
-    const completedYesterday = recentTasks.filter((t) => closedOn(t, yesterday, 'complete')).length
+    const completedYesterday = recentTasks.filter((t) => {
+      if (!closedOn(t, yesterday, 'complete')) return false
+      const at = t.closed_at ?? t.last_event_at
+      return at != null && new Date(at).getTime() <= cutoffMs
+    }).length
 
     return {
       rows,
@@ -161,7 +178,7 @@ export default function OpsHome() {
       completedTodayTasks,
       completedYesterday,
     }
-  }, [recentTasks, designers, openTasks, ctx, cfg, today, yesterday])
+  }, [recentTasks, designers, openTasks, ctx, cfg, today, yesterday, now])
 
   // ── Verdict items, ranked (§20.1) ───────────────────────────────────────────
   const verdictItems = useMemo(() => {
@@ -211,13 +228,14 @@ export default function OpsHome() {
       return at != null && new Date(at).getTime() >= dayAgo
     })) {
       const d = t.designer_id ? designerById.get(t.designer_id) : undefined
-      const href = clickupTaskUrl(t.task_id)
       items.push({
         id: `cancel-${t.task_id}`,
         severity: 'critical',
         text: `Cancelled: "${t.name ?? t.task_id}"${d ? ` — ${d.name}` : ''}`,
         detail: 'The order was lost because of a design problem. Check the project history before judging anyone.',
-        action: href ? { label: 'Open in ClickUp', href } : undefined,
+        // The 10-second fault check happens in-app: the trail drawer shows the
+        // full history (with the ClickUp deep link inside, one tap away).
+        action: { label: 'See what happened', onClick: () => setTrailTask(t) },
       })
     }
 
@@ -304,7 +322,7 @@ export default function OpsHome() {
   const loading = openTasksQ.isLoading || tasksQ.isLoading
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <header>
         <p className="eyebrow">Team overview · {fmtDate(today)} · all times PKT</p>
         <h1 className="mt-1 inline-flex items-center gap-2 text-3xl font-semibold text-fg">
@@ -343,7 +361,7 @@ export default function OpsHome() {
           value={`${derived.totalAssignedToday} of ${derived.totalExpected}`}
           delta={metricDelta(derived.totalAssignedToday, derived.assignedYesterday, {
             goodWhen: 'up',
-            vs: 'vs yesterday',
+            vs: 'vs yesterday by this time',
           })}
           cause={
             underQuotaCount > 0
@@ -359,7 +377,7 @@ export default function OpsHome() {
           value={String(derived.completedTodayTasks.length)}
           delta={metricDelta(derived.completedTodayTasks.length, derived.completedYesterday, {
             goodWhen: 'up',
-            vs: 'vs yesterday',
+            vs: 'vs yesterday by this time',
           })}
           cause={
             derived.completedTodayTasks.length > 0
@@ -386,7 +404,9 @@ export default function OpsHome() {
           }
           state={openRevisions.length > 0 ? 'watch' : 'ok'}
           loading={openTasksQ.isLoading}
-          onClick={() => navigate('/ops/board')}
+          // Land on the stage-grouped board so the revision column is visible
+          // no matter which grouping was used last.
+          onClick={() => navigate('/ops/board?group=status')}
         />
         <StatTile
           eyebrow={labelTip(
@@ -472,7 +492,7 @@ export default function OpsHome() {
                         href={href}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex h-11 w-11 items-center justify-center rounded-lg text-brand hover:bg-brand-soft"
+                        className="flex h-11 w-11 items-center justify-center rounded-xl text-brand hover:bg-brand-soft"
                         aria-label={`Open ${r.designer.name}'s list in ClickUp`}
                         title="Open list in ClickUp"
                       >
