@@ -22,6 +22,7 @@ import {
   DESIGNERS_SPACE_ID,
   discoverSpaceLists,
   getListTasks,
+  getTask,
   setClickUpDeadline,
   type ClickUpTask,
 } from '../_lib/clickup'
@@ -83,6 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     let healed = 0
     let recomputed = 0
     let dueTodaySwept = 0
+    let duePhantomsHealed = 0
 
     // Shared per-batch pipeline: refresh known rows, backfill unknown ones,
     // heal status drift. Used by BOTH the updated-since window and the
@@ -244,6 +246,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       // quota), so due-today counts on the dashboards can never lag behind
       // ClickUp — no matter how old the task is, whether its webhook was
       // dropped, or how recently the list was linked.
+      const dueSeenIds = new Set<string>()
       for (let page = 0; ; page++) {
         const { tasks: batch, lastPage } = await getListTasks(list.id, {
           dueDateGt: dueGt,
@@ -253,8 +256,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         })
         if (!batch.length) break
         dueTodaySwept += batch.length
+        for (const t of batch) dueSeenIds.add(t.id)
         await processBatch(list, designer, batch)
         if (lastPage) break
+      }
+
+      // …and the OTHER direction: rows WE think are due today for this
+      // designer but ClickUp did not confirm are phantoms — a deleted task,
+      // a due date moved to another day, or a task moved elsewhere, whose
+      // update message was dropped. Verify each one against ClickUp live and
+      // correct it, so the due-today count matches ClickUp exactly both ways.
+      const { data: ourDueRows, error: ourDueErr } = await supa
+        .from('task_state')
+        .select('task_id')
+        .eq('designer_id', designer.id)
+        .eq('deleted', false)
+        .gte('due_date', new Date(dueGt).toISOString())
+        .lt('due_date', new Date(dueLt).toISOString())
+        .limit(500)
+      expectOk(ourDueErr, `due-today rows read (${list.name})`)
+      for (const row of (ourDueRows ?? []) as Array<{ task_id: string }>) {
+        if (dueSeenIds.has(row.task_id)) continue
+        let live: ClickUpTask | null = null
+        try {
+          live = await getTask(row.task_id)
+        } catch (err) {
+          if (err instanceof ClickUpBudgetError) throw err
+          const msg = err instanceof Error ? err.message : String(err)
+          if (!(msg.includes('404') || /not found/i.test(msg))) throw err
+        }
+        const homeListId = live?.list?.id ?? null
+        const homeDesigner = homeListId ? designers.get(homeListId) : undefined
+        if (!live || !homeDesigner) {
+          // Deleted in ClickUp, or moved to a list outside the roster — the
+          // row must not sit on anyone's plate.
+          const { error: ghostErr } = await supa
+            .from('task_state')
+            .update({ deleted: true, updated_at: new Date().toISOString() })
+            .eq('task_id', row.task_id)
+          expectOk(ghostErr, `due-phantom ghost (${row.task_id})`)
+        } else {
+          // Still real — rebuild from ClickUp so due date, list, designer and
+          // status all snap back to the truth.
+          await backfillTaskHistory(supa, live, homeListId!, homeDesigner.id)
+          await recomputeTaskMetrics(supa, row.task_id)
+        }
+        duePhantomsHealed++
       }
 
       // Process page-by-page (≤100 tasks each): after a long webhook outage a
@@ -286,6 +333,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       healed,
       recomputed,
       dueTodaySwept,
+      duePhantomsHealed,
       tookMs: Date.now() - started.getTime(),
     })
   } catch (err) {
