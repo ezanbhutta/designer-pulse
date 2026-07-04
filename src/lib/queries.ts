@@ -206,12 +206,17 @@ export async function insertShiftMark(mark: {
   source?: 'self' | 'manual'
   marked_at?: string
 }): Promise<void> {
-  const { error } = await supabase.from('shift_marks').insert({
+  const row: Record<string, unknown> = {
     designer_id: mark.designer_id,
     mark_type: mark.mark_type,
-    marked_at: mark.marked_at ?? new Date().toISOString(),
     source: mark.source ?? 'self',
-  })
+  }
+  // marked_at defaults to now() server-side (migration 005): self marks omit
+  // the timestamp entirely so the SERVER clock is the only truth — a wrong
+  // phone clock can never block or skew a check-in. Explicit timestamps
+  // (manual PM/HR corrections) still pass through.
+  if (mark.marked_at) row.marked_at = mark.marked_at
+  const { error } = await supabase.from('shift_marks').insert(row)
   if (error) throw new Error(error.message)
 }
 

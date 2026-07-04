@@ -379,11 +379,13 @@ function SelfViewBody() {
         marked_at: markedAt,
       }
       setLocalMarks((prev) => [...prev, local])
+      // No marked_at: the server clock stamps self marks (migration 005) —
+      // the optimistic local row above still shows device time instantly,
+      // and the realtime refresh snaps it to the server's truth.
       insertShiftMark({
         designer_id: designerId,
         mark_type,
         source: 'self',
-        marked_at: markedAt,
       })
         .then(() => {
           markInFlight.current = false
