@@ -316,19 +316,20 @@ export default function OpsLeave() {
       <div className="grid grid-cols-1 gap-8 xl:grid-cols-3">
         {/* ── Leaves ── */}
         <section className="card p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 whitespace-nowrap text-card text-fg">
-              <Coffee className="h-5 w-5 text-muted" aria-hidden="true" />
-              Leave
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="flex min-w-0 items-center gap-2 text-card text-fg">
+              <Coffee className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
+              <span className="truncate">Leave</span>
               <InfoTip text="Full days off. While someone is on leave, no projects are expected from them." />
             </h2>
             <button
               type="button"
               onClick={() => setDrawer('leave')}
-              className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface px-3 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.98]"
+              aria-label="Add leave"
+              title="Add leave"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-fg transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-brand motion-safe:active:scale-[0.95]"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
-              Add leave
             </button>
           </div>
           <ul className="mt-6 max-h-96 space-y-2 overflow-y-auto pr-1">
@@ -410,19 +411,20 @@ export default function OpsLeave() {
 
         {/* ── Half-days ── */}
         <section className="card p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 whitespace-nowrap text-card text-fg">
-              <Hourglass className="h-5 w-5 text-muted" aria-hidden="true" />
-              Half-days
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="flex min-w-0 items-center gap-2 text-card text-fg">
+              <Hourglass className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
+              <span className="truncate">Half-days</span>
               <InfoTip text="Someone away for part of the day. They still count as present — only the away hours are taken off." />
             </h2>
             <button
               type="button"
               onClick={() => setDrawer('half')}
-              className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface px-3 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.98]"
+              aria-label="Add half-day"
+              title="Add half-day"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-fg transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-brand motion-safe:active:scale-[0.95]"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
-              Add half-day
             </button>
           </div>
           <ul className="mt-6 max-h-96 space-y-2 overflow-y-auto pr-1">
@@ -474,19 +476,20 @@ export default function OpsLeave() {
 
         {/* ── Holidays + volunteers ── */}
         <section className="card p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 whitespace-nowrap text-card text-fg">
-              <PartyPopper className="h-5 w-5 text-muted" aria-hidden="true" />
-              Holidays
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="flex min-w-0 items-center gap-2 text-card text-fg">
+              <PartyPopper className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
+              <span className="truncate">Holidays</span>
               <InfoTip text="Days off for the whole company. People can offer to work on a holiday — tick their name on its row." />
             </h2>
             <button
               type="button"
               onClick={() => setDrawer('holiday')}
-              className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface px-3 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.98]"
+              aria-label="Add holiday"
+              title="Add holiday"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-fg transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-brand motion-safe:active:scale-[0.95]"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
-              Add holiday
             </button>
           </div>
           <ul className="mt-6 max-h-96 space-y-2 overflow-y-auto pr-1">

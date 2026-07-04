@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CheckCircle2, ChevronDown, ChevronRight, ExternalLink, TriangleAlert } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
@@ -44,7 +44,7 @@ import {
 type GroupBy = 'status' | 'designer'
 
 const OPEN_STATUSES = STATUSES.filter((s) => !TERMINAL_STATUSES.includes(s))
-const COLUMN_CAP = 50
+const COLUMN_CAP = 100
 
 /**
  * The live status board (spec §13.1): every open task by status or by
@@ -71,6 +71,24 @@ export default function OpsBoard() {
   // The disclosure remembers last use (§20.4), like the sibling group-by.
   const [showClosed, setShowClosed] = useLocalStorage<boolean>('pulse.ops.board.closed', false)
   const [trailTask, setTrailTask] = useState<TaskState | null>(null)
+
+  // A true Kanban: the columns fill the viewport below the header and each
+  // column scrolls its OWN cards — the page frame never scrolls. The board's
+  // top edge varies (breadcrumb, wrapping health chips, error banner), so we
+  // measure it and bound the height to whatever's left of the viewport.
+  const boardRef = useRef<HTMLDivElement>(null)
+  const [boardHeight, setBoardHeight] = useState<number>()
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = boardRef.current
+      if (!el) return
+      const h = Math.max(320, window.innerHeight - el.getBoundingClientRect().top - 24)
+      setBoardHeight((prev) => (prev === h ? prev : h))
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [groupBy, showClosed, openTasksQ.error, openTasksQ.isLoading])
 
   // Drill-in intent (e.g. Home's "Fixes in progress" tile) can force a
   // grouping via ?group=; it overrides and updates the remembered choice.
@@ -293,20 +311,30 @@ export default function OpsBoard() {
           ))}
         </div>
       ) : groupBy === 'status' ? (
-        // ── Kanban by status ──
-        <div className="flex items-start gap-5 overflow-x-auto pb-4">
+        // ── Kanban by status: the columns row fills the viewport and scrolls
+        // horizontally; each column scrolls its OWN cards vertically. ──
+        <div
+          ref={boardRef}
+          style={boardHeight ? { height: boardHeight } : undefined}
+          className="flex items-stretch gap-5 overflow-x-auto pb-2"
+        >
           {[...OPEN_STATUSES, ...(showClosed ? TERMINAL_STATUSES : [])].map((status) => {
             const tasks = derived.byStatus.get(status) ?? []
             return (
-              <section key={status} className="w-72 shrink-0" aria-label={STATUS_LABELS[status]}>
-                <div className="flex items-center justify-between gap-2 px-1">
+              <section
+                key={status}
+                className="flex w-72 shrink-0 flex-col"
+                aria-label={STATUS_LABELS[status]}
+              >
+                <div className="flex items-center justify-between gap-2 px-1 pb-3">
                   <span className="inline-flex items-center gap-1">
                     <StatusBadge status={status} />
                     <InfoTip text={STATUS_EXPLAINERS[status]} />
                   </span>
                   <span className="tnum text-caption text-muted">{tasks.length}</span>
                 </div>
-                <div className="mt-3 space-y-2">
+                {/* This is the part that scrolls — one column's cards. */}
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
                   {tasks.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-caption text-muted">
                       {status === 'revision'
@@ -328,7 +356,7 @@ export default function OpsBoard() {
                         />
                       ))}
                       {tasks.length > COLUMN_CAP && (
-                        <p className="text-center text-label font-normal tracking-normal text-muted">
+                        <p className="pb-1 text-center text-label font-normal tracking-normal text-muted">
                           +{tasks.length - COLUMN_CAP} more — switch to "By person" to see them
                         </p>
                       )}
@@ -340,17 +368,17 @@ export default function OpsBoard() {
           })}
           {/* ── Unmapped-status bucket — never invisible to Ops ── */}
           {derived.unmapped.length > 0 && (
-            <section className="w-72 shrink-0" aria-label="Unknown status">
-              <div className="flex items-center justify-between gap-2 px-1">
+            <section className="flex w-72 shrink-0 flex-col" aria-label="Unknown status">
+              <div className="flex items-center justify-between gap-2 px-1 pb-3">
                 <Badge tone="warning" icon={TriangleAlert}>
                   Unknown status
                 </Badge>
                 <span className="tnum text-caption text-muted">{derived.unmapped.length}</span>
               </div>
-              <p className="mt-3 rounded-xl bg-warning-soft px-3 py-2 text-caption leading-snug text-warning">
-                We do not recognize this status name — check the list's statuses in ClickUp.
-              </p>
-              <div className="mt-3 space-y-2">
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+                <p className="rounded-xl bg-warning-soft px-3 py-2 text-caption leading-snug text-warning">
+                  We do not recognize this status name — check the list's statuses in ClickUp.
+                </p>
                 {derived.unmapped.slice(0, COLUMN_CAP).map((t) => (
                   <TaskCard
                     key={t.task_id}
