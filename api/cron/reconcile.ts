@@ -14,8 +14,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { canonicalizeStatus } from '../../shared/statuses'
 import type { TaskState } from '../../shared/types'
-import { json, requireCronAuth } from '../_lib/http'
-import { expectOk, supabaseAdmin, type SupabaseAdmin } from '../_lib/supabaseAdmin'
+import { createSafetyResponder, requireCronAuth } from '../_lib/http'
+import { expectOk, supabaseAdmin } from '../_lib/supabaseAdmin'
 import {
   ClickUpBudgetError,
   DESIGNERS_SPACE_ID,
@@ -50,23 +50,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   // On budget exhaustion we return partial and do NOT advance last_sync, so
   // the next 15-minute run redoes the window (5-min overlap covers gaps).
   setClickUpDeadline(started.getTime() + 22_000)
-  let responded = false
-  const respond = (status: number, body: Record<string, unknown>) => {
-    if (responded) return
-    responded = true
-    clearTimeout(safety)
-    json(res, status, body)
-  }
-  const safety = setTimeout(
-    () =>
-      respond(200, {
-        ok: true,
-        partial: true,
-        note: 'safety flush — last_sync not advanced, next run redoes the window',
-        tookMs: Date.now() - started.getTime(),
-      }),
-    26_000,
-  )
+  const respond = createSafetyResponder(res, {
+    safetyMs: 26_000,
+    safetyBody: () => ({
+      ok: true,
+      partial: true,
+      note: 'safety flush — last_sync not advanced, next run redoes the window',
+      tookMs: Date.now() - started.getTime(),
+    }),
+  })
   try {
     const supa = supabaseAdmin()
     const lastSync = await getLastSync(supa)

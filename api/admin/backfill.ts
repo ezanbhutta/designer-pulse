@@ -27,7 +27,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { canonicalizeStatus, parseConceptCount } from '../../shared/statuses'
 import { computeTaskMetrics, reconstructBackfillEvents, type TransitionEvent } from '../../shared/metrics'
-import { APP_VERSION, json, requireCronAuth } from '../_lib/http'
+import { APP_VERSION, createSafetyResponder, requireCronAuth } from '../_lib/http'
 import { expectOk, supabaseAdmin, type SupabaseAdmin } from '../_lib/supabaseAdmin'
 import {
   ClickUpBudgetError,
@@ -84,29 +84,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   }> = []
   const skipped: Array<{ list_id: string; list_name: string; reason: string }> = []
   const timings: Record<string, number> = {}
-  let responded = false
 
-  const respond = (done: boolean, extra?: Record<string, unknown>) => {
-    if (responded) return
-    responded = true
-    clearTimeout(safety)
-    json(res, 200, {
-      ok: true,
-      done,
-      version: APP_VERSION,
-      lists: results,
-      skipped,
-      timings,
-      tookMs: Date.now() - started,
-      hint: done
-        ? 'Backfill complete — every mapped list is imported.'
-        : 'Slice finished — CALL AGAIN; it resumes exactly where it stopped (already-imported tasks are skipped).',
-      ...extra,
-    })
-  }
-
+  const buildBody = (done: boolean, extra?: Record<string, unknown>): Record<string, unknown> => ({
+    ok: true,
+    done,
+    version: APP_VERSION,
+    lists: results,
+    skipped,
+    timings,
+    tookMs: Date.now() - started,
+    hint: done
+      ? 'Backfill complete — every mapped list is imported.'
+      : 'Slice finished — CALL AGAIN; it resumes exactly where it stopped (already-imported tasks are skipped).',
+    ...extra,
+  })
   // Last resort: never let the platform kill us without a usable answer.
-  const safety = setTimeout(() => respond(false, { note: 'safety flush at 50s' }), SAFETY_FLUSH_MS)
+  const respondRaw = createSafetyResponder(res, {
+    safetyMs: SAFETY_FLUSH_MS,
+    safetyBody: () => buildBody(false, { note: 'safety flush at 50s' }),
+  })
+  const respond = (done: boolean, extra?: Record<string, unknown>) => respondRaw(200, buildBody(done, extra))
 
   const timed = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
     const t0 = Date.now()
@@ -226,11 +223,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return
     }
     console.error('[admin/backfill]', err)
-    if (!responded) {
-      responded = true
-      clearTimeout(safety)
-      json(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err), timings })
-    }
+    respondRaw(500, { ok: false, error: err instanceof Error ? err.message : String(err), timings })
   }
 }
 
@@ -305,7 +298,7 @@ async function importChunk(
     let lastTime: string | null = null
     if (tis) {
       const history = [...(tis.status_history ?? []), ...(tis.current_status ? [tis.current_status] : [])]
-      for (const e of reconstructBackfillEvents(task.id, listId, history, task.status?.status ?? null)) {
+      for (const e of reconstructBackfillEvents(history)) {
         statusEvents.push({
           task_id: task.id,
           list_id: listId,

@@ -249,7 +249,7 @@ export async function backfillTaskHistory(
   ]
   // reconstructBackfillEvents drops unknown status names (spec §6.4) and
   // keeps the canonical chain intact.
-  const events = reconstructBackfillEvents(task.id, listId, history, task.status?.status ?? null)
+  const events = reconstructBackfillEvents(history)
   const rows: IngestEvent[] = events.map((e) => ({
     task_id: task.id,
     list_id: listId,

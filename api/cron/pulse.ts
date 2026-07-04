@@ -33,7 +33,7 @@ import type {
   QuotaException,
   TaskState,
 } from '../../shared/types'
-import { json, requireCronAuth } from '../_lib/http'
+import { createSafetyResponder, requireCronAuth } from '../_lib/http'
 import { expectOk, supabaseAdmin } from '../_lib/supabaseAdmin'
 import { loadConfig } from '../_lib/config'
 import { fireAlert } from '../_lib/alerts'
@@ -71,18 +71,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   const started = Date.now()
   const outOfTime = () => Date.now() - started > BUDGET_MS
   setClickUpDeadline(started + BUDGET_MS)
-  let responded = false
   const summary: Record<string, unknown> = { ok: true }
-  const respond = (status: number, body: Record<string, unknown>) => {
-    if (responded) return
-    responded = true
-    clearTimeout(safety)
-    json(res, status, body)
-  }
-  const safety = setTimeout(
-    () => respond(200, { ...summary, partial: true, note: 'safety flush — remainder next run' }),
-    SAFETY_FLUSH_MS,
-  )
+  const respond = createSafetyResponder(res, {
+    safetyMs: SAFETY_FLUSH_MS,
+    safetyBody: () => ({ ...summary, partial: true, note: 'safety flush — remainder next run' }),
+  })
   try {
     const supa = supabaseAdmin()
     const cfg = await loadConfig(supa)
@@ -365,6 +358,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       )
       summary.attendanceRuns = attendanceRuns
     }
+    // Always present in the body, even when no designer batch ran.
+    summary.attendanceRuns = attendanceRuns
 
     // ── (4) Deep verify — the system matches ClickUp BY ITSELF ───────────────
     // Whatever budget is left goes to the rolling workspace verification: a
@@ -380,19 +375,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
     }
 
+    // `summary` is the single source for the success body — the safety flush
+    // and the final response can never drift apart again.
     respond(200, {
-      ok: true,
-      work_date: today,
-      gapAlerts,
-      agingAlerts,
-      autoResolved,
-      agedCandidates: candidates.length,
-      agedChecked: agedVerify?.checked ?? 0,
-      agedHealed: agedVerify?.healed ?? 0,
-      agedGhosted: agedVerify?.ghosted ?? 0,
-      agedUntracked: agedVerify?.untracked ?? 0,
+      ...summary,
       openTasks: openTasks.length,
-      attendanceRuns,
       deepVerify,
       partial: attendancePartial,
       tookMs: Date.now() - started,
