@@ -123,10 +123,18 @@ export async function fetchTaskMetricsSince(startIso: string): Promise<TaskMetri
   return throwIf(data, error)
 }
 
-export async function fetchTaskEvents(taskId: string): Promise<ClickupEvent[]> {
+/** The columns the task trail actually renders — deliberately NOT `*`: the
+ *  `raw` jsonb column holds full webhook payloads (tens of KB per task) the
+ *  trail never displays. */
+export type TaskTrailEvent = Pick<
+  ClickupEvent,
+  'id' | 'task_id' | 'event_type' | 'from_status' | 'to_status' | 'event_time' | 'source'
+>
+
+export async function fetchTaskEvents(taskId: string): Promise<TaskTrailEvent[]> {
   const { data, error } = await supabase
     .from('clickup_events')
-    .select('*')
+    .select('id,task_id,event_type,from_status,to_status,event_time,source')
     .eq('task_id', taskId)
     .order('event_time')
   return throwIf(data, error)

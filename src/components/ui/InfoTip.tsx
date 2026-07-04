@@ -23,9 +23,11 @@ const CLAMP_PX = 148
 export function InfoTip({ text, label }: InfoTipProps) {
   const id = useId()
   const buttonRef = useRef<HTMLButtonElement | null>(null)
-  // A tap fires mouseenter+focus AND click; without this flag the click
-  // handler would immediately toggle the just-opened note closed again,
-  // making the ⓘ dead on touch screens.
+  // A tap fires compatibility mouseenter/focus/click/mouseleave events;
+  // without this latch those synthesized mouse events would immediately
+  // toggle the just-opened note closed again, making the ⓘ dead on touch
+  // screens. The latch releases only when a REAL mouse pointer arrives, so
+  // hybrid devices get hover behavior back.
   const touched = useRef(false)
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ top: number; left: number; below: boolean } | null>(null)
@@ -84,6 +86,9 @@ export function InfoTip({ text, label }: InfoTipProps) {
         onTouchStart={() => {
           touched.current = true
         }}
+        onPointerEnter={(e) => {
+          if (e.pointerType === 'mouse') touched.current = false
+        }}
         onMouseEnter={() => {
           if (!touched.current) show()
         }}
@@ -100,7 +105,6 @@ export function InfoTip({ text, label }: InfoTipProps) {
           e.stopPropagation()
           if (open) hide()
           else show()
-          touched.current = false
         }}
         // before:-inset-3 grows the tap target to ~44×44 while the icon stays 20px.
         className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full align-middle text-muted transition-colors before:absolute before:-inset-3 before:content-[''] hover:text-fg focus-visible:text-fg"

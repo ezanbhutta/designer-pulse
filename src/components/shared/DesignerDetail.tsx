@@ -15,6 +15,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { Badge } from '../ui/Badge'
+import { Button } from '../ui/Button'
 import { Drawer } from '../ui/Drawer'
 import { EmptyState } from '../ui/EmptyState'
 import { ErrorBanner } from '../ui/ErrorBanner'
@@ -55,7 +56,12 @@ import {
   type DesignerPeriodSummary,
   type QuotaContext,
 } from '../../../shared/aggregate'
-import type { AttendanceDaily, AttendanceStatus } from '../../../shared/types'
+import type {
+  AttendanceDaily,
+  AttendanceStatus,
+  TaskMetrics,
+  TaskState,
+} from '../../../shared/types'
 
 export interface DesignerDetailProps {
   designerId: string
@@ -88,21 +94,6 @@ function metricDelta(
   }
 }
 
-/**
- * Label + ⓘ for StatTile's string-typed `eyebrow` (copy-pass workaround, local
- * to this file — StatTile's props are owned elsewhere). The node keeps a
- * readable toString so StatTile's template-literal aria-labels stay sensible.
- */
-function labelTip(label: string, tip: string): string {
-  const node = (
-    <span className="inline-flex items-center gap-1">
-      {label}
-      <InfoTip text={tip} />
-    </span>
-  )
-  return Object.assign({}, node, { toString: () => label }) as unknown as string
-}
-
 const ATTENDANCE_CHIP: Record<AttendanceStatus, { letter: string; className: string }> = {
   Present: { letter: 'P', className: 'bg-success-soft text-success' },
   HolidayWorked: { letter: 'HW', className: 'bg-success-soft text-success' },
@@ -133,6 +124,14 @@ export interface DesignerMetricsPanelProps {
   /** 'ops' shows team-median reference points; 'self' NEVER sees peers (§22.10). */
   scope: 'ops' | 'self'
   period: MetricsPeriod
+  /** Pre-fetched task rows covering AT LEAST priorStart..end — when given,
+   *  the panel skips its own tasks fetch (the self-view already holds an
+   *  8-week superset; refetching per panel doubles the REST calls). */
+  tasks?: TaskState[]
+  /** Pre-fetched metrics rows covering at least priorStart..end. */
+  metrics?: TaskMetrics[]
+  /** Pre-fetched attendance rows covering at least priorStart..end. */
+  attendance?: AttendanceDaily[]
 }
 
 /**
@@ -143,7 +142,14 @@ export interface DesignerMetricsPanelProps {
  * designer only to their own past (§22.10). Single-column on small screens —
  * the self-view is mobile-first (§20.10).
  */
-export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetricsPanelProps) {
+export function DesignerMetricsPanel({
+  designerId,
+  scope,
+  period,
+  tasks: tasksProp,
+  metrics: metricsProp,
+  attendance: attendanceProp,
+}: DesignerMetricsPanelProps) {
   const sinceIso = pktInstant(period.priorStart, '00:00').toISOString()
 
   const designersQ = useQuery({ queryKey: qk.designers, queryFn: fetchDesigners, staleTime: STALE_ANALYTICS })
@@ -152,21 +158,28 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
   const leavesQ = useQuery({ queryKey: qk.leaves, queryFn: fetchLeaves, staleTime: STALE_ANALYTICS })
   const holidaysQ = useQuery({ queryKey: qk.holidays, queryFn: fetchHolidays, staleTime: STALE_ANALYTICS })
   const workersQ = useQuery({ queryKey: qk.holidayWorkers, queryFn: fetchHolidayWorkers, staleTime: STALE_ANALYTICS })
+  // Window queries run only when the caller didn't hand us the data already.
   const tasksQ = useQuery({
     queryKey: ['tasks', 'since', period.priorStart] as const,
     queryFn: () => fetchTasksSince(sinceIso),
     staleTime: STALE_LIVE,
+    enabled: !tasksProp,
   })
   const metricsQ = useQuery({
     queryKey: qk.taskMetrics(period.priorStart, period.end),
     queryFn: () => fetchTaskMetricsSince(sinceIso),
     staleTime: STALE_ANALYTICS,
+    enabled: !metricsProp,
   })
   const attendanceQ = useQuery({
     queryKey: qk.attendance(period.priorStart, period.end),
     queryFn: () => fetchAttendance(period.priorStart, period.end),
     staleTime: STALE_LIVE,
+    enabled: !attendanceProp,
   })
+  const taskRows = tasksProp ?? tasksQ.data
+  const metricRows = metricsProp ?? metricsQ.data
+  const attendanceRows = attendanceProp ?? attendanceQ.data
 
   const quota: QuotaContext = useMemo(
     () => ({
@@ -180,8 +193,8 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
   )
 
   const summaries = useMemo(() => {
-    const tasks = tasksQ.data ?? []
-    const metrics = metricsQ.data ?? []
+    const tasks = taskRows ?? []
+    const metrics = metricRows ?? []
     const cur = summarizeDesigner(designerId, { start: period.start, end: period.end, tasks, metrics, quota })
     const prev = summarizeDesigner(designerId, {
       start: period.priorStart,
@@ -191,7 +204,7 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
       quota,
     })
     return { cur, prev }
-  }, [designerId, tasksQ.data, metricsQ.data, quota, period])
+  }, [designerId, taskRows, metricRows, quota, period])
 
   /** Team reference points (§22.5) — ops scope only; the self view never sees peers (§22.10). */
   const teamRef = useMemo(() => {
@@ -202,8 +215,8 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
       (d) => d.team === designer.team && d.status === 'active',
     )
     if (peers.length < 2) return null
-    const tasks = tasksQ.data ?? []
-    const metrics = metricsQ.data ?? []
+    const tasks = taskRows ?? []
+    const metrics = metricRows ?? []
     const rows: DesignerPeriodSummary[] = peers.map((p) =>
       summarizeDesigner(p.id, { start: period.start, end: period.end, tasks, metrics, quota }),
     )
@@ -215,10 +228,10 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
         rows.map((r) => r.revisionTurnaroundMedianMin).filter((v): v is number => v != null),
       ),
     }
-  }, [scope, designerId, designersQ.data, tasksQ.data, metricsQ.data, quota, period])
+  }, [scope, designerId, designersQ.data, taskRows, metricRows, quota, period])
 
   const warmup = useMemo(() => {
-    const mine = (attendanceQ.data ?? []).filter((a) => a.designer_id === designerId)
+    const mine = (attendanceRows ?? []).filter((a) => a.designer_id === designerId)
     const inRange = (a: AttendanceDaily, s: string, e: string) => a.work_date >= s && a.work_date <= e
     const gap = (s: string, e: string) =>
       median(
@@ -228,18 +241,19 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
           .filter((v): v is number => v != null),
       )
     return { cur: gap(period.start, period.end), prev: gap(period.priorStart, period.priorEnd) }
-  }, [attendanceQ.data, designerId, period])
+  }, [attendanceRows, designerId, period])
 
   const s = summaries.cur
   const p = summaries.prev
   const vs = period.vs
   const pts = (abs: number) => `${abs} pts`
-  const metricsLoading = tasksQ.isLoading || metricsQ.isLoading
+  const metricsLoading =
+    (!tasksProp && tasksQ.isLoading) || (!metricsProp && metricsQ.isLoading)
 
   const defectTotal = s.csrCaughtRounds + s.clientCaughtRounds
   const defectDiagnosis =
     defectTotal === 0
-      ? `No change requests in the ${period.label} — nothing to look at.`
+      ? 'No change requests in this period — nothing to look at.'
       : s.csrCaughtRounds >= s.clientCaughtRounds
         ? scope === 'ops'
           ? 'Most problems were caught by our own checkers before the client saw them. Some coaching may help.'
@@ -252,7 +266,7 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
 
   return (
     <div className="space-y-6">
-      {(tasksQ.error || metricsQ.error) && (
+      {((!tasksProp && tasksQ.error) || (!metricsProp && metricsQ.error)) && (
         <ErrorBanner
           message="Could not load the latest numbers — you are seeing the last saved view."
           asOf={lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null}
@@ -266,10 +280,8 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
       {/* ── Metric grid (§20.2: delta + cause on every number) ── */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <StatTile
-          eyebrow={labelTip(
-            'Target met',
-            'Out of the projects this person was supposed to take, how many they finished.',
-          )}
+          eyebrow="Target met"
+          tip="Out of the projects this person was supposed to take, how many they finished."
           icon={Gauge}
           value={fmtPct(s.attainmentPct)}
           delta={metricDelta(s.attainmentPct, p.attainmentPct, 'up', pts, vs)}
@@ -287,10 +299,8 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
           loading={metricsLoading}
         />
         <StatTile
-          eyebrow={labelTip(
-            'Right first time',
-            'How many designs were accepted without anyone asking for changes. Higher is better.',
-          )}
+          eyebrow="Right first time"
+          tip="How many designs were accepted without anyone asking for changes. Higher is better."
           icon={ShieldCheck}
           value={fmtPct(s.firstPassQualityPct)}
           delta={metricDelta(s.firstPassQualityPct, p.firstPassQualityPct, 'up', pts, vs)}
@@ -312,10 +322,8 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
           loading={metricsLoading}
         />
         <StatTile
-          eyebrow={labelTip(
-            'Work time',
-            'The usual time from getting a project to sending the first design. Waiting for the client is not counted.',
-          )}
+          eyebrow="Work time"
+          tip="The usual time from getting a project to sending the first design. Waiting for the client is not counted."
           icon={Timer}
           value={fmtDuration(s.productionMedianMin)}
           delta={metricDelta(s.productionMedianMin, p.productionMedianMin, 'down', fmtDuration, vs)}
@@ -328,10 +336,8 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
           loading={metricsLoading}
         />
         <StatTile
-          eyebrow={labelTip(
-            'Fix time',
-            'The usual time to finish changes after someone asks for them.',
-          )}
+          eyebrow="Fix time"
+          tip="The usual time to finish changes after someone asks for them."
           icon={RotateCcw}
           value={fmtDuration(s.revisionTurnaroundMedianMin)}
           delta={metricDelta(
@@ -346,10 +352,8 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
           loading={metricsLoading}
         />
         <StatTile
-          eyebrow={labelTip(
-            'Cancelled orders',
-            'Orders lost because of a design problem. Check the project history before judging.',
-          )}
+          eyebrow="Cancelled orders"
+          tip="Orders lost because of a design problem. Check the project history before judging."
           icon={XCircle}
           value={String(s.cancelled)}
           delta={metricDelta(s.cancelled, p.cancelled, 'down', String, vs)}
@@ -364,16 +368,14 @@ export function DesignerMetricsPanel({ designerId, scope, period }: DesignerMetr
           loading={metricsLoading}
         />
         <StatTile
-          eyebrow={labelTip(
-            'Start delay',
-            'The time between pressing Check in and doing the first real work in ClickUp.',
-          )}
+          eyebrow="Start delay"
+          tip="The time between pressing Check in and doing the first real work in ClickUp."
           icon={LogIn}
           value={fmtDuration(warmup.cur)}
           delta={metricDelta(warmup.cur, warmup.prev, 'down', fmtDuration, vs)}
           cause="usual gap between checking in and the first real work"
           state={warmup.cur == null ? null : warmup.cur > 60 ? 'flag' : warmup.cur > 30 ? 'watch' : 'ok'}
-          loading={attendanceQ.isLoading}
+          loading={!attendanceProp && attendanceQ.isLoading}
         />
       </div>
 
@@ -538,7 +540,7 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
               href={listUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-2"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-2"
             >
               <ExternalLink className="h-4 w-4" aria-hidden="true" />
               Open list in ClickUp
@@ -546,27 +548,25 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
           )}
           {scope === 'ops' && (
             <>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 onClick={() => markMutation.mutate('check_in')}
                 disabled={markMutation.isPending}
-                className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-2 disabled:opacity-50"
               >
                 <LogIn className="h-4 w-4" aria-hidden="true" />
                 Check in for them
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={() => markMutation.mutate('check_out')}
                 disabled={markMutation.isPending}
-                className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-2 disabled:opacity-50"
               >
                 <LogOut className="h-4 w-4" aria-hidden="true" />
                 Check out for them
-              </button>
+              </Button>
               <Link
                 to="/ops/roster"
-                className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-brand hover:underline"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-brand hover:underline"
               >
                 <ClipboardList className="h-4 w-4" aria-hidden="true" />
                 View in roster
@@ -617,7 +617,9 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
             />
           ) : (
             myOpenTasks.map((t) => (
-              <TaskCard key={t.task_id} task={t} onOpen={(id) => setTrailTaskId(id)} />
+              // setTrailTaskId is referentially stable — memoized TaskCards
+              // skip re-rendering when the list itself hasn't changed.
+              <TaskCard key={t.task_id} task={t} onOpen={setTrailTaskId} />
             ))
           )}
         </div>
@@ -669,7 +671,7 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
                 href={clickupTaskUrl(trailTaskId) ?? '#'}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-2"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-2"
               >
                 <ExternalLink className="h-4 w-4" aria-hidden="true" />
                 Open in ClickUp

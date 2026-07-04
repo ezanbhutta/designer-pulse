@@ -1,11 +1,15 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
 import { LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react'
 import { BrandLogo } from '../ui/BrandLogo'
 import { useAuth } from '../../hooks/useAuth'
+import { syncThemeColorMeta } from '../../lib/themeColor'
 import { CommandPalette, OPEN_PALETTE_EVENT, type Command } from '../ui/CommandPalette'
 import { ToastProvider } from '../ui/ToastProvider'
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 export interface NavItem {
   to: string
@@ -31,8 +35,13 @@ function ThemeToggle({ showLabel = false }: { showLabel?: boolean }) {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
 
   useEffect(() => {
+    // Keep the browser-chrome color in step with whatever set the class —
+    // the toggle here, the other surface's toggle, or the route default.
+    syncThemeColorMeta(document.documentElement.classList.contains('dark'))
     const observer = new MutationObserver(() => {
-      setDark(document.documentElement.classList.contains('dark'))
+      const isDark = document.documentElement.classList.contains('dark')
+      setDark(isDark)
+      syncThemeColorMeta(isDark)
     })
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
     return () => observer.disconnect()
@@ -57,7 +66,7 @@ function ThemeToggle({ showLabel = false }: { showLabel?: boolean }) {
       onClick={toggle}
       aria-label={label}
       title={label}
-      className="flex min-h-[2.75rem] w-full items-center justify-center gap-3 rounded-xl px-3 text-sm font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg lg:justify-start"
+      className="flex min-h-11 w-full items-center justify-center gap-3 rounded-xl px-3 text-sm font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg lg:justify-start"
     >
       <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
       <span className={showLabel ? '' : 'hidden lg:inline'}>
@@ -101,20 +110,68 @@ function navLinkLabel(item: NavItem): string {
  */
 export function AppShell({ title, nav, commands, children }: AppShellProps) {
   const { profile, signOut } = useAuth()
+  const { pathname } = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const menuPanelRef = useRef<HTMLDivElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+
+  // Name the tab after the page — screen readers get navigation feedback and
+  // history entries stop being identical across Board / Roster / Alerts / …
+  useEffect(() => {
+    const page =
+      nav.find(
+        (n) =>
+          pathname === n.to ||
+          (n.to !== '/ops' && n.to !== '/ceo' && pathname.startsWith(n.to)),
+      )?.label ?? title
+    document.title = `${page} · Studio Pulse`
+  }, [pathname, nav, title])
 
   // Close the mobile menu on Escape.
   useEffect(() => {
     if (!mobileOpen) return
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') setMobileOpen(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [mobileOpen])
 
+  // Mobile menu focus handoff (it's aria-modal): move focus in on open,
+  // return it to the hamburger on close.
+  useEffect(() => {
+    if (!mobileOpen) return
+    const raf = requestAnimationFrame(() => menuPanelRef.current?.focus())
+    return () => {
+      cancelAnimationFrame(raf)
+      menuButtonRef.current?.focus()
+    }
+  }, [mobileOpen])
+
+  // Tab trap for the mobile menu, mirroring Drawer's.
+  const handleMenuKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Tab' || !menuPanelRef.current) return
+    const focusables = Array.from(
+      menuPanelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE),
+    ).filter((el) => el.offsetParent !== null || el === document.activeElement)
+    if (focusables.length === 0) {
+      e.preventDefault()
+      return
+    }
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+    const active = document.activeElement
+    if (e.shiftKey && (active === first || active === menuPanelRef.current)) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }
+
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
-    `group relative flex min-h-[2.75rem] items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150 ${
+    `group relative flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150 ${
       isActive
         ? 'bg-brand-soft text-brand'
         : 'text-muted hover:bg-surface-2 hover:text-fg'
@@ -154,7 +211,7 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
     <ToastProvider>
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-[70] focus:rounded-xl focus:bg-surface focus:px-4 focus:py-2.5 focus:text-sm focus:font-medium focus:text-fg focus:shadow-raised"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-tip focus:rounded-xl focus:bg-surface focus:px-4 focus:py-2.5 focus:text-sm focus:font-medium focus:text-fg focus:shadow-raised"
       >
         Skip to content
       </a>
@@ -181,7 +238,7 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
                 onClick={() => window.dispatchEvent(new CustomEvent(OPEN_PALETTE_EVENT))}
                 aria-label="Open command palette"
                 title="Command palette (Ctrl+K)"
-                className="flex min-h-[2.75rem] items-center justify-center gap-3 rounded-xl px-3 text-sm font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg lg:justify-start"
+                className="flex min-h-11 items-center justify-center gap-3 rounded-xl px-3 text-sm font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg lg:justify-start"
               >
                 <Search className="h-5 w-5 shrink-0" aria-hidden="true" />
                 <span className="hidden flex-1 text-left lg:inline">Search</span>
@@ -196,7 +253,7 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
               onClick={() => void signOut()}
               aria-label="Sign out"
               title="Sign out"
-              className="flex min-h-[2.75rem] items-center justify-center gap-3 rounded-xl px-3 text-sm font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg lg:justify-start"
+              className="flex min-h-11 items-center justify-center gap-3 rounded-xl px-3 text-sm font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg lg:justify-start"
             >
               <LogOut className="h-5 w-5 shrink-0" aria-hidden="true" />
               <span className="hidden lg:inline">Sign out</span>
@@ -213,6 +270,7 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-40 flex items-center gap-3 border-b border-border bg-surface/90 px-4 py-2.5 backdrop-blur md:hidden">
             <button
+              ref={menuButtonRef}
               type="button"
               onClick={() => setMobileOpen(true)}
               aria-label="Open menu"
@@ -242,9 +300,12 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
             aria-hidden="true"
           />
           <div
+            ref={menuPanelRef}
             role="dialog"
             aria-modal="true"
             aria-label="Menu"
+            tabIndex={-1}
+            onKeyDown={handleMenuKeyDown}
             className="animate-fade-in absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-border bg-surface p-4 shadow-raised"
           >
             <div className="flex items-center justify-between pb-4">
@@ -272,7 +333,7 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
               <button
                 type="button"
                 onClick={() => void signOut()}
-                className="flex min-h-[2.75rem] items-center gap-3 rounded-xl px-3 text-sm font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg"
+                className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg"
               >
                 <LogOut className="h-5 w-5 shrink-0" aria-hidden="true" />
                 Sign out

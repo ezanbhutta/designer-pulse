@@ -2,23 +2,29 @@
 
 const PKT = 'Asia/Karachi'
 
+// Module-level singletons — Intl.DateTimeFormat construction costs ~0.1–0.5ms
+// and these run per table cell (the attendance week grid alone calls them
+// hundreds of times per render).
+const TIME_FMT = new Intl.DateTimeFormat('en-GB', {
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: PKT,
+})
+const DATE_FMT = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: PKT,
+})
+
 export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '—'
-  return new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: PKT,
-  }).format(new Date(iso))
+  return TIME_FMT.format(new Date(iso))
 }
 
 export function fmtDate(isoOrDate: string | null | undefined): string {
   if (!isoOrDate) return '—'
   const d = isoOrDate.length === 10 ? new Date(`${isoOrDate}T00:00:00+05:00`) : new Date(isoOrDate)
-  return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    timeZone: PKT,
-  }).format(d)
+  return DATE_FMT.format(d)
 }
 
 export function fmtDateTime(iso: string | null | undefined): string {
@@ -43,10 +49,6 @@ export function fmtDuration(minutes: number | null | undefined): string {
 
 export function fmtPct(pct: number | null | undefined): string {
   return pct == null ? '—' : `${pct}%`
-}
-
-export function fmtCount(n: number | null | undefined): string {
-  return n == null ? '—' : String(n)
 }
 
 /** 'HH:MM[:SS]' PKT wall time → "9:00 PM" style label. */

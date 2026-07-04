@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Clock, Flag, Layers } from 'lucide-react'
 import { Badge } from '../ui/Badge'
@@ -13,28 +14,39 @@ export interface TaskCardProps {
   task: TaskState
   onOpen?: (taskId: string) => void
   designerName?: string
+  /** Aging threshold in days — pass it when the caller already has config
+   *  (boards render hundreds of cards; one shared value beats per-card
+   *  query observers). Falls back to its own config read when absent. */
+  agingDaysDefault?: number
 }
 
 /**
  * Compact task card for the live board and drill-down lists. Status wears its
  * one semantic tone (§21.2); the age chip escalates warning→danger past the
- * aging threshold — with an icon, never color alone (§20.10).
+ * aging threshold — with an icon, never color alone (§20.10). Memoized: board
+ * re-renders skip cards whose props are unchanged (pass a stable onOpen).
  */
-export function TaskCard({ task, onOpen, designerName }: TaskCardProps) {
+export const TaskCard = memo(function TaskCard({
+  task,
+  onOpen,
+  designerName,
+  agingDaysDefault,
+}: TaskCardProps) {
   const { data: config } = useQuery({
     queryKey: qk.config,
     queryFn: fetchConfig,
     staleTime: STALE_ANALYTICS,
+    enabled: agingDaysDefault === undefined,
   })
-  const cfg = config ?? CONFIG_DEFAULTS
+  const agingDays =
+    agingDaysDefault ?? (config ?? CONFIG_DEFAULTS).aging_days_default
 
   const status = task.current_status
   const isOpen = status != null && !TERMINAL_STATUSES.includes(status)
   const age = ageMinutes(task)
   // Waiting on the client is never "stuck" — clients reply late, that's
   // normal — so client-response tasks never wear the aging badge.
-  const thresholdMin =
-    status === 'client response' ? Infinity : cfg.aging_days_default * 24 * 60
+  const thresholdMin = status === 'client response' ? Infinity : agingDays * 24 * 60
   const aging = isOpen && age >= thresholdMin
   const severe = isOpen && age >= thresholdMin * 2
   const priority = task.priority?.toLowerCase() ?? null
@@ -87,7 +99,9 @@ export function TaskCard({ task, onOpen, designerName }: TaskCardProps) {
       <button
         type="button"
         onClick={() => onOpen(task.task_id)}
-        className={`${frame} block min-h-[2.75rem] transition-shadow duration-200 ease-out hover:shadow-raised`}
+        // hover:bg is the theme-safe cue — the ink shadow alone is invisible
+        // on the dark cockpit background.
+        className={`${frame} block min-h-11 transition-[box-shadow,background-color] duration-200 ease-out hover:bg-surface-2/50 hover:shadow-raised`}
         aria-label={`${task.name ?? 'Untitled project'} — ${
           status ? STATUS_LABELS[status] : 'no status'
         }, open history`}
@@ -97,6 +111,6 @@ export function TaskCard({ task, onOpen, designerName }: TaskCardProps) {
     )
   }
   return <div className={frame}>{body}</div>
-}
+})
 
 export default TaskCard

@@ -53,6 +53,10 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  useEffect(() => {
+    document.title = 'Sign in · Studio Pulse'
+  }, [])
+
   // Redirect once the session lands AND the profile role resolves (the role
   // arrives asynchronously after sign-in, so we watch it, not the promise).
   useEffect(() => {
@@ -104,7 +108,9 @@ export default function LoginPage() {
               </p>
             </div>
           ) : (
-            <form onSubmit={(e) => void onSubmit(e)} className="flex flex-col gap-4" noValidate>
+            // Native validation stays ON (no noValidate): an empty submit gets
+            // the browser's "fill in this field" bubble instead of a dead button.
+            <form onSubmit={(e) => void onSubmit(e)} className="flex flex-col gap-4">
               {error && <ErrorBanner message={error} />}
 
               <div className="flex flex-col gap-1.5">
@@ -120,7 +126,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@studio.com"
-                  className="min-h-[2.75rem] w-full rounded-xl border border-border bg-surface px-3.5 text-base text-fg placeholder:text-muted/60"
+                  className="min-h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-base text-fg placeholder:text-muted/60"
                 />
               </div>
 
@@ -136,15 +142,15 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="min-h-[2.75rem] w-full rounded-xl border border-border bg-surface px-3.5 text-base text-fg placeholder:text-muted/60"
+                  className="min-h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-base text-fg placeholder:text-muted/60"
                 />
               </div>
 
               <button
                 type="submit"
-                disabled={submitting || !email || !password}
+                disabled={submitting}
                 aria-busy={submitting}
-                className="mt-1 min-h-[2.75rem] w-full rounded-xl bg-brand px-4 text-base font-semibold text-brand-fg transition-opacity duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-1 min-h-11 w-full rounded-xl bg-brand px-4 text-base font-semibold text-brand-fg transition-opacity duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {submitting ? 'Signing in…' : 'Sign in'}
               </button>

@@ -1,12 +1,16 @@
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { CircleCheck, Eye, TriangleAlert } from 'lucide-react'
+import { Badge, type BadgeProps } from './Badge'
 import { CountUp } from './CountUp'
 import { DeltaChip } from './DeltaChip'
+import { InfoTip } from './InfoTip'
 import { Sparkline } from './Sparkline'
 
 export interface StatTileProps {
   eyebrow: string
+  /** Plain-language ⓘ explainer — rendered OUTSIDE the truncating label so the icon never clips. */
+  tip?: string
   icon?: LucideIcon
   value: string
   delta?: { label: string; direction: 'up' | 'down' | 'flat'; good: boolean } | null
@@ -20,11 +24,11 @@ export interface StatTileProps {
 
 const STATE_META: Record<
   NonNullable<StatTileProps['state']>,
-  { icon: LucideIcon; className: string; label: string }
+  { icon: LucideIcon; tone: BadgeProps['tone']; label: string }
 > = {
-  ok: { icon: CircleCheck, className: 'bg-success-soft text-success', label: 'On track' },
-  watch: { icon: Eye, className: 'bg-warning-soft text-warning', label: 'Watch' },
-  flag: { icon: TriangleAlert, className: 'bg-danger-soft text-danger', label: 'Flag' },
+  ok: { icon: CircleCheck, tone: 'success', label: 'On track' },
+  watch: { icon: Eye, tone: 'warning', label: 'Watch' },
+  flag: { icon: TriangleAlert, tone: 'danger', label: 'Flag' },
 }
 
 /**
@@ -47,10 +51,12 @@ function AnimatedValue({ value }: { value: string }) {
  * Metric tile (spec §21.6/§20.2): the number never travels alone — delta vs
  * prior period, plain-language cause, and a reference point (team median)
  * ship inline. State flag pairs icon + label with its color (§20.10).
- * With onClick the whole tile is a drill-down button.
+ * With onClick the whole tile is a drill-down button. h-full keeps tiles in
+ * one grid row bottom-aligned when neighbours run taller.
  */
 export function StatTile({
   eyebrow,
+  tip,
   icon: Icon,
   value,
   delta,
@@ -63,7 +69,7 @@ export function StatTile({
 }: StatTileProps) {
   if (loading) {
     return (
-      <div className="card p-5" role="status" aria-label={`${eyebrow} — loading`}>
+      <div className="card h-full p-5" role="status" aria-label={`${eyebrow} — loading`}>
         <div className="skeleton h-3 w-24" />
         <div className="skeleton mt-3 h-9 w-24" />
         <div className="skeleton mt-2.5 h-3.5 w-4/5" />
@@ -73,7 +79,6 @@ export function StatTile({
   }
 
   const stateMeta = state ? STATE_META[state] : null
-  const StateIcon = stateMeta?.icon
 
   const body: ReactNode = (
     <>
@@ -81,14 +86,13 @@ export function StatTile({
         <span className="flex min-w-0 items-center gap-1.5">
           {Icon && <Icon className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />}
           <span className="eyebrow truncate">{eyebrow}</span>
+          {/* Outside the truncating span (and shrink-0) so it always survives. */}
+          {tip && <InfoTip text={tip} />}
         </span>
-        {stateMeta && StateIcon && (
-          <span
-            className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${stateMeta.className}`}
-          >
-            <StateIcon className="h-3 w-3" aria-hidden="true" />
+        {stateMeta && (
+          <Badge tone={stateMeta.tone} icon={stateMeta.icon}>
             {stateMeta.label}
-          </span>
+          </Badge>
         )}
       </div>
 
@@ -104,7 +108,7 @@ export function StatTile({
 
       {sparkline && sparkline.length > 1 && (
         <div className="mt-3">
-          <Sparkline data={sparkline} tone="muted" width={140} height={28} />
+          <Sparkline data={sparkline} tone="muted" height={28} />
         </div>
       )}
     </>
@@ -116,14 +120,16 @@ export function StatTile({
         type="button"
         onClick={onClick}
         aria-label={`${eyebrow}: ${value} — open details`}
-        className="card block min-h-[2.75rem] w-full cursor-pointer p-5 text-left transition-shadow duration-200 ease-out hover:shadow-raised"
+        // hover:bg is the theme-safe cue — the ink shadow is invisible on the
+        // dark cockpit background.
+        className="card block h-full min-h-11 w-full cursor-pointer p-5 text-left transition-[box-shadow,background-color] duration-200 ease-out hover:bg-surface-2/40 hover:shadow-raised"
       >
         {body}
       </button>
     )
   }
 
-  return <div className="card p-5">{body}</div>
+  return <div className="card h-full p-5">{body}</div>
 }
 
 export default StatTile

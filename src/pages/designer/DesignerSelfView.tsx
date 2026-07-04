@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarDays,
@@ -35,6 +35,7 @@ import {
 } from '../../lib/queries'
 import { ToastProvider, useToast } from '../../components/ui/ToastProvider'
 import { StatusBadge } from '../../components/ui/StatusBadge'
+import { Button } from '../../components/ui/Button'
 import { InfoTip } from '../../components/ui/InfoTip'
 import {
   DesignerMetricsPanel,
@@ -47,6 +48,7 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { BrandLogo } from '../../components/ui/BrandLogo'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { fmtDate, fmtDuration, fmtShiftTime, fmtTime } from '../../lib/format'
+import { syncThemeColorMeta } from '../../lib/themeColor'
 import {
   addDays,
   collectionWindow,
@@ -76,6 +78,7 @@ import type {
   DesignerSchedule,
   Holiday,
   Leave,
+  TaskMetrics,
   TaskState,
 } from '../../../shared/types'
 
@@ -118,8 +121,13 @@ function ThemeToggle() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
 
   useEffect(() => {
+    // Keep the phone browser chrome color in step with the app theme —
+    // whether this toggle, the route default, or another surface set it.
+    syncThemeColorMeta(document.documentElement.classList.contains('dark'))
     const observer = new MutationObserver(() => {
-      setDark(document.documentElement.classList.contains('dark'))
+      const isDark = document.documentElement.classList.contains('dark')
+      setDark(isDark)
+      syncThemeColorMeta(isDark)
     })
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
     return () => observer.disconnect()
@@ -180,6 +188,11 @@ function SelfViewBody() {
   const queryClient = useQueryClient()
   const designerId = profile?.designer_id ?? null
 
+  // Screen-reader navigation feedback + a recognisable tab/history entry.
+  useEffect(() => {
+    document.title = 'My day · Studio Pulse'
+  }, [])
+
   // Ticking clock so "time since check-in" and the shift context stay honest.
   const [now, setNow] = useState<Date>(() => new Date())
   useEffect(() => {
@@ -202,26 +215,55 @@ function SelfViewBody() {
       trendStart,
       sinceIso: pktInstant(trendStart, '00:00').toISOString(),
       markStart: addDays(today, -1), // covers overnight shifts started yesterday
-      attStart: addDays(weekStart, -1),
+      // From the start of the PRIOR week: covers yesterday's overnight carry
+      // AND the metrics panel's comparison window, so one attendance fetch
+      // serves the whole page.
+      attStart: prior.start,
     }
   }, [today])
 
   const enabled = designerId != null
 
   // ── Queries — every read is RLS-scoped to this designer server-side (§14) ──
-  const designersQ = useQuery({ queryKey: qk.designers, queryFn: fetchDesigners, enabled })
-  const schedulesQ = useQuery({ queryKey: qk.schedules, queryFn: fetchSchedules, enabled })
+  // Reference data uses the same STALE_ANALYTICS tier as opsData/ceoData (the
+  // keys are shared) so cache behavior is consistent per key, and remounts /
+  // window focus on the phone don't refetch nine tables. Marks, open tasks and
+  // attendance stay live — check-in mutations and realtime invalidate those.
+  const designersQ = useQuery({
+    queryKey: qk.designers,
+    queryFn: fetchDesigners,
+    enabled,
+    staleTime: STALE_ANALYTICS,
+  })
+  const schedulesQ = useQuery({
+    queryKey: qk.schedules,
+    queryFn: fetchSchedules,
+    enabled,
+    staleTime: STALE_ANALYTICS,
+  })
   const exceptionsQ = useQuery({
     queryKey: qk.quotaExceptions,
     queryFn: fetchQuotaExceptions,
     enabled,
+    staleTime: STALE_ANALYTICS,
   })
-  const leavesQ = useQuery({ queryKey: qk.leaves, queryFn: fetchLeaves, enabled })
-  const holidaysQ = useQuery({ queryKey: qk.holidays, queryFn: fetchHolidays, enabled })
+  const leavesQ = useQuery({
+    queryKey: qk.leaves,
+    queryFn: fetchLeaves,
+    enabled,
+    staleTime: STALE_ANALYTICS,
+  })
+  const holidaysQ = useQuery({
+    queryKey: qk.holidays,
+    queryFn: fetchHolidays,
+    enabled,
+    staleTime: STALE_ANALYTICS,
+  })
   const holidayWorkersQ = useQuery({
     queryKey: qk.holidayWorkers,
     queryFn: fetchHolidayWorkers,
     enabled,
+    staleTime: STALE_ANALYTICS,
   })
   const configQ = useQuery({
     queryKey: qk.config,
@@ -296,7 +338,12 @@ function SelfViewBody() {
   }, [designerId, mySchedules, today, now])
 
   const markWindow = useMemo(() => {
-    if (active.schedule) {
+    // Mirror the attendance engine (shared/attendance.ts): a DAY shift counts
+    // marks across the whole PKT calendar day; only OVERNIGHT shifts use the
+    // buffered collection window. Using the buffer for day shifts would hide
+    // an early check-in (>4h before shift) from this card while the engine
+    // still counts it — inviting a duplicate mark.
+    if (active.schedule && active.schedule.shift_end <= active.schedule.shift_start) {
       const w = collectionWindow(
         active.workDate,
         active.schedule.shift_start,
@@ -317,10 +364,14 @@ function SelfViewBody() {
   // the tab closes — this view lives on phones). The local mark reflects the
   // state instantly; a failed insert rolls back visibly with a retry hint.
   const [localMarks, setLocalMarks] = useState<LocalMark[]>([])
+  // shift_marks is append-only with no designer-accessible undo: a double-tap
+  // on a slow connection must not fire two inserts.
+  const markInFlight = useRef(false)
 
   const mark = useCallback(
     (mark_type: 'check_in' | 'check_out') => {
-      if (!designerId) return
+      if (!designerId || markInFlight.current) return
+      markInFlight.current = true
       const markedAt = new Date().toISOString()
       const local: LocalMark = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -335,16 +386,24 @@ function SelfViewBody() {
         marked_at: markedAt,
       })
         .then(() => {
-          void queryClient.invalidateQueries({ queryKey: ['shift-marks'] })
-          void queryClient.invalidateQueries({ queryKey: ['attendance'] })
+          markInFlight.current = false
           toast({
             message:
               mark_type === 'check_in'
                 ? `Checked in at ${fmtTime(markedAt)}`
                 : 'Checked out — see you tomorrow',
           })
+          // Once the refetch lands the server copy of this mark, drop the
+          // local one — otherwise duplicates accumulate for the session.
+          void queryClient
+            .invalidateQueries({ queryKey: ['shift-marks'] })
+            .then(() => {
+              setLocalMarks((prev) => prev.filter((m) => m.id !== local.id))
+            })
+          void queryClient.invalidateQueries({ queryKey: ['attendance'] })
         })
         .catch(() => {
+          markInFlight.current = false
           // Roll back visibly (§20.6) — the button returns to its prior state.
           setLocalMarks((prev) => prev.filter((m) => m.id !== local.id))
           toast({
@@ -534,13 +593,9 @@ function SelfViewBody() {
             title="Your login isn't connected to your name yet"
             hint="Ask your team lead to connect your login — your check-in button and your numbers will show up here as soon as that's done."
             action={
-              <button
-                type="button"
-                onClick={() => void signOut()}
-                className="min-h-[2.75rem] rounded-xl border border-border bg-surface px-4 text-sm font-medium text-fg transition-colors duration-150 hover:bg-surface-2"
-              >
+              <Button variant="secondary" onClick={() => void signOut()}>
                 Sign out
-              </button>
+              </Button>
             }
           />
         </div>
@@ -610,6 +665,9 @@ function SelfViewBody() {
         <WeekSection
           designerId={designerId}
           period={metricsPeriod}
+          tasks={myTasks}
+          metrics={myMetrics}
+          attendance={myAttendance}
           trendLoading={analyticsLoading}
           trendPoints={trend.points}
           trendBaseline={trend.baseline}
@@ -813,7 +871,7 @@ function CheckInCard({
           <button
             type="button"
             onClick={() => onMark('check_in')}
-            className="mt-3 flex min-h-[2.75rem] items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-brand transition-colors duration-150 hover:bg-brand-soft"
+            className="mt-3 flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-brand transition-colors duration-150 hover:bg-brand-soft"
           >
             <LogIn className="h-4 w-4" aria-hidden="true" />
             Check back in
@@ -918,7 +976,7 @@ function HonestLine({
           href={nextHref}
           target="_blank"
           rel="noreferrer"
-          className="mt-3 inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl px-1 text-sm font-medium text-brand hover:underline"
+          className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-xl px-1 text-sm font-medium text-brand hover:underline"
         >
           Pick up your next project in ClickUp
           <ExternalLink className="h-4 w-4" aria-hidden="true" />
@@ -1009,18 +1067,20 @@ function TodayTasks({
                 <li key={task.task_id} className="flex flex-col gap-1.5 py-3">
                   <div className="flex items-center justify-between gap-3">
                     {href ? (
+                      // min-h + negative margin: a 44px tap target that
+                      // borrows the row's padding instead of inflating it.
                       <a
                         href={href}
                         target="_blank"
                         rel="noreferrer"
                         aria-label={`Open ${task.name ?? 'task'} in ClickUp`}
-                        className="inline-flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm font-medium text-fg hover:underline"
+                        className="-my-2 inline-flex min-h-11 min-w-0 flex-1 items-center gap-1.5 truncate text-sm font-medium text-fg hover:underline"
                       >
                         <span className="truncate">{task.name ?? 'Untitled task'}</span>
                         <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
                       </a>
                     ) : (
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
+                      <span className="-my-2 inline-flex min-h-11 min-w-0 flex-1 items-center truncate text-sm font-medium text-fg">
                         {task.name ?? 'Untitled task'}
                       </span>
                     )}
@@ -1064,12 +1124,18 @@ function TodayTasks({
 function WeekSection({
   designerId,
   period,
+  tasks,
+  metrics,
+  attendance,
   trendLoading,
   trendPoints,
   trendBaseline,
 }: {
   designerId: string
   period: MetricsPeriod
+  tasks: TaskState[]
+  metrics: TaskMetrics[]
+  attendance: AttendanceDaily[]
   trendLoading: boolean
   trendPoints: TrendPoint[]
   trendBaseline: number | null
@@ -1084,13 +1150,22 @@ function WeekSection({
       </div>
       {/* Shared metrics panel (§22.3) — scope='self' omits every team-median
           reference and all peer data; deltas are vs the designer's own past
-          only (§22.10). Single-column-friendly for mobile (§20.10). */}
+          only (§22.10). Single-column-friendly for mobile (§20.10). The page
+          already fetched supersets of the panel's windows — hand them over so
+          the panel doesn't re-fetch the same tables. */}
       <div className="mt-2">
-        <DesignerMetricsPanel designerId={designerId} scope="self" period={period} />
+        <DesignerMetricsPanel
+          designerId={designerId}
+          scope="self"
+          period={period}
+          tasks={tasks}
+          metrics={metrics}
+          attendance={attendance}
+        />
       </div>
 
       <div className="card mt-3 p-5">
-        <p className="eyebrow">First-pass quality — last 8 weeks</p>
+        <p className="eyebrow">Right first time — last 8 weeks</p>
         {trendLoading ? (
           <Skeleton className="mt-3 h-24 w-full" />
         ) : trendPoints.length >= 2 ? (
@@ -1101,7 +1176,7 @@ function WeekSection({
                 baseline={trendBaseline}
                 tone="brand"
                 formatValue={(v) => `${Math.round(v)}%`}
-                ariaLabel={`Your first-pass quality over the last 8 weeks, from ${trendPoints[0].value}% to ${trendPoints[trendPoints.length - 1].value}%, against your own average of ${trendBaseline ?? 0}%`}
+                ariaLabel={`Your right-first-time rate over the last 8 weeks, from ${trendPoints[0].value}% to ${trendPoints[trendPoints.length - 1].value}%, against your own average of ${trendBaseline ?? 0}%`}
               />
             </div>
             <p className="mt-2 text-xs text-muted">
@@ -1221,6 +1296,19 @@ function TimeOffSection({
   const [startDate, setStartDate] = useState(today)
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
+  const formRef = useRef<HTMLFormElement>(null)
+
+  // The form opens near the bottom of the page on phones — bring it into
+  // view and put the caret in the first field so it never starts half-hidden
+  // below the fold.
+  useEffect(() => {
+    if (!requesting) return
+    const raf = requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      formRef.current?.querySelector('select')?.focus()
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [requesting])
 
   // §22.7 "request own": lands as status='pending' (RLS-pinned server-side);
   // only your PM/HR can approve it.
@@ -1287,17 +1375,14 @@ function TimeOffSection({
                 </p>
               </div>
               {designerId && !requesting && (
-                <button
-                  type="button"
-                  onClick={() => setRequesting(true)}
-                  className="min-h-11 shrink-0 rounded-xl border border-border px-3 text-sm font-medium text-fg hover:bg-surface-2"
-                >
+                <Button variant="secondary" onClick={() => setRequesting(true)}>
                   Request leave
-                </button>
+                </Button>
               )}
             </div>
             {requesting && (
               <form
+                ref={formRef}
                 className="mt-3 flex flex-col gap-3 rounded-xl bg-surface-2 p-4"
                 onSubmit={(e) => {
                   e.preventDefault()
@@ -1351,22 +1436,27 @@ function TimeOffSection({
                     />
                   </label>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
+                {/* Buttons never wrap mid-label; the caption drops to its own
+                    line on narrow phones instead of squeezing the CTA. */}
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                  <Button
                     type="submit"
+                    variant="primary"
                     disabled={submitting}
-                    className="min-h-11 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg disabled:opacity-60"
+                    className="whitespace-nowrap"
                   >
                     {submitting ? 'Sending…' : 'Send request'}
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="ghost"
                     onClick={() => setRequesting(false)}
-                    className="min-h-11 rounded-xl px-3 text-sm font-medium text-muted hover:text-fg"
+                    className="whitespace-nowrap"
                   >
                     Cancel
-                  </button>
-                  <span className="text-xs text-muted">Goes to your PM as pending.</span>
+                  </Button>
+                  <span className="min-w-0 flex-1 basis-full text-xs text-muted sm:basis-auto">
+                    Goes to your PM as pending.
+                  </span>
                 </div>
               </form>
             )}

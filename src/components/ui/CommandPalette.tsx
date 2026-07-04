@@ -219,7 +219,7 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
                   tabIndex={-1}
                   onMouseEnter={() => setActive(i)}
                   onClick={() => runCommand(cmd)}
-                  className={`flex min-h-[2.75rem] w-full items-center gap-3 rounded-xl px-3 text-left text-sm transition-colors duration-150 ${
+                  className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm transition-colors duration-150 ${
                     i === active ? 'bg-brand-soft text-fg' : 'text-fg hover:bg-surface-2'
                   }`}
                 >
