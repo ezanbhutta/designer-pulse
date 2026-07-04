@@ -106,11 +106,22 @@
 }
 
 @layer components {
+  /* Label-tier eyebrow (§21 type tiers): 12px, 500, engineered tracking. */
   .eyebrow {
-    @apply text-[11px] font-semibold uppercase tracking-[0.2em] text-muted;
+    @apply text-label font-semibold uppercase tracking-[0.08em] text-muted;
   }
+  /* Standard card: 18px radius + the 5-layer edge shadow (manifesto pillar 14). */
   .card {
-    @apply rounded-2xl bg-surface shadow-soft border border-border/60;
+    @apply rounded-2xl bg-surface shadow-edge border border-border/60;
+  }
+  /* The one field recipe (manifesto pillar 4/12): identical 40px controls,
+     visible focus ring, no bespoke input styling anywhere. */
+  .input {
+    @apply h-10 w-full rounded-lg border border-border bg-surface px-3 text-caption text-fg transition-colors duration-150 placeholder:text-muted/70 hover:border-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  /* Table column head: uppercase label tier + tabular alignment (§21 tables). */
+  .th-label {
+    @apply text-label font-semibold uppercase tracking-[0.08em] text-muted;
   }
   .skeleton {
     @apply rounded-lg bg-surface-2;

@@ -2,8 +2,10 @@ import { forwardRef, type ButtonHTMLAttributes } from 'react'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 
+/** The one control height (manifesto pillar 4): 40px, matching ActionButton
+ *  and the `.input` recipe. Tactile press via active:scale (pillar 8). */
 const BASE =
-  'inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl px-4 text-sm transition-[background-color,border-color,color,opacity] duration-150 ease-out disabled:cursor-not-allowed disabled:opacity-50'
+  'inline-flex h-10 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-4 text-caption transition-[background-color,border-color,color,opacity,transform] duration-150 ease-out motion-safe:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 motion-safe:disabled:active:scale-100'
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: 'bg-brand font-semibold text-brand-fg hover:opacity-90',
@@ -24,9 +26,9 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 /**
  * Shared button primitive (§21 design system): one place for the primary /
  * secondary / ghost / danger recipes instead of hand-rolled class strings.
- * Every variant is a ≥44px target with a visible disabled state and works in
- * both themes (semantic tokens only). Defaults to type="button" so buttons
- * inside forms never submit by accident.
+ * Every variant is the standard 40px control with a tactile press, a visible
+ * disabled state, and works in both themes (semantic tokens only). Defaults
+ * to type="button" so buttons inside forms never submit by accident.
  */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   { variant = 'secondary', className = '', type = 'button', ...rest },

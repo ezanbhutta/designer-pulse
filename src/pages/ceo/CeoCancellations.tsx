@@ -7,17 +7,18 @@
  * Grouped by designer with count + cancellation rate. Read-only (§22.1).
  */
 
-import { useMemo, useState, type ReactNode } from 'react'
-import { ExternalLink, Info, OctagonX } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ChevronRight, ExternalLink, Info, OctagonX } from 'lucide-react'
+import { PageHeader } from '../../components/layout/PageHeader'
 import { Badge } from '../../components/ui/Badge'
 import { Drawer } from '../../components/ui/Drawer'
-import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { TaskTrail } from '../../components/shared/TaskTrail'
+import { CalmClear, CornerTip, HeroMetric, Reveal, RevealItem } from './ceoKit'
 import { pktDateOf, pktToday } from '../../../shared/pkt'
 import type { Designer, TaskState } from '../../../shared/types'
 import { clickupTaskUrl } from '../../lib/queries'
@@ -27,6 +28,7 @@ import {
   cancelledInPeriod,
   firstName,
   mergeTasks,
+  metricDelta,
   sameWindowLastWeek,
   thisWeekRange,
   useCancelledTasks,
@@ -120,7 +122,7 @@ export default function CeoCancellations() {
       })
     }
 
-    return { groups, verdicts, total: cancelledQ.data.length }
+    return { groups, verdicts, total: cancelledQ.data.length, nowCount, prevCount }
     // `today` stands in for week/prior/windowStart (all pure functions of it)
     // so the model recomputes at the PKT day/week rollover.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,16 +135,15 @@ export default function CeoCancellations() {
   const selectedUrl = clickupTaskUrl(selected?.task_id)
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="inline-flex items-center gap-2 text-3xl font-semibold text-fg">
-          Cancellations{' '}
+    <div className="mx-auto w-full max-w-6xl space-y-12">
+      <PageHeader
+        breadcrumbs={['CEO', 'Cancellations']}
+        title="Cancellations"
+        titleAccessory={
           <InfoTip text="Orders lost because of design problems. Open each one to see its full story before judging anyone." />
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          Every order lost because of a design problem, with its full history one click away
-        </p>
-      </header>
+        }
+        history="Every order lost because of a design problem, with its full history one click away"
+      />
 
       {failed != null && (
         <ErrorBanner
@@ -166,8 +167,25 @@ export default function CeoCancellations() {
         />
       </CornerTip>
 
+      {/* ── The headline number: lost orders this week, calm even at zero ──── */}
+      <HeroMetric
+        eyebrow="Lost this week"
+        tip="Orders cancelled because of design problems since Monday, compared with the same days last week."
+        value={model ? model.nowCount : null}
+        delta={
+          model
+            ? metricDelta(model.nowCount, model.prevCount, {
+                goodWhen: 'down',
+                vs: 'vs the same days last week',
+              })
+            : null
+        }
+        caption="The pattern over weeks matters more than any single order — open each story below before acting on anyone."
+        loading={loading}
+      />
+
       {/* §4.4 integrity caveat — surfaced, never hidden; quiet, not alarming. */}
-      <p className="flex items-start gap-2 text-sm text-muted">
+      <p className="flex max-w-prose items-start gap-2 text-caption text-muted">
         <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         Whether a cancellation was the designer&apos;s fault is decided by the person who closed
         the order. Treat each one as something to look into, not a final judgement — watch the
@@ -175,7 +193,7 @@ export default function CeoCancellations() {
       </p>
 
       {loading && (
-        <div className="space-y-3" role="status" aria-label="Loading cancellations">
+        <div className="space-y-8" role="status" aria-label="Loading cancellations">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-28 w-full" />
           ))}
@@ -183,54 +201,61 @@ export default function CeoCancellations() {
       )}
 
       {!loading && model && model.total === 0 && (
-        <EmptyState
-          icon={OctagonX}
+        <CalmClear
           title="No cancellations on record"
-          hint="If an order ever gets cancelled, it will show up here right away with its full history."
+          message="Nothing has ever been lost to a design problem. If an order is cancelled, it will show up here right away with its full history."
         />
       )}
 
-      {model?.groups.map((g) => (
-        <section
-          key={g.designer?.id ?? 'unassigned'}
-          className="card animate-fade-in p-6"
-          aria-label={`Cancellations — ${g.designer?.name ?? 'unassigned'}`}
-        >
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <h2 className="text-base font-semibold text-fg">{g.designer?.name ?? 'No designer assigned'}</h2>
-            {g.designer && <Badge tone="neutral">{g.designer.team}</Badge>}
-            <Badge tone="danger" icon={OctagonX}>
-              {g.tasks.length} cancelled
-            </Badge>
-            <span className="tnum inline-flex items-center gap-1 text-xs text-muted">
-              {g.assigned12w > 0
-                ? `${g.cancelled12w} of the ${g.assigned12w} projects given in the last 12 weeks ended cancelled — ${Math.round((g.cancelled12w / g.assigned12w) * 100)}%`
-                : 'no projects given in the last 12 weeks'}
-              <InfoTip text="Out of everything this designer was given in the last 12 weeks, the share that ended cancelled. A pattern here matters more than one bad order." />
-            </span>
-          </div>
-          <ul className="mt-3 divide-y divide-border/50">
-            {g.tasks.map((t) => (
-              <li key={t.task_id}>
-                <button
-                  type="button"
-                  onClick={() => setSelected(t)}
-                  className="flex min-h-[2.75rem] w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-2 py-2 text-left transition-colors duration-150 hover:bg-surface-2"
-                  aria-label={`See the full history of ${t.name ?? t.task_id}`}
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
-                    {t.name ?? t.task_id}
+      {model && model.groups.length > 0 && (
+        <Reveal className="space-y-8">
+          {model.groups.map((g) => (
+            <RevealItem key={g.designer?.id ?? 'unassigned'}>
+              <section
+                className="card p-8"
+                aria-label={`Cancellations — ${g.designer?.name ?? 'unassigned'}`}
+              >
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <h2 className="text-card text-fg">{g.designer?.name ?? 'No designer assigned'}</h2>
+                  {g.designer && <Badge tone="neutral">{g.designer.team}</Badge>}
+                  <Badge tone="danger" icon={OctagonX}>
+                    {g.tasks.length} cancelled
+                  </Badge>
+                  <span className="tnum inline-flex items-center gap-1 text-label font-normal text-muted">
+                    {g.assigned12w > 0
+                      ? `${g.cancelled12w} of the ${g.assigned12w} projects given in the last 12 weeks ended cancelled — ${Math.round((g.cancelled12w / g.assigned12w) * 100)}%`
+                      : 'no projects given in the last 12 weeks'}
+                    <InfoTip text="Out of everything this designer was given in the last 12 weeks, the share that ended cancelled. A pattern here matters more than one bad order." />
                   </span>
-                  <span className="tnum text-xs text-muted">
-                    given {fmtDate(t.created_at)} · cancelled {fmtDateTime(t.closed_at ?? t.last_event_at)}
-                  </span>
-                  <span className="text-xs font-medium text-brand">See history</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+                </div>
+                <ul className="mt-6 divide-y divide-border/50">
+                  {g.tasks.map((t) => (
+                    <li key={t.task_id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelected(t)}
+                        className="group flex min-h-11 w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-2 py-2.5 text-left transition-colors duration-150 hover:bg-surface-2"
+                        aria-label={`See the full history of ${t.name ?? t.task_id}`}
+                      >
+                        <span className="min-w-0 flex-1 truncate text-caption font-medium text-fg">
+                          {t.name ?? t.task_id}
+                        </span>
+                        <span className="tnum text-label font-normal text-muted">
+                          given {fmtDate(t.created_at)} · cancelled {fmtDateTime(t.closed_at ?? t.last_event_at)}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5 text-label text-muted transition-colors duration-150 group-hover:text-fg">
+                          See history
+                          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </RevealItem>
+          ))}
+        </Reveal>
+      )}
 
       <Drawer
         open={selected != null}
@@ -252,7 +277,7 @@ export default function CeoCancellations() {
                   href={selectedUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-border bg-surface px-3.5 text-sm font-medium text-fg transition-colors duration-150 hover:bg-surface-2"
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-border bg-surface px-3.5 text-caption font-medium text-fg transition-colors duration-150 hover:bg-surface-2"
                 >
                   Open in ClickUp
                   <ExternalLink className="h-3.5 w-3.5 text-muted" aria-hidden="true" />
@@ -260,17 +285,17 @@ export default function CeoCancellations() {
                 </a>
               )}
             </div>
-            <dl className="tnum grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <dl className="tnum grid grid-cols-2 gap-x-4 gap-y-2 text-caption">
               <div>
-                <dt className="text-xs text-muted">Given to the designer</dt>
+                <dt className="text-label font-normal text-muted">Given to the designer</dt>
                 <dd className="text-fg">{fmtDateTime(selected.created_at)}</dd>
               </div>
               <div>
-                <dt className="text-xs text-muted">Cancelled</dt>
+                <dt className="text-label font-normal text-muted">Cancelled</dt>
                 <dd className="text-fg">{fmtDateTime(selected.closed_at ?? selected.last_event_at)}</dd>
               </div>
             </dl>
-            <p className="flex items-start gap-2 rounded-xl bg-surface-2/70 p-3 text-xs text-muted">
+            <p className="flex items-start gap-2 rounded-xl bg-surface-2/70 p-3 text-label font-normal text-muted">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               Fault was decided by the person who closed this order. Read the history below, then
               judge the pattern across weeks — not this one order alone.
@@ -285,21 +310,6 @@ export default function CeoCancellations() {
           </div>
         )}
       </Drawer>
-    </div>
-  )
-}
-
-/**
- * Places a small ⓘ in the corner of a card whose component only accepts a
- * plain-string heading (VerdictBlock).
- */
-function CornerTip({ tip, children }: { tip: string; children: ReactNode }) {
-  return (
-    <div className="relative">
-      {children}
-      <span className="absolute right-4 top-4">
-        <InfoTip text={tip} />
-      </span>
     </div>
   )
 }

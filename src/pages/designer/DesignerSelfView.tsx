@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { motion, useReducedMotion } from 'framer-motion'
 import {
   CalendarDays,
   CircleCheck,
@@ -36,6 +37,10 @@ import {
 import { ToastProvider, useToast } from '../../components/ui/ToastProvider'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { Button } from '../../components/ui/Button'
+import { ActionButton } from '../../components/ui/ActionButton'
+import { AnimatedCounter } from '../../components/ui/AnimatedCounter'
+import { InboxZeroReward } from '../../components/ui/InboxZeroReward'
+import { SPRING_GENTLE, staggerContainer, staggerItem } from '../../components/ui/motion'
 import { InfoTip } from '../../components/ui/InfoTip'
 import {
   DesignerMetricsPanel,
@@ -152,7 +157,7 @@ function ThemeToggle() {
       onClick={toggle}
       aria-label={label}
       title={label}
-      className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg"
+      className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg motion-safe:active:scale-95"
     >
       <Icon className="h-5 w-5" aria-hidden="true" />
     </button>
@@ -497,6 +502,29 @@ function SelfViewBody() {
   )
   const expectedToday = designerId ? expectedQuotaOn(designerId, active.workDate, quota) : 0
 
+  // ── Delight (manifesto pillar 11): finishing the LAST due-today project ────
+  // Fires only on a live below-target → at-target transition observed in this
+  // session — never on first load of a day that was already finished, and it
+  // re-arms when the shift day rolls over (incl. overnight carry).
+  const [celebrated, setCelebrated] = useState(false)
+  const prevCompletedRef = useRef<number | null>(null)
+  useEffect(() => {
+    prevCompletedRef.current = null
+    setCelebrated(false)
+  }, [active.workDate])
+  const dayDataReady =
+    !tasksQ.isLoading && !metricsQ.isLoading && !schedulesQ.isLoading && !exceptionsQ.isLoading
+  const dayCompleted = daySum?.completed ?? null
+  useEffect(() => {
+    // Seed only from settled data — a loading 0 must never count as "before".
+    if (!dayDataReady || dayCompleted == null || expectedToday <= 0) return
+    const prev = prevCompletedRef.current
+    prevCompletedRef.current = dayCompleted
+    if (prev != null && prev < expectedToday && dayCompleted >= expectedToday) {
+      setCelebrated(true)
+    }
+  }, [dayDataReady, dayCompleted, expectedToday])
+
   // Week-to-date window for the shared metrics panel (§22.3) — deltas compare
   // Monday..today against the same elapsed window last week (§22.10: own past only).
   const metricsPeriod: MetricsPeriod = useMemo(
@@ -582,14 +610,14 @@ function SelfViewBody() {
   // ── Unlinked account: teach, don't dead-end (§20.7) ────────────────────────
   if (!designerId) {
     return (
-      <main className="mx-auto min-h-screen w-full max-w-screen-sm px-4 py-6">
+      <main className="mx-auto min-h-screen w-full max-w-screen-sm px-5 py-8">
         <PageHeader
           greeting={`${greetingFor(now)}`}
           name={profile?.email?.split('@')[0] ?? 'there'}
-          dateline={`${PKT_DATELINE.format(now)} · all times PKT`}
+          dateline={`Here's your pulse for ${PKT_DATELINE.format(now)} · all times PKT`}
           onSignOut={() => void signOut()}
         />
-        <div className="mt-8">
+        <div className="mt-10">
           <EmptyState
             icon={UserRound}
             title="Your login isn't connected to your name yet"
@@ -608,16 +636,16 @@ function SelfViewBody() {
   const firstName = designer?.name.split(' ')[0] ?? profile?.email?.split('@')[0] ?? 'there'
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-screen-sm px-4 pb-16 pt-6">
+    <main className="mx-auto min-h-screen w-full max-w-screen-sm px-5 pb-24 pt-8">
       <PageHeader
         greeting={greetingFor(now)}
         name={firstName}
-        dateline={`${PKT_DATELINE.format(now)} · all times PKT`}
+        dateline={`Here's your pulse for ${PKT_DATELINE.format(now)} · all times PKT`}
         onSignOut={() => void signOut()}
       />
 
       {errored.length > 0 && (
-        <div className="mt-4">
+        <div className="mt-6">
           <ErrorBanner
             message="Couldn't load some of your info — check your internet."
             asOf={lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null}
@@ -626,7 +654,7 @@ function SelfViewBody() {
         </div>
       )}
 
-      <div className="mt-5 flex flex-col gap-5">
+      <div className="mt-8 flex flex-col gap-8">
         {/* ── 2. Check-in / check-out — most prominent when unmarked (§13.3) ── */}
         <CheckInCard
           loading={checkInLoading}
@@ -641,18 +669,27 @@ function SelfViewBody() {
           onMark={mark}
         />
 
-        {/* ── 3. One honest line about the day (§13.3) ─────────────────────── */}
-        <HonestLine
-          loading={analyticsLoading}
-          daySum={daySum}
-          weekSum={weekSum}
-          prevSum={prevSum}
-          expectedToday={expectedToday}
-          dayOffReason={dayOffReason}
-          active={active}
-          openTasks={myOpenTasks}
-          listUrl={clickupListUrl(designer?.clickup_list_id)}
-        />
+        {/* ── 3. One honest line about the day (§13.3). When the LAST due-today
+               project lands in this session, the line becomes the reward
+               (manifesto pillar 11) — confetti, then a calm, definitive close. */}
+        {celebrated ? (
+          <InboxZeroReward
+            title="That's your day done"
+            message={`Everything due today is finished — ${expectedToday} of ${expectedToday}. Great work. Anything new lands here as soon as it's assigned in ClickUp.`}
+          />
+        ) : (
+          <HonestLine
+            loading={analyticsLoading}
+            daySum={daySum}
+            weekSum={weekSum}
+            prevSum={prevSum}
+            expectedToday={expectedToday}
+            dayOffReason={dayOffReason}
+            active={active}
+            openTasks={myOpenTasks}
+            listUrl={clickupListUrl(designer?.clickup_list_id)}
+          />
+        )}
 
         {/* ── 4. Today: my open tasks ──────────────────────────────────────── */}
         <TodayTasks
@@ -717,10 +754,10 @@ function PageHeader({
           <BrandLogo className="h-4 w-4" />
           <p className="eyebrow">Studio Pulse</p>
         </span>
-        <h1 className="mt-1 text-2xl font-semibold leading-tight text-fg">
+        <h1 className="mt-2 text-section text-fg">
           {greeting}, {name.split(' ')[0]}
         </h1>
-        <p className="mt-1 text-sm text-muted">{dateline}</p>
+        <p className="mt-2 max-w-prose text-caption text-muted">{dateline}</p>
       </div>
       <div className="flex shrink-0 items-center gap-1">
         <ThemeToggle />
@@ -729,7 +766,7 @@ function PageHeader({
           onClick={onSignOut}
           aria-label="Sign out"
           title="Sign out"
-          className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg"
+          className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg motion-safe:active:scale-95"
         >
           <LogOut className="h-5 w-5" aria-hidden="true" />
         </button>
@@ -783,12 +820,14 @@ function CheckInCard({
   lastMarkAt: string | null
   onMark: (t: 'check_in' | 'check_out') => void
 }) {
+  const reduced = useReducedMotion()
+
   if (loading) {
     return (
-      <section aria-label="Attendance — loading" className="card p-5">
+      <section aria-label="Attendance — loading" className="card p-8">
         <Skeleton className="h-3 w-24" />
-        <Skeleton className="mt-3 h-4 w-48" />
-        <Skeleton className="mt-4 h-14 w-full" />
+        <Skeleton className="mt-4 h-4 w-48" />
+        <Skeleton className="mt-6 h-14 w-full" />
       </section>
     )
   }
@@ -799,7 +838,7 @@ function CheckInCard({
   return (
     <section
       aria-label="Attendance"
-      className={`card p-5 ${prominent ? 'shadow-raised ring-1 ring-brand/20' : ''}`}
+      className={`card p-8 ${prominent ? 'shadow-raised ring-1 ring-brand/20' : ''}`}
     >
       <div className="flex items-center justify-between gap-2">
         <p className="eyebrow inline-flex items-center gap-1">
@@ -817,7 +856,7 @@ function CheckInCard({
           </Badge>
         )}
       </div>
-      <p className="mt-2 inline-flex flex-wrap items-center gap-1 text-sm text-muted">
+      <p className="mt-3 inline-flex max-w-prose flex-wrap items-center gap-1 text-caption text-muted">
         {context.text}
         {context.overnight && (
           <InfoTip text="Your shift runs past midnight — this whole night counts as one work day." />
@@ -825,61 +864,74 @@ function CheckInCard({
         {dayOff && phase === 'unmarked' ? ' · your day off — checking in still counts if you work' : ''}
       </p>
 
-      {phase === 'unmarked' && (
-        <button
-          type="button"
-          onClick={() => onMark('check_in')}
-          className="mt-4 flex min-h-[3.5rem] w-full items-center justify-center gap-2.5 rounded-xl bg-brand text-lg font-semibold text-brand-fg transition-transform duration-150 ease-out hover:opacity-90 active:scale-[0.98]"
-        >
-          <LogIn className="h-5 w-5" aria-hidden="true" />
-          Check in
-        </button>
-      )}
-
-      {phase === 'in' && lastCheckIn && (
-        <>
-          <p className="mt-3 text-base font-medium text-fg">
-            Checked in at {fmtTime(lastCheckIn)} —{' '}
-            <span className="tnum">
-              {fmtDuration(Math.max(0, minutesBetween(lastCheckIn, now)))}
-            </span>{' '}
-            so far
-          </p>
-          <button
-            type="button"
-            onClick={() => onMark('check_out')}
-            className="mt-4 flex min-h-[3rem] w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface text-base font-semibold text-fg transition-colors duration-150 hover:bg-surface-2 active:scale-[0.98]"
+      {/* aria-live: the swap between "Check in", "Checked in at …" and
+          "Checked out at …" announces itself to screen readers (pillar 12). */}
+      <div aria-live="polite">
+        {phase === 'unmarked' && (
+          <ActionButton
+            onAction={() => onMark('check_in')}
+            className="mt-6 min-h-14 w-full rounded-xl text-body font-semibold"
           >
-            <LogOut className="h-5 w-5" aria-hidden="true" />
-            Check out
-          </button>
-        </>
-      )}
+            <LogIn className="h-5 w-5" aria-hidden="true" />
+            Check in
+          </ActionButton>
+        )}
 
-      {phase === 'out' && lastMarkAt && (
-        <>
-          <p className="mt-3 text-base font-medium text-fg">
-            Checked out at {fmtTime(lastMarkAt)}
-            {firstCheckIn && (
-              <span className="text-muted">
-                {' '}
-                · <span className="tnum">
-                  {fmtDuration(Math.max(0, minutesBetween(firstCheckIn, lastMarkAt)))}
-                </span>{' '}
-                session
-              </span>
-            )}
-          </p>
-          <button
-            type="button"
-            onClick={() => onMark('check_in')}
-            className="mt-3 flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-brand transition-colors duration-150 hover:bg-brand-soft"
-          >
-            <LogIn className="h-4 w-4" aria-hidden="true" />
-            Check back in
-          </button>
-        </>
-      )}
+        {phase === 'in' && lastCheckIn && (
+          <>
+            <motion.p
+              initial={reduced ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={SPRING_GENTLE}
+              className="mt-4 text-body font-medium text-fg"
+            >
+              Checked in at {fmtTime(lastCheckIn)} —{' '}
+              <span className="tnum">
+                {fmtDuration(Math.max(0, minutesBetween(lastCheckIn, now)))}
+              </span>{' '}
+              so far
+            </motion.p>
+            <ActionButton
+              onAction={() => onMark('check_out')}
+              variant="neutral"
+              className="mt-6 min-h-12 w-full rounded-xl text-body font-semibold"
+            >
+              <LogOut className="h-5 w-5" aria-hidden="true" />
+              Check out
+            </ActionButton>
+          </>
+        )}
+
+        {phase === 'out' && lastMarkAt && (
+          <>
+            <motion.p
+              initial={reduced ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={SPRING_GENTLE}
+              className="mt-4 text-body font-medium text-fg"
+            >
+              Checked out at {fmtTime(lastMarkAt)}
+              {firstCheckIn && (
+                <span className="text-muted">
+                  {' '}
+                  · <span className="tnum">
+                    {fmtDuration(Math.max(0, minutesBetween(firstCheckIn, lastMarkAt)))}
+                  </span>{' '}
+                  session
+                </span>
+              )}
+            </motion.p>
+            <ActionButton
+              onAction={() => onMark('check_in')}
+              variant="neutral"
+              className="mt-4 min-h-11 rounded-xl"
+            >
+              <LogIn className="h-4 w-4" aria-hidden="true" />
+              Check back in
+            </ActionButton>
+          </>
+        )}
+      </div>
     </section>
   )
 }
@@ -909,32 +961,36 @@ function HonestLine({
 }) {
   if (loading || !daySum) {
     return (
-      <section aria-label="Today — loading" className="card p-5">
-        <Skeleton className="h-6 w-4/5" />
-        <Skeleton className="mt-2.5 h-4 w-3/5" />
+      <section aria-label="Today — loading" className="card p-8">
+        <Skeleton className="h-3 w-28" />
+        <Skeleton className="mt-5 h-12 w-36" />
+        <Skeleton className="mt-4 h-4 w-3/5" />
       </section>
     )
   }
 
   const dayLabel = active.carry ? `for ${WEEKDAY[dowOf(active.workDate)]}'s shift` : 'today'
 
-  let headline: string
+  // Day-off / no-target states keep a single sentence headline; a working day
+  // gets the hero read: the number IS the reason this card exists.
+  let headline: string | null = null
   if (dayOffReason === 'holiday') headline = "It's a company holiday — nothing expected today."
   else if (dayOffReason === 'leave') headline = "You're on leave — nothing expected today."
   else if (dayOffReason === 'weekly_off') headline = "It's your day off — nothing expected."
   else if (dayOffReason === 'none') {
     headline = 'No target is set for you today — ask your team lead if that looks wrong.'
-  } else if (daySum.completed >= expectedToday) {
+  }
+
+  let dayLine: string
+  if (daySum.completed >= expectedToday) {
     const clean =
       daySum.delivered > 0 && daySum.firstPassClean === daySum.delivered
         ? ' Every design accepted first time — nice.'
         : ''
-    headline = `Target met — ${daySum.completed} of ${expectedToday} ${dayLabel}.${clean}`
+    dayLine = `Target met ${dayLabel} — nothing more is due.${clean}`
   } else {
     const slots = expectedToday - daySum.completed
-    headline = `You're at ${daySum.completed} of ${expectedToday} ${dayLabel} — ${
-      slots === 1 ? 'one slot open' : `${slots} slots open`
-    }.`
+    dayLine = `finished ${dayLabel} — ${slots === 1 ? 'one slot' : `${slots} slots`} still open.`
   }
 
   // Weekly quality line — only once there's enough signal to be honest about.
@@ -962,13 +1018,32 @@ function HonestLine({
   const showPickup = slotsOpen && pickupTask != null && nextHref != null
 
   return (
-    <section aria-label="Today at a glance" className="card p-5">
-      <h2 className="text-xl font-semibold leading-snug text-fg">
-        {headline}{' '}
-        <InfoTip text="Your day at a glance: out of the projects you were supposed to take, how many you finished." />
-      </h2>
+    <section aria-label="Today at a glance" className="card p-8">
+      {headline ? (
+        <h2 className="max-w-prose text-card text-fg">
+          {headline}{' '}
+          <InfoTip text="Your day at a glance: out of the projects you were supposed to take, how many you finished." />
+        </h2>
+      ) : (
+        <>
+          <h2 className="eyebrow inline-flex items-center gap-1">
+            Today&apos;s plate
+            <InfoTip text="Your day at a glance: out of the projects you were supposed to take, how many you finished." />
+          </h2>
+          {/* The hero read: "You're at N of M today" — the number ticks with
+              spring momentum (pillar 10), never snaps. */}
+          <p className="mt-5 flex flex-wrap items-baseline gap-x-2">
+            <span className="sr-only">You&apos;re at </span>
+            <span className="tnum text-hero text-fg">
+              <AnimatedCounter value={daySum.completed} />
+            </span>
+            <span className="tnum text-card font-medium text-muted">of {expectedToday}</span>
+          </p>
+          <p className="mt-3 max-w-prose text-body text-muted">{dayLine}</p>
+        </>
+      )}
       {qualityLine && (
-        <p className="mt-2 text-sm leading-relaxed text-muted">
+        <p className="mt-4 max-w-prose text-caption leading-relaxed text-muted">
           {qualityLine}{' '}
           <InfoTip text="Right first time = designs accepted without anyone asking for changes." />
         </p>
@@ -978,7 +1053,7 @@ function HonestLine({
           href={nextHref}
           target="_blank"
           rel="noreferrer"
-          className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-xl px-1 text-sm font-medium text-brand hover:underline"
+          className="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-xl px-1 text-caption font-medium text-brand hover:underline"
         >
           Pick up your next project in ClickUp
           <ExternalLink className="h-4 w-4" aria-hidden="true" />
@@ -1025,6 +1100,7 @@ function TodayTasks({
   agingDaysDefault: number
   agingDaysClientResponse: number
 }) {
+  const reduced = useReducedMotion()
   const rows = useMemo(() => {
     const withMeta = tasks.map((t) => ({
       task: t,
@@ -1046,15 +1122,15 @@ function TodayTasks({
         On your plate
         <InfoTip text="Your open projects, with the ones that need attention first at the top. Tap a name to open it in ClickUp." />
       </h2>
-      <div className="card mt-2 px-5 py-1">
+      <div className="card mt-3 px-6 py-2">
         {loading ? (
-          <div className="flex flex-col gap-3 py-4">
+          <div className="flex flex-col gap-4 py-5">
             <Skeleton className="h-5 w-full" />
             <Skeleton className="h-5 w-4/5" />
             <Skeleton className="h-5 w-3/5" />
           </div>
         ) : rows.length === 0 ? (
-          <div className="py-4">
+          <div className="py-5">
             <EmptyState
               icon={Inbox}
               title="No open projects right now"
@@ -1062,11 +1138,22 @@ function TodayTasks({
             />
           </div>
         ) : (
-          <ul className="divide-y divide-border/60">
+          /* Progressive reveal (pillar 9): rows cascade in with spring
+             momentum, 50ms apart — instant under reduced motion. */
+          <motion.ul
+            variants={staggerContainer}
+            initial={reduced ? false : 'hidden'}
+            animate="show"
+            className="divide-y divide-border/60"
+          >
             {rows.slice(0, 20).map(({ task, age, note }) => {
               const href = clickupTaskUrl(task.task_id)
               return (
-                <li key={task.task_id} className="flex flex-col gap-1.5 py-3">
+                <motion.li
+                  key={task.task_id}
+                  variants={staggerItem}
+                  className="flex flex-col gap-2 py-4"
+                >
                   <div className="flex items-center justify-between gap-3">
                     {href ? (
                       // min-h + negative margin: a 44px tap target that
@@ -1076,13 +1163,13 @@ function TodayTasks({
                         target="_blank"
                         rel="noreferrer"
                         aria-label={`Open ${task.name ?? 'task'} in ClickUp`}
-                        className="-my-2 inline-flex min-h-11 min-w-0 flex-1 items-center gap-1.5 truncate text-sm font-medium text-fg hover:underline"
+                        className="-my-2 inline-flex min-h-11 min-w-0 flex-1 items-center gap-1.5 truncate text-body font-medium text-fg hover:underline"
                       >
                         <span className="truncate">{task.name ?? 'Untitled task'}</span>
-                        <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
+                        <ExternalLink className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
                       </a>
                     ) : (
-                      <span className="-my-2 inline-flex min-h-11 min-w-0 flex-1 items-center truncate text-sm font-medium text-fg">
+                      <span className="-my-2 inline-flex min-h-11 min-w-0 flex-1 items-center truncate text-body font-medium text-fg">
                         {task.name ?? 'Untitled task'}
                       </span>
                     )}
@@ -1097,24 +1184,24 @@ function TodayTasks({
                         />
                       </span>
                     )}
-                    <span className="tnum text-xs text-muted">
+                    <span className="tnum text-label text-muted">
                       {fmtDuration(age)} in this step
                     </span>
                   </div>
                   {note && (
-                    <p className={`text-xs ${note.mine ? 'text-warning' : 'text-muted'}`}>
+                    <p className={`max-w-prose text-caption ${note.mine ? 'text-warning' : 'text-muted'}`}>
                       {note.text}
                     </p>
                   )}
-                </li>
+                </motion.li>
               )
             })}
             {rows.length > 20 && (
-              <li className="py-3 text-xs text-muted">
+              <motion.li variants={staggerItem} className="py-4 text-caption text-muted">
                 +{rows.length - 20} more in your ClickUp list
-              </li>
+              </motion.li>
             )}
-          </ul>
+          </motion.ul>
         )}
       </div>
     </section>
@@ -1148,14 +1235,14 @@ function WeekSection({
         <h2 id="my-week-h" className="eyebrow">
           My week
         </h2>
-        <p className="text-xs text-muted">vs same point last week</p>
+        <p className="text-label text-muted">vs same point last week</p>
       </div>
       {/* Shared metrics panel (§22.3) — scope='self' omits every team-median
           reference and all peer data; deltas are vs the designer's own past
           only (§22.10). Single-column-friendly for mobile (§20.10). The page
           already fetched supersets of the panel's windows — hand them over so
           the panel doesn't re-fetch the same tables. */}
-      <div className="mt-2">
+      <div className="mt-3">
         <DesignerMetricsPanel
           designerId={designerId}
           scope="self"
@@ -1166,13 +1253,13 @@ function WeekSection({
         />
       </div>
 
-      <div className="card mt-3 p-5">
+      <div className="card mt-4 p-6">
         <p className="eyebrow">Right first time — last 8 weeks</p>
         {trendLoading ? (
-          <Skeleton className="mt-3 h-24 w-full" />
+          <Skeleton className="mt-4 h-24 w-full" />
         ) : trendPoints.length >= 2 ? (
           <>
-            <div className="mt-3">
+            <div className="mt-4">
               <TrendLine
                 points={trendPoints}
                 baseline={trendBaseline}
@@ -1181,12 +1268,12 @@ function WeekSection({
                 ariaLabel={`Your right-first-time rate over the last 8 weeks, from ${trendPoints[0].value}% to ${trendPoints[trendPoints.length - 1].value}%, against your own average of ${trendBaseline ?? 0}%`}
               />
             </div>
-            <p className="mt-2 text-xs text-muted">
+            <p className="mt-3 max-w-prose text-caption text-muted">
               Dashed line is your own 8-week average — your only benchmark here is your past self.
             </p>
           </>
         ) : (
-          <p className="mt-3 text-sm text-muted">
+          <p className="mt-4 max-w-prose text-caption text-muted">
             Not enough history yet — your trend appears after a couple of weeks of deliveries.
           </p>
         )}
@@ -1231,7 +1318,7 @@ function AttendanceSection({
       <h2 id="my-attendance-h" className="eyebrow px-1">
         My attendance
       </h2>
-      <div className="card mt-2 p-5">
+      <div className="card mt-3 p-6">
         {loading ? (
           <div className="flex flex-col gap-3">
             <Skeleton className="h-5 w-32" />
@@ -1242,28 +1329,32 @@ function AttendanceSection({
           <>
             <div className="flex items-center gap-2.5">
               <Clock className="h-4 w-4 text-muted" aria-hidden="true" />
-              <span className="text-sm font-medium text-fg">Today</span>
+              <span className="text-caption font-semibold text-fg">Today</span>
               {status ? (
                 <Badge tone={ATT_TONE[status]}>{status === 'HolidayWorked' ? 'Holiday · worked' : status === 'WeeklyOff' ? 'Weekly off' : status}</Badge>
               ) : (
                 <Badge tone="neutral">Not marked yet</Badge>
               )}
             </div>
-            {warmupLine && <p className="mt-2 text-sm leading-relaxed text-muted">{warmupLine}</p>}
+            {warmupLine && (
+              <p className="mt-3 max-w-prose text-caption leading-relaxed text-muted">
+                {warmupLine}
+              </p>
+            )}
 
-            <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-border/60 pt-4">
+            <dl className="mt-6 grid grid-cols-2 gap-4 border-t border-border/60 pt-5">
               <div>
-                <dt className="text-xs text-muted">Worked this week</dt>
-                <dd className="tnum mt-0.5 text-lg font-medium text-fg">
+                <dt className="text-label text-muted">Worked this week</dt>
+                <dd className="tnum mt-1.5 text-card text-fg">
                   {fmtDuration(workedWeekMin)}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-muted">Late minutes this week</dt>
-                <dd className="tnum mt-0.5 text-lg font-medium text-fg">
+                <dt className="text-label text-muted">Late minutes this week</dt>
+                <dd className="tnum mt-1.5 text-card text-fg">
                   {lateWeekMin > 0 ? fmtDuration(lateWeekMin) : 'None'}
                 </dd>
-                <dd className="mt-0.5 text-xs text-muted">
+                <dd className="mt-1 text-label text-muted">
                   {lateWeekMin > 0 ? 'after your grace window' : 'on time all week'}
                 </dd>
               </div>
@@ -1360,7 +1451,7 @@ function TimeOffSection({
       <h2 id="time-off-h" className="eyebrow px-1">
         Time off
       </h2>
-      <div className="card mt-2 px-5 py-4">
+      <div className="card mt-3 p-6">
         {loading ? (
           <div className="flex flex-col gap-3">
             <Skeleton className="h-5 w-40" />
@@ -1370,8 +1461,8 @@ function TimeOffSection({
           <>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-sm font-semibold text-fg">My leave</h3>
-                <p className="mt-1 text-xs text-muted">
+                <h3 className="text-caption font-semibold text-fg">My leave</h3>
+                <p className="tnum mt-1 text-caption text-muted">
                   {leaveDaysThisYear} leave day{leaveDaysThisYear === 1 ? '' : 's'} recorded this
                   year
                 </p>
@@ -1385,19 +1476,19 @@ function TimeOffSection({
             {requesting && (
               <form
                 ref={formRef}
-                className="mt-3 flex flex-col gap-3 rounded-xl bg-surface-2 p-4"
+                className="mt-4 flex flex-col gap-4 rounded-xl bg-surface-2 p-5"
                 onSubmit={(e) => {
                   e.preventDefault()
                   void submitRequest()
                 }}
               >
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="flex flex-col gap-1.5 text-label font-medium text-muted">
                     Type
                     <select
                       value={leaveType}
                       onChange={(e) => setLeaveType(e.target.value)}
-                      className="min-h-11 rounded-xl border border-border bg-surface px-3 text-sm text-fg"
+                      className="min-h-11 rounded-xl border border-border bg-surface px-3 text-caption text-fg"
                     >
                       <option value="annual">Annual</option>
                       <option value="sick">Sick</option>
@@ -1406,7 +1497,7 @@ function TimeOffSection({
                       <option value="other">Other</option>
                     </select>
                   </label>
-                  <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+                  <label className="flex flex-col gap-1.5 text-label font-medium text-muted">
                     From
                     <input
                       type="date"
@@ -1414,37 +1505,38 @@ function TimeOffSection({
                       min={today}
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      className="min-h-11 rounded-xl border border-border bg-surface px-3 text-sm text-fg"
+                      className="tnum min-h-11 rounded-xl border border-border bg-surface px-3 text-caption text-fg"
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+                  <label className="flex flex-col gap-1.5 text-label font-medium text-muted">
                     To (optional)
                     <input
                       type="date"
                       min={startDate}
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
-                      className="min-h-11 rounded-xl border border-border bg-surface px-3 text-sm text-fg"
+                      className="tnum min-h-11 rounded-xl border border-border bg-surface px-3 text-caption text-fg"
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+                  <label className="flex flex-col gap-1.5 text-label font-medium text-muted">
                     Reason (optional)
                     <input
                       type="text"
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
                       placeholder="e.g. family event"
-                      className="min-h-11 rounded-xl border border-border bg-surface px-3 text-sm text-fg"
+                      className="min-h-11 rounded-xl border border-border bg-surface px-3 text-caption text-fg"
                     />
                   </label>
                 </div>
                 {/* Buttons never wrap mid-label; the caption drops to its own
                     line on narrow phones instead of squeezing the CTA. */}
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
                   <Button
                     type="submit"
                     variant="primary"
                     disabled={submitting}
+                    aria-busy={submitting}
                     className="whitespace-nowrap"
                   >
                     {submitting ? 'Sending…' : 'Send request'}
@@ -1456,25 +1548,25 @@ function TimeOffSection({
                   >
                     Cancel
                   </Button>
-                  <span className="min-w-0 flex-1 basis-full text-xs text-muted sm:basis-auto">
+                  <span className="min-w-0 flex-1 basis-full text-caption text-muted sm:basis-auto">
                     Goes to your PM as pending.
                   </span>
                 </div>
               </form>
             )}
             {history.length === 0 ? (
-              <p className="mt-2 text-sm text-muted">
+              <p className="mt-3 max-w-prose text-caption text-muted">
                 No leave on record — anything your PM logs for you shows up here.
               </p>
             ) : (
-              <ul className="mt-1 divide-y divide-border/60">
+              <ul className="mt-2 divide-y divide-border/60">
                 {history.map((l) => (
-                  <li key={l.id} className="flex items-center justify-between gap-3 py-2.5">
+                  <li key={l.id} className="flex items-center justify-between gap-3 py-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-fg">
+                      <p className="truncate text-caption font-medium text-fg">
                         {l.leave_type ?? 'Leave'}
                       </p>
-                      <p className="mt-0.5 text-xs text-muted">
+                      <p className="tnum mt-0.5 text-label text-muted">
                         {fmtDate(l.start_date)}
                         {l.end_date && l.end_date !== l.start_date
                           ? ` – ${fmtDate(l.end_date)}`
@@ -1495,18 +1587,18 @@ function TimeOffSection({
               </ul>
             )}
 
-            <h3 className="mt-5 flex items-center gap-1.5 border-t border-border/60 pt-4 text-sm font-semibold text-fg">
+            <h3 className="mt-6 flex items-center gap-1.5 border-t border-border/60 pt-5 text-caption font-semibold text-fg">
               <CalendarDays className="h-4 w-4 text-muted" aria-hidden="true" />
               Upcoming holidays
             </h3>
             {upcoming.length === 0 ? (
-              <p className="mt-2 text-sm text-muted">No company holidays coming up.</p>
+              <p className="mt-3 text-caption text-muted">No company holidays coming up.</p>
             ) : (
-              <ul className="mt-1">
+              <ul className="mt-2">
                 {upcoming.map((h) => (
                   <li
                     key={h.id}
-                    className="flex items-center justify-between gap-3 py-2 text-sm"
+                    className="flex items-center justify-between gap-3 py-2.5 text-caption"
                   >
                     <span className="min-w-0 truncate text-fg">{h.name ?? 'Holiday'}</span>
                     <span className="tnum shrink-0 text-muted">{fmtDate(h.the_date)}</span>

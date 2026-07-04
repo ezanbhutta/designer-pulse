@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { CornerDownLeft, Search } from 'lucide-react'
+import { SPRING } from './motion'
 
 export interface Command {
   id: string
@@ -42,12 +44,15 @@ function score(cmd: Command, query: string): number {
 }
 
 /**
- * Keyboard-first command palette (spec §20.6): global ⌘K / Ctrl-K listener,
- * fuzzy-ish filter over label + keywords, arrow-key navigation, Enter runs,
- * Esc closes. Result count is announced politely; selection uses the brand
- * token (§21.1 — brand marks the active selection). Render once in AppShell.
+ * The spotlight (manifesto pillar 14 — the ⌘K nervous system): dims the whole
+ * app behind a blurred backdrop and drops a surface-2 depth layer in with
+ * spring physics. Global ⌘K / Ctrl-K listener, instant fuzzy filter over
+ * label + keywords, arrow-key navigation, Enter runs, Esc closes. Result
+ * count is announced politely; selection uses the brand token (§21.1 — brand
+ * marks the active selection). Render once in AppShell.
  */
 export function CommandPalette({ commands }: CommandPaletteProps) {
+  const reduced = useReducedMotion()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
@@ -152,93 +157,128 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
     }
   }
 
-  if (!open) return null
-
   return createPortal(
-    <div className="fixed inset-0 z-palette flex items-start justify-center px-4 pt-[15vh]">
-      <div
-        className="absolute inset-0 bg-bg/60 backdrop-blur-sm"
-        onClick={closePalette}
-        aria-hidden="true"
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Command palette"
-        onKeyDown={handleKeyDown}
-        className="animate-fade-in relative w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-surface shadow-raised"
-      >
-        <div className="flex items-center gap-3 border-b border-border px-4">
-          <Search className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
-          <input
-            ref={inputRef}
-            role="combobox"
-            aria-expanded="true"
-            aria-controls="command-palette-list"
-            aria-activedescendant={filtered[active] ? `cmd-opt-${filtered[active].id}` : undefined}
-            aria-label="Search commands"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-              setActive(0)
-            }}
-            placeholder="Type a command or search…"
-            className="min-h-[3rem] w-full bg-transparent text-sm text-fg outline-none placeholder:text-muted focus-visible:outline-none"
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <kbd className="shrink-0 rounded-md border border-border bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted">
-            esc
-          </kbd>
-        </div>
-
-        <div aria-live="polite" className="sr-only">
-          {filtered.length === 1 ? '1 result' : `${filtered.length} results`}
-        </div>
-
-        <ul
-          id="command-palette-list"
-          ref={listRef}
-          role="listbox"
-          aria-label="Commands"
-          className="max-h-72 overflow-y-auto p-2"
+    <AnimatePresence>
+      {open && (
+        <div
+          key="palette"
+          className="fixed inset-0 z-palette flex items-start justify-center px-4 pt-[15vh]"
         >
-          {filtered.length === 0 ? (
-            <li className="px-3 py-6 text-center text-sm text-muted">
-              No matching commands — try a different search.
-            </li>
-          ) : (
-            filtered.map((cmd, i) => (
-              <li key={cmd.id} role="presentation">
-                <button
-                  type="button"
-                  id={`cmd-opt-${cmd.id}`}
-                  data-index={i}
-                  role="option"
-                  aria-selected={i === active}
-                  tabIndex={-1}
-                  onMouseEnter={() => setActive(i)}
-                  onClick={() => runCommand(cmd)}
-                  className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm transition-colors duration-150 ${
-                    i === active ? 'bg-brand-soft text-fg' : 'text-fg hover:bg-surface-2'
-                  }`}
-                >
-                  <span className="min-w-0 flex-1 truncate font-medium">{cmd.label}</span>
-                  {cmd.hint && (
-                    <span className="ml-auto shrink-0 text-right text-xs text-muted">
-                      {cmd.hint}
-                    </span>
-                  )}
-                  {i === active && (
-                    <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
-                  )}
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      </div>
-    </div>,
+          {/* The spotlight dims the entire app behind it (pillar 14). */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: reduced ? 0 : 0.15 }}
+            className="absolute inset-0 bg-bg/70 backdrop-blur-sm"
+            onClick={closePalette}
+            aria-hidden="true"
+          />
+          {/* Depth layer: closer to the user, so a step lighter than the void. */}
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command palette"
+            onKeyDown={handleKeyDown}
+            initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: -10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: -6 }}
+            transition={reduced ? { duration: 0 } : SPRING}
+            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-surface shadow-raised dark:bg-surface-2"
+          >
+            <div className="flex items-center gap-3 border-b border-border px-4 dark:border-fg/10">
+              <Search className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+              <input
+                ref={inputRef}
+                role="combobox"
+                aria-expanded="true"
+                aria-controls="command-palette-list"
+                aria-activedescendant={
+                  filtered[active] ? `cmd-opt-${filtered[active].id}` : undefined
+                }
+                aria-label="Search commands"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  setActive(0)
+                }}
+                placeholder="Type a command or search…"
+                className="min-h-[3rem] w-full bg-transparent text-caption text-fg outline-none placeholder:text-muted focus-visible:outline-none"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <kbd className="shrink-0 rounded-md border border-border bg-fg/[0.06] px-1.5 py-0.5 text-[11px] font-medium text-muted">
+                esc
+              </kbd>
+            </div>
+
+            <div aria-live="polite" className="sr-only">
+              {filtered.length === 1 ? '1 result' : `${filtered.length} results`}
+            </div>
+
+            <ul
+              id="command-palette-list"
+              ref={listRef}
+              role="listbox"
+              aria-label="Commands"
+              className="max-h-72 overflow-y-auto p-2"
+            >
+              {filtered.length === 0 ? (
+                <li className="px-3 py-6 text-center text-caption text-muted">
+                  No matching commands — try a different search.
+                </li>
+              ) : (
+                filtered.map((cmd, i) => (
+                  <li key={cmd.id} role="presentation">
+                    <button
+                      type="button"
+                      id={`cmd-opt-${cmd.id}`}
+                      data-index={i}
+                      role="option"
+                      aria-selected={i === active}
+                      tabIndex={-1}
+                      onMouseEnter={() => setActive(i)}
+                      onClick={() => runCommand(cmd)}
+                      className={`flex min-h-11 w-full items-center gap-3 rounded-[10px] px-3 text-left text-caption transition-colors duration-150 ${
+                        i === active ? 'bg-brand-soft text-fg' : 'text-fg hover:bg-fg/[0.06]'
+                      }`}
+                    >
+                      <span className="min-w-0 flex-1 truncate font-medium">{cmd.label}</span>
+                      {cmd.hint && (
+                        <span className="ml-auto shrink-0 text-right text-label normal-case tracking-normal text-muted">
+                          {cmd.hint}
+                        </span>
+                      )}
+                      {i === active && (
+                        <CornerDownLeft
+                          className="h-3.5 w-3.5 shrink-0 text-muted"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+
+            {/* Keyboard hint footer — the spotlight teaches its own controls. */}
+            <div
+              className="flex items-center gap-4 border-t border-border px-4 py-2 text-label normal-case tracking-normal text-muted dark:border-fg/10"
+              aria-hidden="true"
+            >
+              <span className="flex items-center gap-1.5">
+                <kbd className="rounded border border-border bg-fg/[0.06] px-1 py-px text-[10px]">↑↓</kbd>
+                navigate
+              </span>
+              <span className="flex items-center gap-1.5">
+                <kbd className="rounded border border-border bg-fg/[0.06] px-1 py-px text-[10px]">↵</kbd>
+                run
+              </span>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>,
     document.body,
   )
 }

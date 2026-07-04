@@ -24,8 +24,10 @@ const TONE_CLASSES: Record<BadgeProps['tone'], string> = {
 
 export function Badge({ tone, icon: Icon, children }: BadgeProps) {
   return (
+    // Fixed h-5 pill on the label tier — every badge sits on the same
+    // baseline everywhere (manifesto pillar 4: one consistent chip anatomy).
     <span
-      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium ${TONE_CLASSES[tone]}`}
+      className={`inline-flex h-5 items-center gap-1 whitespace-nowrap rounded-full border px-2 text-label ${TONE_CLASSES[tone]}`}
     >
       {Icon && <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />}
       {children}

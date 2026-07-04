@@ -40,26 +40,29 @@ export function HBar({ rows, formatValue = defaultFormat, ariaLabel }: HBarProps
           <div key={row.label} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1">
             {/* Full-width line on phones; a fixed column from sm up. The label
                 and its explainer truncate separately so neither hides the other. */}
-            <div className="w-full min-w-0 text-sm sm:w-56 sm:shrink-0">
+            <div className="w-full min-w-0 text-caption sm:w-56 sm:shrink-0">
               <span className="block truncate text-fg">{row.label}</span>
               {row.secondary && (
-                <span className="block truncate text-xs text-muted">{row.secondary}</span>
+                <span className="block truncate text-label normal-case tracking-normal text-muted">
+                  {row.secondary}
+                </span>
               )}
             </div>
             <div className="h-2 min-w-0 flex-1 basis-24 overflow-hidden rounded-full bg-surface-2">
+              {/* Fluid progress (manifesto pillar 10) — the bar never snaps. */}
               <div
-                className={`h-full rounded-full transition-[width] duration-200 ease-out ${FILL_CLASS[row.tone ?? 'neutral']}`}
+                className={`h-full rounded-full transition-[width] duration-500 ease-out ${FILL_CLASS[row.tone ?? 'neutral']}`}
                 style={{ width: `${pct}%` }}
                 aria-hidden="true"
               />
             </div>
-            <div className="tnum w-16 shrink-0 text-right text-sm font-medium text-fg">
+            <div className="tnum w-16 shrink-0 text-right text-caption font-medium text-fg">
               {formatValue(row.value)}
             </div>
           </div>
         )
       })}
-      {rows.length === 0 && <p className="py-2 text-sm text-muted">No data yet.</p>}
+      {rows.length === 0 && <p className="py-2 text-caption text-muted">No data yet.</p>}
     </div>
   )
 }

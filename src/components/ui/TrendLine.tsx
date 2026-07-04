@@ -50,7 +50,7 @@ export function TrendLine({
       <div
         role="img"
         aria-label={`${ariaLabel} — no data yet`}
-        className="flex items-center justify-center rounded-xl bg-surface-2/60 text-xs text-muted"
+        className="flex items-center justify-center rounded-xl bg-surface-2/60 text-caption text-muted"
         style={{ height }}
       >
         No data yet
@@ -123,17 +123,17 @@ export function TrendLine({
 
         {/* Min / max / baseline labels — HTML so they never scale with the SVG.
             Soft surface halos keep them readable where the line crosses. */}
-        <span className="absolute left-1 top-0 rounded bg-surface/80 px-1 text-[10px] leading-tight text-muted">
+        <span className="tnum absolute left-1 top-0 rounded bg-surface/80 px-1 text-label normal-case leading-tight tracking-normal text-muted">
           {formatValue(max)}
         </span>
         {max !== min && (
-          <span className="absolute bottom-0 left-1 rounded bg-surface/80 px-1 text-[10px] leading-tight text-muted">
+          <span className="tnum absolute bottom-0 left-1 rounded bg-surface/80 px-1 text-label normal-case leading-tight tracking-normal text-muted">
             {formatValue(min)}
           </span>
         )}
         {baselineY != null && (
           <span
-            className="absolute right-1 -translate-y-full rounded bg-surface/80 px-1 text-[10px] leading-tight text-muted"
+            className="tnum absolute right-1 -translate-y-full rounded bg-surface/80 px-1 text-label normal-case leading-tight tracking-normal text-muted"
             style={{ top: `${(baselineY / height) * 100}%` }}
           >
             baseline {formatValue(baseline as number)}
@@ -141,7 +141,7 @@ export function TrendLine({
         )}
       </div>
       {single && (
-        <p className="mt-1.5 text-xs text-muted">
+        <p className="mt-1.5 text-caption text-muted">
           Only one week of data yet — the line fills in as weeks pass.
         </p>
       )}

@@ -62,7 +62,9 @@ export function SegmentedControl<T extends string>({
             tabIndex={selected ? 0 : -1}
             data-value={opt.value}
             onClick={() => onChange(opt.value)}
-            className={`min-h-11 rounded-lg px-3.5 text-sm font-medium transition-colors duration-150 ${
+            // h-9 segment + p-1 track = a 44px control overall; 13px text
+            // matches the shell's high-density rhythm (manifesto pillar 4).
+            className={`h-9 rounded-lg px-3.5 text-[13px] font-medium transition-colors duration-150 ${
               selected
                 ? 'bg-surface text-fg shadow-soft'
                 : 'text-muted hover:text-fg'

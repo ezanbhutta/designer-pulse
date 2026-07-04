@@ -20,8 +20,12 @@ export function ErrorBanner({ message, asOf, onRetry }: ErrorBannerProps) {
     >
       <TriangleAlert className="h-5 w-5 shrink-0 text-danger" aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium leading-snug text-fg">{message}</p>
-        {asOf && <p className="mt-0.5 text-xs text-muted">Showing data as of {asOf}.</p>}
+        <p className="text-caption font-medium leading-snug text-fg">{message}</p>
+        {asOf && (
+          <p className="tnum mt-0.5 text-label normal-case tracking-normal text-muted">
+            Showing data as of {asOf}.
+          </p>
+        )}
       </div>
       {onRetry && (
         <Button variant="secondary" onClick={onRetry}>

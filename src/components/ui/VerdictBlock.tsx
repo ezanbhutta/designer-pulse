@@ -1,6 +1,8 @@
+import { motion, useReducedMotion } from 'framer-motion'
 import { CheckCircle2, ExternalLink, Info, OctagonAlert, TriangleAlert } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { buttonClasses } from './Button'
+import { staggerContainer, staggerItem } from './motion'
 
 export interface VerdictItem {
   id: string
@@ -39,13 +41,14 @@ const actionClasses = buttonClasses('secondary')
  * A calm empty state is a feature (§20.7).
  */
 export function VerdictBlock({ title, items, emptyMessage, loading }: VerdictBlockProps) {
+  const reduced = useReducedMotion()
   return (
-    <section className="card animate-fade-in p-6" aria-label={title}>
+    <section className="card animate-fade-in p-6 sm:p-8" aria-label={title}>
       <p className="eyebrow">What needs you now</p>
-      <h2 className="mt-1 text-xl font-semibold text-fg">{title}</h2>
+      <h2 className="mt-1 text-card text-fg">{title}</h2>
 
       {loading ? (
-        <div className="mt-5 space-y-4" role="status" aria-label="Loading verdicts">
+        <div className="mt-6 space-y-5" role="status" aria-label="Loading verdicts">
           {[0, 1, 2].map((i) => (
             <div key={i} className="flex items-start gap-3">
               <div className="skeleton h-5 w-5 rounded-full" />
@@ -57,28 +60,37 @@ export function VerdictBlock({ title, items, emptyMessage, loading }: VerdictBlo
           ))}
         </div>
       ) : items.length === 0 ? (
-        <div className="mt-5 flex items-center gap-3 rounded-xl bg-success-soft/60 p-4">
+        <div className="mt-6 flex items-center gap-3 rounded-xl bg-success-soft/60 p-4">
           <CheckCircle2 className="h-5 w-5 shrink-0 text-success" aria-hidden="true" />
-          <p className="text-sm font-medium text-fg">{emptyMessage}</p>
+          <p className="text-caption font-medium text-fg">{emptyMessage}</p>
         </div>
       ) : (
-        <ul className="mt-5 space-y-4">
+        <motion.ul
+          variants={staggerContainer}
+          initial={reduced ? false : 'hidden'}
+          animate="show"
+          className="mt-6 space-y-5"
+        >
           {items.map((item) => {
             const meta = SEVERITY_META[item.severity]
             const Icon = meta.icon
             return (
-              <li key={item.id} className="flex items-start gap-3 animate-fade-in">
+              <motion.li
+                key={item.id}
+                variants={reduced ? undefined : staggerItem}
+                className="flex items-start gap-3"
+              >
                 <Icon
                   className={`mt-0.5 h-5 w-5 shrink-0 ${meta.className}`}
                   aria-hidden="true"
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold leading-snug text-fg">
+                  <p className="max-w-prose text-caption font-semibold leading-snug text-fg">
                     <span className="sr-only">{meta.label}: </span>
                     {item.text}
                   </p>
                   {item.detail && (
-                    <p className="mt-0.5 text-sm leading-snug text-muted">{item.detail}</p>
+                    <p className="mt-0.5 text-caption leading-snug text-muted">{item.detail}</p>
                   )}
                 </div>
                 {item.action &&
@@ -98,10 +110,10 @@ export function VerdictBlock({ title, items, emptyMessage, loading }: VerdictBlo
                       {item.action.label}
                     </button>
                   ))}
-              </li>
+              </motion.li>
             )
           })}
-        </ul>
+        </motion.ul>
       )}
     </section>
   )

@@ -334,7 +334,7 @@ export default function OpsHome() {
   // pointer screens until the row is hovered or focused; always visible on
   // touch. High-contrast neutral (bg-fg) — brand stays reserved.
   const actionCls =
-    'inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-fg px-4 text-caption font-medium text-bg transition-[opacity,transform,background-color] duration-150 ease-out hover:opacity-90 motion-safe:active:scale-[0.97] md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100'
+    'ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-fg px-4 text-caption font-medium text-bg transition-[opacity,transform,background-color] duration-150 ease-out hover:opacity-90 motion-safe:active:scale-[0.97] md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100'
 
   return (
     <div className="mx-auto w-full max-w-[1000px] space-y-16">
@@ -432,12 +432,14 @@ export default function OpsHome() {
                 <motion.li
                   key={item.id}
                   variants={staggerItem}
-                  className="group flex flex-wrap items-center gap-4 p-6 transition-colors duration-150 ease-out first:rounded-t-2xl last:rounded-b-2xl hover:bg-surface-2/50 sm:flex-nowrap"
+                  className="group flex flex-wrap items-center gap-x-4 gap-y-3 p-5 transition-colors duration-150 ease-out first:rounded-t-2xl last:rounded-b-2xl hover:bg-surface-2/50 sm:p-6"
                 >
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 ring-1 ring-border">
                     <Icon className={`h-5 w-5 ${meta.className}`} aria-hidden="true" />
                   </span>
-                  <div className="min-w-0 flex-1">
+                  {/* flex-basis lets the action drop to its own line on narrow
+                      screens instead of crushing the sentence into a sliver. */}
+                  <div className="min-w-0 flex-[1_1_16rem]">
                     <p className="text-caption font-semibold leading-snug text-fg">
                       <span className="sr-only">{meta.label}: </span>
                       {item.text}
@@ -476,7 +478,9 @@ export default function OpsHome() {
             <InfoTip text="Today's numbers at a glance — each one says how it compares with yesterday and why." />
           </h2>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {/* 2-up inside the 1000px reading column — labels never truncate and
+            each number gets breathing room (whitespace pillar). */}
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <StatTile
             eyebrow="Given out today"
             tip="How many new projects were handed to designers today, out of the team's total for the day."

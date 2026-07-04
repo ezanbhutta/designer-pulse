@@ -1,6 +1,8 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { X } from 'lucide-react'
+import { SPRING } from './motion'
 
 export interface DrawerProps {
   open: boolean
@@ -16,49 +18,28 @@ const FOCUSABLE =
 /**
  * Right-side panel (spec §20.6 — act in place, never lose your place):
  * leave-logging, drill-downs, and alert work happen here instead of a page
- * jump. Esc and overlay-click close; focus is trapped inside and returned on
- * close; body scroll locks; slides in over 200ms ease-out (suppressed under
- * prefers-reduced-motion via the global rule).
+ * jump. The panel is a depth layer over the dimmed void and slides in on
+ * spring physics (manifesto pillar 9; reduced motion snaps instantly).
+ * Esc and overlay-click close; focus is trapped inside and returned on
+ * close; body scroll locks.
  */
 export function Drawer({ open, onClose, title, wide = false, children }: DrawerProps) {
+  const reduced = useReducedMotion()
   const titleId = useId()
   const panelRef = useRef<HTMLDivElement>(null)
   const lastActive = useRef<HTMLElement | null>(null)
-  // Keep mounted 200ms after close so the slide-out is visible.
-  const [rendered, setRendered] = useState(open)
-  // `shown` flips one frame AFTER mount so the panel paints its off-screen
-  // start state first — otherwise the slide-IN never animates.
-  const [shown, setShown] = useState(false)
 
+  // Focus management: capture the opener, focus the panel once mounted,
+  // restore on close (while the exit animation plays out underneath).
   useEffect(() => {
-    if (open) {
-      setRendered(true)
-      return
-    }
-    setShown(false)
-    const t = setTimeout(() => setRendered(false), 200)
-    return () => clearTimeout(t)
-  }, [open])
-
-  useEffect(() => {
-    if (!open || !rendered) return
-    const raf = requestAnimationFrame(() => setShown(true))
-    return () => cancelAnimationFrame(raf)
-  }, [open, rendered])
-
-  // Focus management: capture the opener, focus the panel once it is actually
-  // MOUNTED (gating on `rendered` — on the `open` commit the panel may not
-  // exist yet, and focusing nothing leaves Tab and Escape on the page behind),
-  // restore on close.
-  useEffect(() => {
-    if (!open || !rendered) return
+    if (!open) return
     lastActive.current = (document.activeElement as HTMLElement | null) ?? null
     const raf = requestAnimationFrame(() => panelRef.current?.focus())
     return () => {
       cancelAnimationFrame(raf)
       lastActive.current?.focus()
     }
-  }, [open, rendered])
+  }, [open])
 
   // Body scroll lock while open.
   useEffect(() => {
@@ -74,7 +55,7 @@ export function Drawer({ open, onClose, title, wide = false, children }: DrawerP
   // promises the page behind is inert, so the trap must hold even if focus
   // ever ends up outside the panel.
   useEffect(() => {
-    if (!open || !rendered) return
+    if (!open) return
     const onKeyDown = (e: KeyboardEvent) => {
       // A stacked modal (e.g. a nested drawer or confirm dialog portaled on
       // top) owns the keys while focus is inside it — don't close under it.
@@ -116,43 +97,53 @@ export function Drawer({ open, onClose, title, wide = false, children }: DrawerP
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [open, rendered, onClose])
-
-  if (!rendered) return null
+  }, [open, onClose])
 
   return createPortal(
-    <div className="fixed inset-0 z-50">
-      <div
-        className={`absolute inset-0 bg-bg/60 backdrop-blur-sm transition-opacity duration-200 ease-out ${shown && open ? 'opacity-100' : 'opacity-0'}`}
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        className={`absolute inset-y-0 right-0 flex w-full flex-col border-l border-border bg-surface shadow-raised transition-transform duration-200 ease-out ${
-          wide ? 'sm:max-w-2xl' : 'sm:max-w-md'
-        } ${shown && open ? 'translate-x-0' : 'translate-x-full'}`}
-      >
-        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-6 py-4">
-          <h2 id={titleId} className="truncate text-lg font-semibold text-fg">
-            {title}
-          </h2>
-          <button
-            type="button"
+    <AnimatePresence>
+      {open && (
+        <div key="drawer" className="fixed inset-0 z-overlay">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: reduced ? 0 : 0.2, ease: 'easeOut' }}
+            className="absolute inset-0 bg-bg/70 backdrop-blur-sm"
             onClick={onClose}
-            aria-label="Close panel"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg"
+            aria-hidden="true"
+          />
+          <motion.div
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            tabIndex={-1}
+            initial={reduced ? { opacity: 0 } : { x: '100%' }}
+            animate={reduced ? { opacity: 1 } : { x: 0 }}
+            exit={reduced ? { opacity: 0 } : { x: '100%' }}
+            transition={reduced ? { duration: 0.01 } : SPRING}
+            className={`absolute inset-y-0 right-0 flex w-full flex-col border-l border-border bg-surface shadow-raised ${
+              wide ? 'sm:max-w-2xl' : 'sm:max-w-md'
+            }`}
           >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
-      </div>
-    </div>,
+            <header className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-6 py-4">
+              <h2 id={titleId} className="truncate text-card text-fg">
+                {title}
+              </h2>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close panel"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg motion-safe:active:scale-95"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">{children}</div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>,
     document.body,
   )
 }

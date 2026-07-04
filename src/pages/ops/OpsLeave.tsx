@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { Drawer } from '../../components/ui/Drawer'
+import { PageHeader } from '../../components/layout/PageHeader'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
@@ -41,7 +42,7 @@ const LEAVE_TYPES = ['annual', 'sick', 'casual', 'unpaid', 'other'] as const
 // Same recipe as the roster editor's fields — and no `focus:outline-none`,
 // which would beat the global :focus-visible brand ring (§20.10).
 const inputCls =
-  'mt-1.5 block w-full min-h-[2.75rem] rounded-xl border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted/70'
+  'mt-1.5 block w-full min-h-11 rounded-xl border border-border bg-surface px-3 text-caption text-fg placeholder:text-muted/70'
 
 /**
  * Leave / half-day / holiday management (spec §10). Feeds attendance status
@@ -258,15 +259,38 @@ export default function OpsLeave() {
     return items
   }, [designers, ctx, halfDaysQ.data, today, horizon, designerName])
 
+  const pendingCount = ctx.leaves.filter((l) => l.status === 'pending').length
+
   return (
-    <div className="space-y-6">
-      <header>
-        <p className="eyebrow">Time off · for records only — this never changes anyone's pay</p>
-        <h1 className="mt-1 inline-flex items-center gap-2 text-3xl font-semibold text-fg">
-          Leave
+    <div className="mx-auto w-full max-w-[1200px] space-y-12">
+      <PageHeader
+        breadcrumbs={['Ops', 'Leave']}
+        title="Leave"
+        titleAccessory={
           <InfoTip text="Record time off, half-days and holidays here. Attendance and daily targets adjust on their own." />
-        </h1>
-      </header>
+        }
+        history={
+          ctxLoading
+            ? 'For records only — this never changes anyone\u2019s pay. Loading the calendar…'
+            : `For records only — this never changes anyone\u2019s pay. ${
+                pendingCount > 0
+                  ? `${pendingCount} request${pendingCount === 1 ? '' : 's'} waiting for a decision.`
+                  : verdictItems.length > 0
+                    ? `${verdictItems.length} thing${verdictItems.length === 1 ? '' : 's'} on the next 7 days.`
+                    : 'No time off in the next 7 days.'
+              }`
+        }
+        actions={
+          <button
+            type="button"
+            onClick={() => setDrawer('leave')}
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-brand px-4 text-caption font-semibold text-brand-fg transition-opacity duration-150 ease-out hover:opacity-90 motion-safe:active:scale-[0.98]"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Add leave
+          </button>
+        }
+      />
 
       {(designersQ.error || halfDaysQ.error) && (
         <ErrorBanner
@@ -289,11 +313,11 @@ export default function OpsLeave() {
         loading={ctxLoading || halfDaysQ.isLoading}
       />
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-8 xl:grid-cols-3">
         {/* ── Leaves ── */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-fg">
+        <section className="card p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 whitespace-nowrap text-card text-fg">
               <Coffee className="h-5 w-5 text-muted" aria-hidden="true" />
               Leave
               <InfoTip text="Full days off. While someone is on leave, no projects are expected from them." />
@@ -301,13 +325,13 @@ export default function OpsLeave() {
             <button
               type="button"
               onClick={() => setDrawer('leave')}
-              className="inline-flex min-h-[2.75rem] items-center gap-1 rounded-xl bg-brand px-3 text-sm font-semibold text-brand-fg hover:opacity-90"
+              className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface px-3 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.98]"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Add leave
             </button>
           </div>
-          <ul className="mt-4 max-h-96 space-y-2 overflow-y-auto pr-1">
+          <ul className="mt-6 max-h-96 space-y-2 overflow-y-auto pr-1">
             {ctxLoading ? (
               [0, 1, 2].map((i) => <li key={i} className="skeleton h-14" />)
             ) : ctx.leaves.length === 0 ? (
@@ -326,13 +350,13 @@ export default function OpsLeave() {
                   <li
                     key={l.id}
                     id={`leave-row-${l.id}`}
-                    className="flex items-start justify-between gap-2 rounded-xl bg-surface-2/60 px-3 py-2"
+                    className="flex items-start justify-between gap-2 rounded-xl bg-surface-2/60 px-4 py-3 transition-colors duration-150 ease-out hover:bg-surface-2"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-fg">
+                      <p className="truncate text-caption font-medium text-fg">
                         {designerName(l.designer_id)}
                       </p>
-                      <p className="tnum text-xs text-muted">
+                      <p className="tnum text-label font-normal tracking-normal text-muted">
                         {l.start_date === end
                           ? fmtDate(l.start_date)
                           : `${fmtDate(l.start_date)} – ${fmtDate(end)}`}
@@ -354,7 +378,7 @@ export default function OpsLeave() {
                             type="button"
                             onClick={() => approveLeave(l)}
                             disabled={leaveApprove.isPending || leaveDelete.isPending}
-                            className="inline-flex min-h-[2.75rem] items-center rounded-xl bg-brand px-3 text-xs font-semibold text-brand-fg hover:opacity-90 disabled:opacity-50"
+                            className="inline-flex min-h-11 items-center rounded-xl bg-fg px-3 text-label text-bg transition-opacity duration-150 ease-out hover:opacity-90 disabled:opacity-50 motion-safe:active:scale-[0.97]"
                           >
                             Approve
                           </button>
@@ -362,7 +386,7 @@ export default function OpsLeave() {
                             type="button"
                             onClick={() => declineLeave(l)}
                             disabled={leaveApprove.isPending || leaveDelete.isPending}
-                            className="inline-flex min-h-[2.75rem] items-center rounded-xl border border-border bg-surface px-3 text-xs font-medium text-fg hover:bg-surface-2 disabled:opacity-50"
+                            className="inline-flex min-h-11 items-center rounded-xl border border-border bg-surface px-3 text-label text-fg transition-colors duration-150 ease-out hover:bg-surface-2 disabled:opacity-50 motion-safe:active:scale-[0.97]"
                           >
                             Decline
                           </button>
@@ -372,7 +396,7 @@ export default function OpsLeave() {
                     <button
                       type="button"
                       onClick={() => removeLeave(l)}
-                      className="-m-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-danger-soft hover:text-danger"
+                      className="-m-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted transition-colors duration-150 ease-out hover:bg-danger-soft hover:text-danger motion-safe:active:scale-95"
                       aria-label={`Remove leave for ${designerName(l.designer_id)}`}
                     >
                       <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -385,9 +409,9 @@ export default function OpsLeave() {
         </section>
 
         {/* ── Half-days ── */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-fg">
+        <section className="card p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 whitespace-nowrap text-card text-fg">
               <Hourglass className="h-5 w-5 text-muted" aria-hidden="true" />
               Half-days
               <InfoTip text="Someone away for part of the day. They still count as present — only the away hours are taken off." />
@@ -395,13 +419,13 @@ export default function OpsLeave() {
             <button
               type="button"
               onClick={() => setDrawer('half')}
-              className="inline-flex min-h-[2.75rem] items-center gap-1 rounded-xl bg-brand px-3 text-sm font-semibold text-brand-fg hover:opacity-90"
+              className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface px-3 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.98]"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Add half-day
             </button>
           </div>
-          <ul className="mt-4 max-h-96 space-y-2 overflow-y-auto pr-1">
+          <ul className="mt-6 max-h-96 space-y-2 overflow-y-auto pr-1">
             {halfDaysQ.isLoading ? (
               [0, 1].map((i) => <li key={i} className="skeleton h-14" />)
             ) : (halfDaysQ.data ?? []).length === 0 ? (
@@ -416,13 +440,13 @@ export default function OpsLeave() {
               (halfDaysQ.data ?? []).map((hd) => (
                 <li
                   key={hd.id}
-                  className="flex items-start justify-between gap-2 rounded-xl bg-surface-2/60 px-3 py-2"
+                  className="flex items-start justify-between gap-2 rounded-xl bg-surface-2/60 px-4 py-3 transition-colors duration-150 ease-out hover:bg-surface-2"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-fg">
+                    <p className="truncate text-caption font-medium text-fg">
                       {designerName(hd.designer_id)}
                     </p>
-                    <p className="tnum text-xs text-muted">
+                    <p className="tnum text-label font-normal tracking-normal text-muted">
                       {fmtDate(hd.the_date)}
                       {hd.from_time && hd.to_time &&
                         ` · away ${fmtShiftTime(hd.from_time)}–${fmtShiftTime(hd.to_time)}`}
@@ -437,7 +461,7 @@ export default function OpsLeave() {
                   <button
                     type="button"
                     onClick={() => removeHalf(hd)}
-                    className="-m-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-danger-soft hover:text-danger"
+                    className="-m-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted transition-colors duration-150 ease-out hover:bg-danger-soft hover:text-danger motion-safe:active:scale-95"
                     aria-label={`Remove half-day for ${designerName(hd.designer_id)}`}
                   >
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -449,9 +473,9 @@ export default function OpsLeave() {
         </section>
 
         {/* ── Holidays + volunteers ── */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-fg">
+        <section className="card p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 whitespace-nowrap text-card text-fg">
               <PartyPopper className="h-5 w-5 text-muted" aria-hidden="true" />
               Holidays
               <InfoTip text="Days off for the whole company. People can offer to work on a holiday — tick their name on its row." />
@@ -459,13 +483,13 @@ export default function OpsLeave() {
             <button
               type="button"
               onClick={() => setDrawer('holiday')}
-              className="inline-flex min-h-[2.75rem] items-center gap-1 rounded-xl bg-brand px-3 text-sm font-semibold text-brand-fg hover:opacity-90"
+              className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface px-3 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.98]"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Add holiday
             </button>
           </div>
-          <ul className="mt-4 max-h-96 space-y-2 overflow-y-auto pr-1">
+          <ul className="mt-6 max-h-96 space-y-2 overflow-y-auto pr-1">
             {ctxLoading ? (
               [0, 1].map((i) => <li key={i} className="skeleton h-14" />)
             ) : ctx.holidays.length === 0 ? (
@@ -484,32 +508,32 @@ export default function OpsLeave() {
                     ctx.holidayWorkers.filter((w) => w.the_date === h.the_date).map((w) => w.designer_id),
                   )
                   return (
-                    <li key={h.id} className="rounded-xl bg-surface-2/60 px-3 py-2">
+                    <li key={h.id} className="rounded-xl bg-surface-2/60 px-4 py-3 transition-colors duration-150 ease-out hover:bg-surface-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-fg">
+                          <p className="truncate text-caption font-medium text-fg">
                             {h.name ?? 'Holiday'}
                           </p>
-                          <p className="tnum text-xs text-muted">{fmtDate(h.the_date)}</p>
+                          <p className="tnum text-label font-normal tracking-normal text-muted">{fmtDate(h.the_date)}</p>
                         </div>
                         <button
                           type="button"
                           onClick={() => removeHoliday(h)}
-                          className="-m-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-danger-soft hover:text-danger"
+                          className="-m-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted transition-colors duration-150 ease-out hover:bg-danger-soft hover:text-danger motion-safe:active:scale-95"
                           aria-label={`Remove holiday ${h.name ?? fmtDate(h.the_date)}`}
                         >
                           <Trash2 className="h-4 w-4" aria-hidden="true" />
                         </button>
                       </div>
                       <details className="mt-1">
-                        <summary className="flex min-h-[2.75rem] cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-brand">
+                        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-label text-brand">
                           <Users className="h-3.5 w-3.5" aria-hidden="true" />
                           {volunteers.size} working this holiday (may earn a bonus)
                         </summary>
                         <ul className="mt-1 space-y-0.5">
                           {designers.map((d) => (
                             <li key={d.id}>
-                              <label className="flex min-h-[2.25rem] cursor-pointer items-center gap-2 rounded-lg px-1 text-sm text-fg hover:bg-surface-2">
+                              <label className="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg px-2 text-caption text-fg transition-colors duration-150 ease-out hover:bg-surface-2">
                                 <input
                                   type="checkbox"
                                   checked={volunteers.has(d.id)}
@@ -523,7 +547,7 @@ export default function OpsLeave() {
                                   className="h-4 w-4 accent-brand"
                                 />
                                 {d.name}
-                                <span className="text-xs text-muted">{d.team}</span>
+                                <span className="text-label font-normal tracking-normal text-muted">{d.team}</span>
                               </label>
                             </li>
                           ))}
@@ -577,7 +601,7 @@ function DesignerSelect({
 }) {
   const designers = useActiveDesigners()
   return (
-    <label className="block text-sm font-medium text-fg">
+    <label className="block text-caption font-medium text-fg">
       Designer
       <select required value={value} onChange={(e) => onChange(e.target.value)} className={inputCls}>
         <option value="" disabled>
@@ -595,7 +619,7 @@ function DesignerSelect({
 
 function PaidToggle({ paid, setPaid }: { paid: boolean; setPaid: (v: boolean) => void }) {
   return (
-    <label className="flex min-h-[2.75rem] cursor-pointer items-center gap-2 text-sm text-fg">
+    <label className="flex min-h-11 cursor-pointer items-center gap-2 text-caption text-fg">
       <input
         type="checkbox"
         checked={paid}
@@ -603,7 +627,7 @@ function PaidToggle({ paid, setPaid }: { paid: boolean; setPaid: (v: boolean) =>
         className="h-4 w-4 accent-brand"
       />
       Paid
-      <span className="text-xs text-muted">for records only — pay is never changed here</span>
+      <span className="text-label font-normal tracking-normal text-muted">for records only — pay is never changed here</span>
     </label>
   )
 }
@@ -644,7 +668,7 @@ function LeaveForm({ onDone }: { onDone: () => void }) {
   return (
     <form onSubmit={submit} className="space-y-4">
       <DesignerSelect value={designerId} onChange={setDesignerId} />
-      <label className="block text-sm font-medium text-fg">
+      <label className="block text-caption font-medium text-fg">
         Type
         <select value={type} onChange={(e) => setType(e.target.value as (typeof LEAVE_TYPES)[number])} className={inputCls}>
           {LEAVE_TYPES.map((t) => (
@@ -655,11 +679,11 @@ function LeaveForm({ onDone }: { onDone: () => void }) {
         </select>
       </label>
       <div className="grid grid-cols-2 gap-3">
-        <label className="block text-sm font-medium text-fg">
+        <label className="block text-caption font-medium text-fg">
           Start
           <input type="date" required value={start} onChange={(e) => setStart(e.target.value)} className={inputCls} />
         </label>
-        <label className="block text-sm font-medium text-fg">
+        <label className="block text-caption font-medium text-fg">
           End
           <input
             type="date"
@@ -668,18 +692,18 @@ function LeaveForm({ onDone }: { onDone: () => void }) {
             onChange={(e) => setEnd(e.target.value)}
             className={inputCls}
           />
-          <span className="mt-0.5 block text-xs font-normal text-muted">leave empty for one day</span>
+          <span className="mt-1 block text-label font-normal tracking-normal text-muted">leave empty for one day</span>
         </label>
       </div>
       <PaidToggle paid={paid} setPaid={setPaid} />
-      <label className="block text-sm font-medium text-fg">
+      <label className="block text-caption font-medium text-fg">
         Reason
         <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="optional" className={inputCls} />
       </label>
       <button
         type="submit"
         disabled={mutation.isPending}
-        className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg hover:opacity-90 disabled:opacity-50"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-brand px-4 text-caption font-semibold text-brand-fg transition-opacity duration-150 ease-out hover:opacity-90 disabled:opacity-50 motion-safe:active:scale-[0.98]"
       >
         <CalendarPlus className="h-4 w-4" aria-hidden="true" />
         Save leave
@@ -724,29 +748,29 @@ function HalfDayForm({ onDone }: { onDone: () => void }) {
       className="space-y-4"
     >
       <DesignerSelect value={designerId} onChange={setDesignerId} />
-      <label className="block text-sm font-medium text-fg">
+      <label className="block text-caption font-medium text-fg">
         Date
         <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
       </label>
       <div className="grid grid-cols-2 gap-3">
-        <label className="block text-sm font-medium text-fg">
+        <label className="block text-caption font-medium text-fg">
           Away from (PKT)
           <input type="time" value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} />
         </label>
-        <label className="block text-sm font-medium text-fg">
+        <label className="block text-caption font-medium text-fg">
           Away until (PKT)
           <input type="time" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} />
         </label>
       </div>
       <PaidToggle paid={paid} setPaid={setPaid} />
-      <label className="block text-sm font-medium text-fg">
+      <label className="block text-caption font-medium text-fg">
         Reason
         <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="optional" className={inputCls} />
       </label>
       <button
         type="submit"
         disabled={mutation.isPending}
-        className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg hover:opacity-90 disabled:opacity-50"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-brand px-4 text-caption font-semibold text-brand-fg transition-opacity duration-150 ease-out hover:opacity-90 disabled:opacity-50 motion-safe:active:scale-[0.98]"
       >
         <CalendarPlus className="h-4 w-4" aria-hidden="true" />
         Save half-day
@@ -778,15 +802,15 @@ function HolidayForm({ onDone }: { onDone: () => void }) {
       }}
       className="space-y-4"
     >
-      <label className="block text-sm font-medium text-fg">
+      <label className="block text-caption font-medium text-fg">
         Date
         <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
       </label>
-      <label className="block text-sm font-medium text-fg">
+      <label className="block text-caption font-medium text-fg">
         Name
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Eid al-Fitr" className={inputCls} />
       </label>
-      <p className="flex items-start gap-2 rounded-xl bg-surface-2 px-3 py-2.5 text-xs text-muted">
+      <p className="flex max-w-prose items-start gap-2 rounded-xl bg-surface-2 px-4 py-3 text-caption text-muted">
         <CalendarDays className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         This gives the whole company the day off, and no projects are expected. If someone offers
         to work, tick their name on the holiday's row — their day counts as "worked on a holiday"
@@ -795,7 +819,7 @@ function HolidayForm({ onDone }: { onDone: () => void }) {
       <button
         type="submit"
         disabled={mutation.isPending}
-        className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg hover:opacity-90 disabled:opacity-50"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-brand px-4 text-caption font-semibold text-brand-fg transition-opacity duration-150 ease-out hover:opacity-90 disabled:opacity-50 motion-safe:active:scale-[0.98]"
       >
         <CalendarPlus className="h-4 w-4" aria-hidden="true" />
         Add holiday

@@ -27,7 +27,7 @@ export function DeltaChip({ direction, good, label }: DeltaChipProps) {
 
   return (
     <span
-      className={`tnum inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}
+      className={`tnum inline-flex h-5 items-center gap-1 whitespace-nowrap rounded-full px-2 text-label ${tone}`}
     >
       <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
       <span aria-hidden="true">{label}</span>

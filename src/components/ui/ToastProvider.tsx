@@ -10,7 +10,9 @@ import {
   type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Undo2, X } from 'lucide-react'
+import { SPRING_GENTLE } from './motion'
 
 export interface ToastOptions {
   message: string
@@ -73,13 +75,15 @@ function CountdownBar({ paused, remainingMs }: { paused: boolean; remainingMs: n
 }
 
 /**
- * Undo-over-confirm (spec §20.6): every non-destructive action acts first,
- * then offers a 5-second Undo here. Toasts stack bottom-center, announce via
- * an aria-live="polite" region, and auto-dismiss with a visible countdown.
- * Hovering or focusing a toast pauses its timer so slow readers never lose
- * the Undo (WCAG 2.2.1). Success is felt, not just done (§20.7).
+ * Undo-over-confirm (spec §20.6, manifesto pillar 8 — zero anxiety): every
+ * non-destructive action acts first, then offers a 5-second Undo here.
+ * Snackbars spring up from the bottom edge (pillar 9; reduced motion snaps),
+ * stack bottom-center, announce via an aria-live="polite" region, and
+ * auto-dismiss with a visible countdown. Hovering or focusing a toast pauses
+ * its timer so slow readers never lose the Undo (WCAG 2.2.1).
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const reduced = useReducedMotion()
   const [toasts, setToasts] = useState<ToastRecord[]>([])
   const nextId = useRef(1)
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
@@ -183,38 +187,46 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           role="region"
           className="pointer-events-none fixed inset-x-0 bottom-6 z-toast flex flex-col items-center gap-2 px-4"
         >
-          {toasts.map((t) => (
-            <div
-              key={t.id}
-              role="status"
-              onMouseEnter={() => pause(t.id)}
-              onMouseLeave={() => resume(t.id)}
-              onFocus={() => pause(t.id)}
-              onBlur={onToastBlur(t.id)}
-              className="animate-fade-in pointer-events-auto relative flex w-full max-w-md items-center gap-3 rounded-xl bg-fg px-4 py-3 text-bg shadow-raised"
-            >
-              <p className="min-w-0 flex-1 text-sm font-medium">{t.message}</p>
-              {t.undo && (
+          <AnimatePresence initial={false}>
+            {toasts.map((t) => (
+              <motion.div
+                key={t.id}
+                layout={!reduced}
+                initial={reduced ? { opacity: 0 } : { opacity: 0, y: 24, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={reduced ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.97 }}
+                transition={reduced ? { duration: 0.01 } : SPRING_GENTLE}
+                role="status"
+                onMouseEnter={() => pause(t.id)}
+                onMouseLeave={() => resume(t.id)}
+                onFocus={() => pause(t.id)}
+                onBlur={onToastBlur(t.id)}
+                className="pointer-events-auto relative flex w-full max-w-md items-center gap-3 overflow-hidden rounded-xl bg-fg px-4 py-3 text-bg shadow-raised"
+              >
+                <p className="min-w-0 flex-1 text-caption font-medium">{t.message}</p>
+                {t.undo && (
+                  <button
+                    type="button"
+                    onClick={() => void handleUndo(t)}
+                    // before:-inset grows the hit area to ≥44px while the pill stays compact.
+                    className="relative -my-1.5 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-bg/10 px-2.5 text-caption font-semibold text-bg transition-colors before:absolute before:-inset-2 before:content-[''] hover:bg-bg/20 motion-safe:active:scale-[0.97]"
+                  >
+                    <Undo2 className="h-4 w-4" aria-hidden="true" />
+                    Undo
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => void handleUndo(t)}
-                  className="-my-2 inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-bg underline-offset-2 hover:underline"
+                  onClick={() => dismiss(t.id)}
+                  aria-label="Dismiss notification"
+                  className="-my-2 -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-bg/70 transition-colors hover:text-bg"
                 >
-                  <Undo2 className="h-4 w-4" aria-hidden="true" />
-                  Undo
+                  <X className="h-4 w-4" aria-hidden="true" />
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => dismiss(t.id)}
-                aria-label="Dismiss notification"
-                className="-my-2 -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-bg/70 hover:text-bg"
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
-              <CountdownBar paused={t.paused} remainingMs={t.remainingMs} />
-            </div>
-          ))}
+                <CountdownBar paused={t.paused} remainingMs={t.remainingMs} />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>,
         document.body,
       )}

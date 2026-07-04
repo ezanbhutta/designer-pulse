@@ -122,7 +122,7 @@ export function InfoTip({ text, label }: InfoTipProps) {
           <span
             id={id}
             role="tooltip"
-            className={`pointer-events-none fixed z-tip w-max max-w-[17rem] -translate-x-1/2 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-normal normal-case leading-relaxed tracking-normal text-fg shadow-raised animate-tip-in ${
+            className={`pointer-events-none fixed z-tip w-max max-w-[17rem] -translate-x-1/2 rounded-lg border border-border bg-surface px-3 py-2 text-caption font-normal normal-case leading-relaxed tracking-normal text-fg shadow-raised animate-tip-in ${
               pos.below ? '' : '-translate-y-full'
             }`}
             style={{ top: pos.top, left: pos.left }}

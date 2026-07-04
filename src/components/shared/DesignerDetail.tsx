@@ -15,7 +15,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { Badge } from '../ui/Badge'
-import { Button } from '../ui/Button'
+import { Button, buttonClasses } from '../ui/Button'
 import { Drawer } from '../ui/Drawer'
 import { EmptyState } from '../ui/EmptyState'
 import { ErrorBanner } from '../ui/ErrorBanner'
@@ -405,7 +405,7 @@ export function DesignerMetricsPanel({
             ariaLabel="Rounds of changes by who spotted the problem"
           />
         </div>
-        <p className="mt-3 text-sm text-muted">{defectDiagnosis}</p>
+        <p className="mt-3 max-w-prose text-caption text-muted">{defectDiagnosis}</p>
       </section>
     </div>
   )
@@ -517,12 +517,14 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
       {/* ── Header ── */}
       <header>
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-xl font-semibold text-fg">{designer.name}</h3>
+          <h3 className="text-card text-fg">{designer.name}</h3>
           <Badge tone="neutral">{designer.team}</Badge>
           {designer.status === 'archived' && <Badge tone="warning">Archived</Badge>}
         </div>
-        {designer.specialty && <p className="mt-0.5 text-sm text-muted">{designer.specialty}</p>}
-        <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+        {designer.specialty && (
+          <p className="mt-0.5 text-caption text-muted">{designer.specialty}</p>
+        )}
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
           <CalendarDays className="h-4 w-4" aria-hidden="true" />
           {schedule ? (
             <span>
@@ -536,14 +538,10 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {listUrl && (
-            <a
-              href={listUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-2"
-            >
+            <a href={listUrl} target="_blank" rel="noreferrer" className={buttonClasses('secondary')}>
               <ExternalLink className="h-4 w-4" aria-hidden="true" />
               Open list in ClickUp
+              <span className="sr-only">(opens in new tab)</span>
             </a>
           )}
           {scope === 'ops' && (
@@ -566,7 +564,7 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
               </Button>
               <Link
                 to="/ops/roster"
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-brand hover:underline"
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-caption font-medium text-brand underline-offset-2 hover:underline"
               >
                 <ClipboardList className="h-4 w-4" aria-hidden="true" />
                 View in roster
@@ -638,7 +636,7 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
             return (
               <div key={d} className="flex flex-col items-center gap-1">
                 <span
-                  className={`tnum flex h-9 w-9 items-center justify-center rounded-lg text-xs font-semibold ${
+                  className={`tnum flex h-9 w-9 items-center justify-center rounded-lg text-label font-semibold ${
                     chip ? chip.className : 'bg-surface-2 text-muted/60'
                   }`}
                   title={`${fmtDate(d)}: ${row?.status ?? 'no record'}${
@@ -647,12 +645,14 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
                 >
                   {chip ? chip.letter : '·'}
                 </span>
-                <span className="text-[10px] text-muted">{fmtDate(d).split(' ')[0]}</span>
+                <span className="tnum text-label normal-case tracking-normal text-muted">
+                  {fmtDate(d).split(' ')[0]}
+                </span>
               </div>
             )
           })}
         </div>
-        <p className="mt-2 text-xs text-muted">
+        <p className="mt-2 text-label normal-case tracking-normal text-muted">
           P present · HW worked on a holiday · L leave · H holiday · W weekly day off · A absent ·
           I incomplete
         </p>
@@ -671,10 +671,11 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
                 href={clickupTaskUrl(trailTaskId) ?? '#'}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-2"
+                className={buttonClasses('secondary')}
               >
                 <ExternalLink className="h-4 w-4" aria-hidden="true" />
                 Open in ClickUp
+                <span className="sr-only">(opens in new tab)</span>
               </a>
             )}
             <TaskTrail taskId={trailTaskId} />

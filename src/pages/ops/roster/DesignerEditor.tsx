@@ -43,7 +43,7 @@ const clampGrace = (n: number) =>
   Math.min(240, Math.max(0, Math.round(Number.isFinite(n) ? n : 15)))
 
 const inputCls = (invalid?: boolean) =>
-  `mt-1.5 block w-full min-h-[2.75rem] rounded-xl border bg-surface px-3 text-sm text-fg placeholder:text-muted/70 ${
+  `mt-1.5 block w-full min-h-11 rounded-xl border bg-surface px-3 text-caption text-fg placeholder:text-muted/70 ${
     invalid ? 'border-danger' : 'border-border'
   }`
 
@@ -71,7 +71,7 @@ function Field({
   return (
     <div>
       <div className="flex items-center justify-between gap-2">
-        <label htmlFor={id} className="flex items-center gap-1.5 text-sm font-medium text-fg">
+        <label htmlFor={id} className="flex items-center gap-1.5 text-caption font-medium text-fg">
           {label}
           {required && (
             <span className="text-muted" aria-hidden="true">
@@ -84,11 +84,11 @@ function Field({
       </div>
       {children}
       {error ? (
-        <p id={`${id}-error`} className="mt-1.5 text-xs font-medium text-danger">
+        <p id={`${id}-error`} className="mt-1.5 text-label text-danger">
           {error}
         </p>
       ) : hint ? (
-        <p id={`${id}-hint`} className="mt-1.5 text-xs leading-relaxed text-muted">
+        <p id={`${id}-hint`} className="mt-1.5 text-label font-normal leading-relaxed tracking-normal text-muted">
           {hint}
         </p>
       ) : null}
@@ -450,7 +450,7 @@ export function DesignerEditor({
   const quotaNow = Number(form.daily_quota)
 
   const dayChip = (active: boolean) =>
-    `min-h-[2.75rem] rounded-xl border px-3 text-sm font-medium transition-colors duration-150 ease-out ${
+    `min-h-11 rounded-xl border px-3 text-caption font-medium transition-colors duration-150 ease-out motion-safe:active:scale-[0.97] ${
       active
         ? 'border-brand bg-brand-soft text-brand'
         : 'border-border bg-surface text-muted hover:text-fg'
@@ -550,7 +550,7 @@ export function DesignerEditor({
                   href={listUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs font-medium text-brand underline-offset-2 hover:underline"
+                  className="text-label text-brand underline-offset-2 hover:underline"
                 >
                   Open list ↗
                 </a>
@@ -626,7 +626,7 @@ export function DesignerEditor({
                 value={form.daily_quota}
                 onChange={(e) => patch({ daily_quota: e.target.value })}
                 onBlur={() => patch({ daily_quota: String(clampQuota(Number(form.daily_quota))) })}
-                className="tnum w-14 border-x border-border bg-transparent text-center text-sm text-fg"
+                className="tnum w-14 border-x border-border bg-transparent text-center text-caption text-fg"
               />
               <button
                 type="button"
@@ -673,14 +673,14 @@ export function DesignerEditor({
               </Field>
             </div>
             {overnight && (
-              <p className="mt-2 flex items-center gap-1.5 text-xs text-muted">
+              <p className="mt-2 flex items-center gap-1.5 text-label font-normal tracking-normal text-muted">
                 <Moon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 Overnight — they work past midnight, so the day ends on the next date.
               </p>
             )}
           </div>
           <div>
-            <span className="flex items-center gap-1.5 text-sm font-medium text-fg">
+            <span className="flex items-center gap-1.5 text-caption font-medium text-fg">
               Day off
               <InfoTip
                 text="Their day off each week. That day never counts against them."
@@ -773,7 +773,7 @@ export function DesignerEditor({
             />
           </Field>
           {designer && !scheduleChanged && (
-            <p className="text-xs text-muted">
+            <p className="text-label font-normal tracking-normal text-muted">
               Schedule unchanged — saving keeps the current period.
             </p>
           )}
@@ -795,19 +795,19 @@ export function DesignerEditor({
               title="Special days"
               tip="One-day changes to the daily target — for example a lighter Friday. They beat the schedule on that date only."
             />
-            <p className="text-xs leading-relaxed text-muted">
+            <p className="text-label font-normal leading-relaxed tracking-normal text-muted">
               One-off overrides — e.g. a reduced Friday.
             </p>
             <ul className="space-y-1.5">
               {exceptions.length === 0 && (
-                <li className="text-sm text-muted">None — the daily target applies every day.</li>
+                <li className="text-caption text-muted">None — the daily target applies every day.</li>
               )}
               {[...exceptions]
                 .sort((a, b) => b.the_date.localeCompare(a.the_date))
                 .map((ex) => (
                   <li
                     key={ex.id}
-                    className="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-3 py-1.5 text-sm"
+                    className="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-3 py-1.5 text-caption"
                   >
                     <span className="tnum min-w-0 truncate">
                       {fmtDate(ex.the_date)} → {ex.daily_quota}/day
@@ -826,7 +826,7 @@ export function DesignerEditor({
             </ul>
             <div className="flex flex-wrap items-end gap-2">
               <div>
-                <label htmlFor={id('exdate')} className="block text-xs font-medium text-muted">
+                <label htmlFor={id('exdate')} className="block text-label text-muted">
                   Date
                 </label>
                 <input
@@ -838,7 +838,7 @@ export function DesignerEditor({
                 />
               </div>
               <div>
-                <label htmlFor={id('exquota')} className="block text-xs font-medium text-muted">
+                <label htmlFor={id('exquota')} className="block text-label text-muted">
                   Target
                 </label>
                 <input
@@ -853,7 +853,7 @@ export function DesignerEditor({
                 />
               </div>
               <div className="min-w-[8rem] flex-1">
-                <label htmlFor={id('exreason')} className="block text-xs font-medium text-muted">
+                <label htmlFor={id('exreason')} className="block text-label text-muted">
                   Reason
                 </label>
                 <input
@@ -869,7 +869,7 @@ export function DesignerEditor({
                 type="button"
                 onClick={addException}
                 disabled={exceptionAdd.isPending}
-                className="inline-flex min-h-[2.75rem] items-center gap-1 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2 disabled:opacity-50"
+                className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface px-3 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2 disabled:opacity-50 motion-safe:active:scale-[0.97]"
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
                 Add
@@ -885,12 +885,12 @@ export function DesignerEditor({
           <button
             type="submit"
             disabled={saveMutation.isPending}
-            className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg transition-opacity duration-150 ease-out hover:opacity-90 disabled:opacity-50"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-brand px-4 text-caption font-semibold text-brand-fg transition-opacity duration-150 ease-out hover:opacity-90 disabled:opacity-50 motion-safe:active:scale-[0.98]"
           >
             Save
             <kbd
               aria-hidden="true"
-              className="rounded-md border border-brand-fg/40 bg-transparent px-1.5 py-0.5 text-[11px] font-medium opacity-90"
+              className="rounded-md border border-brand-fg/40 bg-transparent px-1.5 py-0.5 text-label opacity-90"
             >
               ⌘↵
             </kbd>
@@ -898,12 +898,12 @@ export function DesignerEditor({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-xl px-3 text-sm font-medium text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-caption font-medium text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
           >
             Cancel
             <kbd
               aria-hidden="true"
-              className="rounded-md border border-border bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted"
+              className="rounded-md border border-border bg-surface-2 px-1.5 py-0.5 text-label text-muted"
             >
               Esc
             </kbd>
@@ -915,7 +915,7 @@ export function DesignerEditor({
                   type="button"
                   onClick={restore}
                   disabled={statusMutation.isPending}
-                  className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg disabled:opacity-50"
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-caption font-medium text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg disabled:opacity-50"
                 >
                   <ArchiveRestore className="h-4 w-4" aria-hidden="true" />
                   Restore
@@ -926,7 +926,7 @@ export function DesignerEditor({
                   onClick={archive}
                   disabled={statusMutation.isPending}
                   title="They leave the roster but their tasks and history stay."
-                  className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg disabled:opacity-50"
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-caption font-medium text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg disabled:opacity-50"
                 >
                   <Archive className="h-4 w-4" aria-hidden="true" />
                   Archive designer
@@ -936,7 +936,7 @@ export function DesignerEditor({
                 <button
                   type="button"
                   onClick={() => onRequestDelete(designer)}
-                  className="inline-flex min-h-[2.75rem] items-center rounded-xl px-3 text-sm font-medium text-danger transition-colors duration-150 ease-out hover:bg-danger-soft"
+                  className="inline-flex min-h-11 items-center rounded-xl px-3 text-caption font-medium text-danger transition-colors duration-150 ease-out hover:bg-danger-soft"
                 >
                   Delete permanently…
                 </button>

@@ -89,7 +89,7 @@ export function DesignerRow({
   return (
     <div
       onClick={() => onEdit()}
-      className={`grid min-h-[4rem] cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 transition-colors duration-150 ease-out hover:bg-surface-2 lg:grid-cols-[auto_minmax(0,2.5fr)_minmax(0,3fr)_minmax(0,1.5fr)_auto] lg:gap-x-4 ${
+      className={`grid min-h-[4.5rem] cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-5 py-4 transition-colors duration-150 ease-out hover:bg-surface-2 active:bg-surface-2 lg:grid-cols-[auto_minmax(0,2.5fr)_minmax(0,3fr)_minmax(0,1.5fr)_auto] lg:gap-x-4 ${
         archived ? 'opacity-60' : ''
       }`}
     >
@@ -100,14 +100,14 @@ export function DesignerRow({
       <span className="flex min-w-0 items-center gap-3">
         <span
           aria-hidden="true"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-label font-semibold tracking-normal text-brand"
         >
           {initialsOf(d.name)}
         </span>
         <span className="min-w-0">
-          <span className="block truncate font-medium text-fg">{d.name}</span>
+          <span className="block truncate text-caption font-medium text-fg">{d.name}</span>
           {d.specialty && (
-            <span className="block truncate text-xs text-muted">{d.specialty}</span>
+            <span className="block truncate text-label font-normal tracking-normal text-muted">{d.specialty}</span>
           )}
         </span>
       </span>
@@ -156,7 +156,7 @@ export function DesignerRow({
             onClick={stop}
             aria-label={`Open ${d.name}'s ClickUp list in a new tab`}
             title="Open list in ClickUp"
-            className="-mx-2 inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl px-2 text-xs text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
+            className="-mx-2 inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-label font-normal tracking-normal text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
           >
             <span className="tnum">{d.clickup_list_id}</span>
             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -169,7 +169,7 @@ export function DesignerRow({
               onEdit('clickup')
             }}
             aria-label={`Link ${d.name}'s ClickUp list`}
-            className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-warning/40 bg-warning-soft px-3 text-xs font-medium text-warning transition-colors duration-150 ease-out hover:border-warning/70"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-warning/40 bg-warning-soft px-3 text-label text-warning transition-colors duration-150 ease-out hover:border-warning/70"
           >
             <Link2Off className="h-3.5 w-3.5" aria-hidden="true" />
             Link list
@@ -187,7 +187,7 @@ export function DesignerRow({
           }}
           aria-label={`View ${d.name}'s performance`}
           title="View performance"
-          className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
+          className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg motion-safe:active:scale-95"
         >
           <BarChart3 className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -199,7 +199,7 @@ export function DesignerRow({
           }}
           aria-label={`Edit ${d.name}`}
           title="Edit"
-          className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
+          className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg motion-safe:active:scale-95"
         >
           <Pencil className="h-4 w-4" aria-hidden="true" />
         </button>

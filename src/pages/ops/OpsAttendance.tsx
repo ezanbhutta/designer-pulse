@@ -416,69 +416,78 @@ export default function OpsAttendance() {
   }
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="eyebrow">Attendance · check-ins matched against real work in ClickUp</p>
-          <h1 className="mt-1 inline-flex items-center gap-2 text-3xl font-semibold text-fg">
-            Attendance
-            <InfoTip text="Who is in, when they started and stopped, and how long after checking in they began real work." />
-          </h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1">
-            <SegmentedControl<View>
-              options={[
-                { value: 'day', label: 'Day' },
-                { value: 'week', label: 'Week' },
-              ]}
-              value={view}
-              onChange={setView}
-              ariaLabel="Attendance view"
-            />
-            <InfoTip text="See one day in detail, or the whole week at a glance." />
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setDate(addDays(date, view === 'week' ? -7 : -1))}
-              className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-surface text-fg hover:bg-surface-2"
-              aria-label={view === 'week' ? 'Previous week' : 'Previous day'}
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <input
-              type="date"
-              value={date}
-              max={today}
-              onChange={(e) => e.target.value && setDate(e.target.value)}
-              aria-label="Attendance date (PKT)"
-              className="min-h-[2.75rem] rounded-xl border border-border bg-surface px-3 text-sm text-fg"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const next = addDays(date, view === 'week' ? 7 : 1)
-                setDate(next > today ? today : next)
-              }}
-              disabled={isToday}
-              className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-surface text-fg hover:bg-surface-2 disabled:opacity-40"
-              aria-label={view === 'week' ? 'Next week' : 'Next day'}
-            >
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            </button>
-            {!isToday && (
+    <div className="mx-auto w-full max-w-[1280px] space-y-12">
+      <PageHeader
+        breadcrumbs={['Ops', 'Attendance']}
+        title="Attendance"
+        titleAccessory={
+          <InfoTip text="Who is in, when they started and stopped, and how long after checking in they began real work." />
+        }
+        history={
+          attendanceQ.isLoading
+            ? `Check-ins matched against real work in ClickUp · ${fmtDate(date)}…`
+            : `${fmtDate(date)} — ${checkedIn} of ${scheduledCount} scheduled ${
+                scheduledCount === 1 ? 'person has' : 'people have'
+              } checked in${needsReview > 0 ? `, ${needsReview} day${needsReview === 1 ? '' : 's'} to double-check` : ''}${
+                lateCount > 0 ? `, ${lateCount} arrived late` : ''
+              }.`
+        }
+        actions={
+          <>
+            <span className="flex items-center gap-1">
+              <SegmentedControl<View>
+                options={[
+                  { value: 'day', label: 'Day' },
+                  { value: 'week', label: 'Week' },
+                ]}
+                value={view}
+                onChange={setView}
+                ariaLabel="Attendance view"
+              />
+              <InfoTip text="See one day in detail, or the whole week at a glance." />
+            </span>
+            <span className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setDate(today)}
-                className="min-h-[2.75rem] rounded-xl px-3 text-sm font-medium text-brand hover:bg-brand-soft"
+                onClick={() => setDate(addDays(date, view === 'week' ? -7 : -1))}
+                className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-surface text-fg transition-colors duration-150 ease-out hover:bg-surface-2 motion-safe:active:scale-95"
+                aria-label={view === 'week' ? 'Previous week' : 'Previous day'}
               >
-                Today
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
               </button>
-            )}
-          </div>
-        </div>
-      </header>
+              <input
+                type="date"
+                value={date}
+                max={today}
+                onChange={(e) => e.target.value && setDate(e.target.value)}
+                aria-label="Attendance date (PKT)"
+                className="tnum min-h-11 rounded-xl border border-border bg-surface px-3 text-caption text-fg"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const next = addDays(date, view === 'week' ? 7 : 1)
+                  setDate(next > today ? today : next)
+                }}
+                disabled={isToday}
+                className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-surface text-fg transition-colors duration-150 ease-out hover:bg-surface-2 disabled:opacity-40 motion-safe:active:scale-95"
+                aria-label={view === 'week' ? 'Next week' : 'Next day'}
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </button>
+              {!isToday && (
+                <button
+                  type="button"
+                  onClick={() => setDate(today)}
+                  className="min-h-11 rounded-xl px-3 text-caption font-medium text-brand transition-colors duration-150 ease-out hover:bg-brand-soft"
+                >
+                  Today
+                </button>
+              )}
+            </span>
+          </>
+        }
+      />
 
       {attendanceQ.error && (
         <ErrorBanner
@@ -499,13 +508,11 @@ export default function OpsAttendance() {
         loading={attendanceQ.isLoading || designersQ.isLoading}
       />
 
-      {/* ── Tiles (§20.2) ── */}
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Attendance summary">
+      {/* ── Tiles (§20.2) — 2-up so labels never truncate (whitespace pillar) ── */}
+      <section className="grid grid-cols-1 gap-5 sm:grid-cols-2" aria-label="Attendance summary">
         <StatTile
-          eyebrow={labelTip(
-            'Team start delay',
-            'The time between pressing Check in and doing the first real work in ClickUp. This is the usual (middle) value for the team.',
-          )}
+          eyebrow="Start delay"
+          tip="The time between pressing Check in and doing the first real work in ClickUp. This is the usual (middle) value for the whole team."
           icon={Hourglass}
           value={fmtDuration(warmupMedian)}
           delta={metricDelta(warmupMedian, warmupPrev, {
@@ -518,10 +525,8 @@ export default function OpsAttendance() {
           loading={attendanceQ.isLoading}
         />
         <StatTile
-          eyebrow={labelTip(
-            'Checked in',
-            "How many of today's scheduled people have pressed Check in.",
-          )}
+          eyebrow="Checked in"
+          tip="How many of today's scheduled people have pressed Check in."
           icon={UserCheck}
           value={`${checkedIn} of ${scheduledCount}`}
           delta={metricDelta(checkedIn, prevStats.checked, { goodWhen: 'up', vs: 'vs prior day' })}
@@ -534,10 +539,8 @@ export default function OpsAttendance() {
           loading={attendanceQ.isLoading}
         />
         <StatTile
-          eyebrow={labelTip(
-            'Needs review',
-            'The system closed this day automatically because the person forgot to press Check out. Please double-check it.',
-          )}
+          eyebrow="Double-check"
+          tip="The system closed this day automatically because the person forgot to press Check out. Please double-check it."
           icon={TriangleAlert}
           value={String(needsReview)}
           delta={metricDelta(needsReview, prevStats.review, { goodWhen: 'down', vs: 'vs prior day' })}
@@ -546,10 +549,8 @@ export default function OpsAttendance() {
           loading={attendanceQ.isLoading}
         />
         <StatTile
-          eyebrow={labelTip(
-            'Late arrivals',
-            'People who checked in after their start time, allowing a small grace period.',
-          )}
+          eyebrow="Arrived late"
+          tip="People who checked in after their start time, allowing a small grace period."
           icon={LogIn}
           value={String(lateCount)}
           delta={metricDelta(lateCount, prevStats.late, { goodWhen: 'down', vs: 'vs prior day' })}
@@ -560,9 +561,17 @@ export default function OpsAttendance() {
       </section>
 
       {attendanceQ.isLoading && designers.length === 0 ? (
-        <div className="space-y-2" role="status" aria-label="Loading attendance">
+        // Skeleton mirrors the day table: header band, then name + cell rows.
+        <div className="card overflow-hidden" role="status" aria-label="Loading attendance">
+          <div className="border-b border-border/60 px-4 py-3">
+            <div className="skeleton h-3.5 w-56" />
+          </div>
           {[0, 1, 2, 3, 4].map((i) => (
-            <div key={i} className="skeleton h-12" />
+            <div key={i} className="flex items-center gap-6 border-b border-border/40 px-4 py-4 last:border-0">
+              <div className="skeleton h-4 w-40" />
+              <div className="skeleton h-5 w-24 rounded-full" />
+              <div className="skeleton ml-auto h-4 w-64" />
+            </div>
           ))}
         </div>
       ) : designers.length === 0 ? (
@@ -574,47 +583,47 @@ export default function OpsAttendance() {
       ) : view === 'day' ? (
         // ── Day table, needs-attention-first ──
         <div className="card overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-caption">
             <thead>
-              <tr className="border-b border-border/60 text-xs text-muted">
-                <th scope="col" className="whitespace-nowrap px-3 py-2.5 font-medium">Designer</th>
-                <th scope="col" className="whitespace-nowrap px-3 py-2.5 font-medium">
+              <tr className="border-b border-border/60 text-label text-muted">
+                <th scope="col" className="whitespace-nowrap px-4 py-3 font-medium">Designer</th>
+                <th scope="col" className="whitespace-nowrap px-4 py-3 font-medium">
                   <span className="inline-flex items-center gap-1">
                     Status
                     <InfoTip text="What kind of day it was — worked, on leave, day off, absent, and so on." />
                   </span>
                 </th>
-                <th scope="col" className="whitespace-nowrap px-3 py-2.5 text-right font-medium">
+                <th scope="col" className="whitespace-nowrap px-4 py-3 text-right font-medium">
                   <span className="inline-flex items-center gap-1">
                     In
                     <InfoTip text="The time they pressed Check in." />
                   </span>
                 </th>
-                <th scope="col" className="whitespace-nowrap px-3 py-2.5 text-right font-medium">
+                <th scope="col" className="whitespace-nowrap px-4 py-3 text-right font-medium">
                   <span className="inline-flex items-center gap-1">
                     Out
                     <InfoTip text="The time they pressed Check out. If they forgot, the system fills it in and marks the day for a double-check." />
                   </span>
                 </th>
-                <th scope="col" className="whitespace-nowrap bg-surface-2/70 px-3 py-2.5 text-right font-semibold text-fg">
+                <th scope="col" className="whitespace-nowrap bg-surface-2/70 px-4 py-3 text-right font-semibold text-fg">
                   <span className="inline-flex items-center gap-1">
                     Start delay
                     <InfoTip text="The time between pressing Check in and doing the first real work in ClickUp." />
                   </span>
                 </th>
-                <th scope="col" className="whitespace-nowrap px-3 py-2.5 text-right font-medium">
+                <th scope="col" className="whitespace-nowrap px-4 py-3 text-right font-medium">
                   <span className="inline-flex items-center gap-1">
                     Worked
                     <InfoTip text="Total time worked that day." />
                   </span>
                 </th>
-                <th scope="col" className="whitespace-nowrap px-3 py-2.5 text-right font-medium">
+                <th scope="col" className="whitespace-nowrap px-4 py-3 text-right font-medium">
                   <span className="inline-flex items-center gap-1">
                     Late / early
                     <InfoTip text="Started late or left early, and by how much." />
                   </span>
                 </th>
-                <th scope="col" className="whitespace-nowrap px-3 py-2.5 text-right font-medium">
+                <th scope="col" className="whitespace-nowrap px-4 py-3 text-right font-medium">
                   <span className="inline-flex items-center gap-1">
                     {isToday ? 'Mark for them' : 'Fix their day'}
                     <InfoTip
@@ -633,7 +642,7 @@ export default function OpsAttendance() {
             {dayGroups.map(([team, rows]) => (
               <tbody key={team}>
                 <tr className="border-b border-border/40 bg-surface-2/40">
-                  <th scope="rowgroup" colSpan={8} className="px-3 py-2 text-left">
+                  <th scope="rowgroup" colSpan={8} className="px-4 py-2.5 text-left">
                     <span className="eyebrow">{team}</span>
                   </th>
                 </tr>
@@ -645,18 +654,18 @@ export default function OpsAttendance() {
                   const editing = fixDraft != null && fixDraft.designerId === designer.id
                   const outSaved = recalcPending.has(recalcKey(designer.id, date, 'check_out'))
                   return (
-                    <tr key={designer.id} className="border-b border-border/40 last:border-0 hover:bg-surface-2/60">
-                      <td className="px-3 py-2.5">
+                    <tr key={designer.id} className="border-b border-border/40 last:border-0 transition-colors duration-150 ease-out hover:bg-surface-2/60">
+                      <td className="px-4 py-3">
                         <button
                           type="button"
                           onClick={() => openDesigner(designer.id)}
-                          className="min-h-[2.75rem] text-left font-medium text-fg hover:text-brand"
+                          className="min-h-11 text-left font-medium text-fg hover:text-brand"
                         >
                           {designer.name}
-                          <span className="ml-2 text-xs font-normal text-muted">{designer.team}</span>
+                          <span className="ml-2 text-label font-normal tracking-normal text-muted">{designer.team}</span>
                         </button>
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-4 py-3">
                         {meta && row?.status ? (
                           <div>
                             <Badge tone={meta.tone} icon={meta.icon}>
@@ -664,29 +673,29 @@ export default function OpsAttendance() {
                               {row.is_half_day ? ' · half day' : ''}
                             </Badge>
                             {row.needs_review && (
-                              <p className="mt-1 text-xs text-warning">
+                              <p className="mt-1 text-label font-normal tracking-normal text-warning">
                                 closed by the system — please double-check
                               </p>
                             )}
                           </div>
                         ) : (
-                          <span className="text-xs text-muted">
+                          <span className="text-label font-normal tracking-normal text-muted">
                             {shiftLabel ? `Hours ${shiftLabel} PKT — nothing yet` : 'No work hours set'}
                             {expected === 0 && shiftLabel ? ' · not expected in today' : ''}
                           </span>
                         )}
                       </td>
-                      <td className="tnum px-3 py-2.5 text-right text-muted">{fmtTime(row?.declared_in)}</td>
-                      <td className="px-3 py-2.5 text-right">
+                      <td className="tnum px-4 py-3 text-right text-muted">{fmtTime(row?.declared_in)}</td>
+                      <td className="px-4 py-3 text-right">
                         <span className="tnum text-muted">{fmtTime(row?.declared_out)}</span>
                         {row?.declared_out && row.checkout_source === 'auto_clickup' && (
-                          <p className="text-[11px] text-muted">filled in — their last work activity</p>
+                          <p className="text-label font-normal tracking-normal text-muted">filled in — their last work activity</p>
                         )}
                         {row?.declared_out && row.checkout_source === 'auto_shift_end' && (
-                          <p className="text-[11px] text-warning">filled in by the system — double-check</p>
+                          <p className="text-label font-normal tracking-normal text-warning">filled in by the system — double-check</p>
                         )}
                       </td>
-                      <td className={`px-3 py-2.5 text-right ${warmupFlagged ? 'bg-warning-soft/60' : 'bg-surface-2/40'}`}>
+                      <td className={`px-4 py-3 text-right ${warmupFlagged ? 'bg-warning-soft/60' : 'bg-surface-2/40'}`}>
                         {warmup == null ? (
                           <span className="text-muted">—</span>
                         ) : (
@@ -695,19 +704,19 @@ export default function OpsAttendance() {
                               {fmtDuration(warmup)}
                             </span>
                             {warmupFlagged && (
-                              <p className="text-[11px] text-warning">
+                              <p className="text-label font-normal tracking-normal text-warning">
                                 in at {fmtTime(row?.declared_in)}, first work {fmtTime(row?.first_activity)}
                               </p>
                             )}
                           </div>
                         )}
                       </td>
-                      <td className="tnum px-3 py-2.5 text-right text-muted">
+                      <td className="tnum px-4 py-3 text-right text-muted">
                         {row && (row.worked_minutes > 0 || row.status === 'Present' || row.status === 'HolidayWorked')
                           ? fmtDuration(row.worked_minutes)
                           : '—'}
                       </td>
-                      <td className="tnum px-3 py-2.5 text-right text-muted">
+                      <td className="tnum px-4 py-3 text-right text-muted">
                         {row && (row.late_minutes > 0 || row.early_leave_minutes > 0) ? (
                           <span className="text-warning">
                             {row.late_minutes > 0 ? `+${fmtDuration(row.late_minutes)} late` : ''}
@@ -718,7 +727,7 @@ export default function OpsAttendance() {
                           '—'
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right">
+                      <td className="px-4 py-3 text-right">
                         {editing && fixDraft ? (
                           <span className="inline-flex items-center justify-end gap-1">
                             <input
@@ -728,13 +737,13 @@ export default function OpsAttendance() {
                               aria-label={`${
                                 fixDraft.markType === 'check_in' ? 'Check-in' : 'Check-out'
                               } time for ${designer.name} (PKT)`}
-                              className="tnum min-h-[2.75rem] rounded-xl border border-border bg-surface px-2 text-xs text-fg"
+                              className="tnum min-h-11 rounded-xl border border-border bg-surface px-2 text-label font-normal text-fg"
                             />
                             <button
                               type="button"
                               onClick={() => saveFix(dayRow)}
                               disabled={markMutation.isPending || !fixDraft.time}
-                              className="inline-flex min-h-[2.75rem] items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-xs font-medium text-fg hover:bg-surface-2 disabled:opacity-50"
+                              className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-label text-fg transition-colors duration-150 ease-out hover:bg-surface-2 disabled:opacity-50 motion-safe:active:scale-[0.97]"
                             >
                               <Check className="h-3.5 w-3.5" aria-hidden="true" />
                               Save
@@ -743,7 +752,7 @@ export default function OpsAttendance() {
                               type="button"
                               onClick={() => setFixDraft(null)}
                               aria-label={`Cancel fixing ${designer.name}'s day`}
-                              className="flex h-11 w-11 items-center justify-center rounded-xl text-muted hover:bg-surface-2 hover:text-fg"
+                              className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
                             >
                               <X className="h-4 w-4" aria-hidden="true" />
                             </button>
@@ -755,13 +764,13 @@ export default function OpsAttendance() {
                               isToday ? mark(designer.id, 'check_in') : openFix(dayRow, 'check_in')
                             }
                             disabled={markMutation.isPending}
-                            className="inline-flex min-h-[2.75rem] items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-xs font-medium text-fg hover:bg-surface-2 disabled:opacity-50"
+                            className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-label text-fg transition-colors duration-150 ease-out hover:bg-surface-2 disabled:opacity-50 motion-safe:active:scale-[0.97]"
                           >
                             <LogIn className="h-3.5 w-3.5" aria-hidden="true" />
                             Check in
                           </button>
                         ) : outSaved ? (
-                          <span className="text-xs text-muted">saved — updating shortly</span>
+                          <span className="text-label font-normal tracking-normal text-muted">saved — updating shortly</span>
                         ) : !row.declared_out || row.checkout_source !== 'self' ? (
                           <button
                             type="button"
@@ -769,13 +778,13 @@ export default function OpsAttendance() {
                               isToday ? mark(designer.id, 'check_out') : openFix(dayRow, 'check_out')
                             }
                             disabled={markMutation.isPending}
-                            className="inline-flex min-h-[2.75rem] items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-xs font-medium text-fg hover:bg-surface-2 disabled:opacity-50"
+                            className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-label text-fg transition-colors duration-150 ease-out hover:bg-surface-2 disabled:opacity-50 motion-safe:active:scale-[0.97]"
                           >
                             <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
                             Check out
                           </button>
                         ) : (
-                          <span className="text-xs text-muted">done</span>
+                          <span className="text-label font-normal tracking-normal text-muted">done</span>
                         )}
                       </td>
                     </tr>
@@ -787,13 +796,13 @@ export default function OpsAttendance() {
         </div>
       ) : (
         // ── Week grid: 7 days × designers, letters not color-only (§20.10) ──
-        <div className="card overflow-x-auto p-4">
-          <p className="tnum mb-3 text-xs text-muted">
+        <div className="card overflow-x-auto p-6">
+          <p className="tnum mb-4 text-label font-normal tracking-normal text-muted">
             Showing the 7 days {fmtDate(weekStart)} – {fmtDate(date)}
           </p>
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-caption">
             <thead>
-              <tr className="text-xs text-muted">
+              <tr className="text-label text-muted">
                 <th scope="col" className="px-2 py-2 font-medium">Designer</th>
                 {weekDates.map((d) => (
                   <th key={d} scope="col" className="px-2 py-2 text-center font-medium">
@@ -822,7 +831,7 @@ export default function OpsAttendance() {
                       <button
                         type="button"
                         onClick={() => openDesigner(d.id)}
-                        className="min-h-[2.75rem] text-left font-medium text-fg hover:text-brand"
+                        className="min-h-11 text-left font-medium text-fg hover:text-brand"
                       >
                         {d.name}
                       </button>
@@ -840,7 +849,7 @@ export default function OpsAttendance() {
                       return (
                         <td key={wd} className="px-2 py-2 text-center">
                           <span
-                            className={`tnum inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg px-1 text-xs font-semibold ${
+                            className={`tnum inline-flex h-9 min-w-9 items-center justify-center rounded-lg px-1 text-label font-semibold tracking-normal ${
                               meta ? meta.cell : 'bg-surface-2/50 text-muted/50'
                             }`}
                             title={cellText}
@@ -860,7 +869,7 @@ export default function OpsAttendance() {
               </tbody>
             ))}
           </table>
-          <p className="mt-3 text-xs text-muted">
+          <p className="mt-4 max-w-prose text-label font-normal tracking-normal text-muted">
             P present · HW worked on a holiday · L leave · H holiday · W weekly day off · A absent ·
             I incomplete · ! please double-check
           </p>

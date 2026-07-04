@@ -13,6 +13,9 @@ export interface StatTileProps {
   tip?: string
   icon?: LucideIcon
   value: string
+  /** Optional custom value display (e.g. an <AnimatedCounter/>).
+   *  `value` still provides the accessible text and drill-down label. */
+  children?: ReactNode
   delta?: { label: string; direction: 'up' | 'down' | 'flat'; good: boolean } | null
   cause?: string | null // plain-language cause (§20.2)
   reference?: string | null // e.g. "team median 82%" (§22.5)
@@ -48,17 +51,19 @@ function AnimatedValue({ value }: { value: string }) {
 }
 
 /**
- * Metric tile (spec §21.6/§20.2): the number never travels alone — delta vs
- * prior period, plain-language cause, and a reference point (team median)
- * ship inline. State flag pairs icon + label with its color (§20.10).
- * With onClick the whole tile is a drill-down button. h-full keeps tiles in
- * one grid row bottom-aligned when neighbours run taller.
+ * Structural metric tile (manifesto pillar 4): eyebrow anchored top-left,
+ * state badge top-right, then the massive tabular value tracked at -0.03em on
+ * a clean baseline with its delta. The number never travels alone (§20.2) —
+ * delta vs prior period, plain-language cause, and a reference point (team
+ * median) ship inline. With onClick the whole tile is a tactile drill-down
+ * button. h-full keeps tiles in one grid row bottom-aligned.
  */
 export function StatTile({
   eyebrow,
   tip,
   icon: Icon,
   value,
+  children,
   delta,
   cause,
   reference,
@@ -68,11 +73,15 @@ export function StatTile({
   loading,
 }: StatTileProps) {
   if (loading) {
+    // Mirrors the loaded layout exactly — nothing shifts when data lands.
     return (
       <div className="card h-full p-5" role="status" aria-label={`${eyebrow} — loading`}>
-        <div className="skeleton h-3 w-24" />
-        <div className="skeleton mt-3 h-9 w-24" />
-        <div className="skeleton mt-2.5 h-3.5 w-4/5" />
+        <div className="mb-4 flex items-center justify-between">
+          <div className="skeleton h-3 w-24" />
+          <div className="skeleton h-5 w-14 rounded-full" />
+        </div>
+        <div className="skeleton h-8 w-24" />
+        <div className="skeleton mt-3 h-3.5 w-4/5" />
         <div className="skeleton mt-1.5 h-3 w-1/2" />
       </div>
     )
@@ -82,7 +91,8 @@ export function StatTile({
 
   const body: ReactNode = (
     <>
-      <div className="flex items-start justify-between gap-2">
+      {/* Eyebrow row: anchored top-left, badge aligned top-right. */}
+      <div className="mb-4 flex items-start justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5">
           {Icon && <Icon className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />}
           <span className="eyebrow truncate">{eyebrow}</span>
@@ -96,18 +106,21 @@ export function StatTile({
         )}
       </div>
 
-      <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="tnum text-3xl font-medium leading-tight text-fg">
-          <AnimatedValue value={value} />
+      {/* Value: massive, tabular, tightly tracked, anchored to the baseline. */}
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-section font-medium leading-none tracking-[-0.03em] text-fg tabular-nums">
+          {children ?? <AnimatedValue value={value} />}
         </span>
         {delta && <DeltaChip direction={delta.direction} good={delta.good} label={delta.label} />}
       </div>
 
-      {cause && <p className="mt-1.5 text-sm leading-snug text-muted">{cause}</p>}
-      {reference && <p className="mt-1 text-xs text-muted/90">{reference}</p>}
+      {cause && <p className="mt-3 text-caption leading-snug text-muted">{cause}</p>}
+      {reference && (
+        <p className="mt-1 text-label normal-case tracking-normal text-muted/90">{reference}</p>
+      )}
 
       {sparkline && sparkline.length > 1 && (
-        <div className="mt-3">
+        <div className="mt-4">
           <Sparkline data={sparkline} tone="muted" height={28} />
         </div>
       )}
@@ -121,8 +134,8 @@ export function StatTile({
         onClick={onClick}
         aria-label={`${eyebrow}: ${value} — open details`}
         // hover:bg is the theme-safe cue — the ink shadow is invisible on the
-        // dark cockpit background.
-        className="card block h-full min-h-11 w-full cursor-pointer p-5 text-left transition-[box-shadow,background-color] duration-200 ease-out hover:bg-surface-2/40 hover:shadow-raised"
+        // dark cockpit background. active:scale gives the tactile press.
+        className="card block h-full min-h-11 w-full cursor-pointer p-5 text-left transition-[box-shadow,background-color,border-color,transform] duration-200 ease-out hover:border-muted/30 hover:bg-surface-2/40 hover:shadow-raised motion-safe:active:scale-[0.99]"
       >
         {body}
       </button>

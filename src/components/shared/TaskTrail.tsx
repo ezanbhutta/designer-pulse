@@ -97,26 +97,28 @@ export function TaskTrail({ taskId }: TaskTrailProps) {
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               {e.event_type === 'created' ? (
                 <>
-                  <span className="text-sm font-medium text-fg">Assigned</span>
+                  <span className="text-caption font-medium text-fg">Assigned</span>
                   <StatusBadge status={status ?? 'pickup your projects'} />
                 </>
               ) : e.event_type === 'deleted' ? (
-                <span className="text-sm font-medium text-danger">Deleted in ClickUp</span>
+                <span className="text-caption font-medium text-danger">Deleted in ClickUp</span>
               ) : (
                 <>
                   {e.from_status && (
-                    <span className="text-xs text-muted">{STATUS_LABELS[e.from_status]} →</span>
+                    <span className="text-label normal-case tracking-normal text-muted">
+                      {STATUS_LABELS[e.from_status]} →
+                    </span>
                   )}
                   {status && <StatusBadge status={status} />}
                 </>
               )}
               {src && (
-                <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-muted">
+                <span className="inline-flex h-5 items-center rounded-full bg-surface-2 px-2 text-label normal-case tracking-normal text-muted">
                   {src}
                 </span>
               )}
             </div>
-            <p className="tnum mt-1 text-xs text-muted">
+            <p className="tnum mt-1 text-label normal-case tracking-normal text-muted">
               {fmtDateTime(e.event_time)}
               {heldMin != null && status && e.event_type !== 'deleted' && (
                 <>

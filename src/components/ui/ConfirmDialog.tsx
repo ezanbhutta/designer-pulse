@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { TriangleAlert } from 'lucide-react'
 import { Button } from './Button'
+import { SPRING } from './motion'
 
 export interface ConfirmDialogProps {
   open: boolean
@@ -18,8 +20,9 @@ const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1
 /**
  * Explicit confirmation dialog — reserved by spec §20.6 for exactly two
  * cases: hard-deleting a designer and bulk actions. Everything else uses
- * act-then-Undo toasts. Focus starts on Cancel (the safe choice), Esc
- * cancels, focus is trapped and returned to the opener on close.
+ * act-then-Undo toasts. The panel is a depth layer that springs in over the
+ * dimmed void (pillar 9; reduced motion snaps). Focus starts on Cancel (the
+ * safe choice), Esc cancels, focus is trapped and returned to the opener.
  */
 export function ConfirmDialog({
   open,
@@ -30,6 +33,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const reduced = useReducedMotion()
   const titleId = useId()
   const bodyId = useId()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -69,49 +73,59 @@ export function ConfirmDialog({
     }
   }
 
-  if (!open) return null
-
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-bg/60 backdrop-blur-sm"
-        onClick={onCancel}
-        aria-hidden="true"
-      />
-      <div
-        ref={panelRef}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={bodyId}
-        onKeyDown={handleKeyDown}
-        className="card animate-fade-in relative w-full max-w-md p-6 shadow-raised"
-      >
-        <div className="flex items-start gap-3">
-          {destructive && (
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-danger-soft">
-              <TriangleAlert className="h-5 w-5 text-danger" aria-hidden="true" />
-            </span>
-          )}
-          <div className="min-w-0">
-            <h2 id={titleId} className="text-lg font-semibold text-fg">
-              {title}
-            </h2>
-            <p id={bodyId} className="mt-1.5 text-sm leading-relaxed text-muted">
-              {body}
-            </p>
-          </div>
+    <AnimatePresence>
+      {open && (
+        <div key="confirm" className="fixed inset-0 z-overlay flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: reduced ? 0 : 0.15 }}
+            className="absolute inset-0 bg-bg/70 backdrop-blur-sm"
+            onClick={onCancel}
+            aria-hidden="true"
+          />
+          <motion.div
+            ref={panelRef}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            aria-describedby={bodyId}
+            onKeyDown={handleKeyDown}
+            initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 6 }}
+            transition={reduced ? { duration: 0.01 } : SPRING}
+            className="card relative w-full max-w-md p-6 shadow-raised"
+          >
+            <div className="flex items-start gap-3">
+              {destructive && (
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-danger-soft">
+                  <TriangleAlert className="h-5 w-5 text-danger" aria-hidden="true" />
+                </span>
+              )}
+              <div className="min-w-0">
+                <h2 id={titleId} className="text-card text-fg">
+                  {title}
+                </h2>
+                <p id={bodyId} className="mt-1.5 max-w-prose text-caption leading-relaxed text-muted">
+                  {body}
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <Button ref={cancelRef} variant="secondary" onClick={onCancel}>
+                Cancel
+              </Button>
+              <Button variant={destructive ? 'danger' : 'primary'} onClick={onConfirm}>
+                {confirmLabel}
+              </Button>
+            </div>
+          </motion.div>
         </div>
-        <div className="mt-6 flex justify-end gap-3">
-          <Button ref={cancelRef} variant="secondary" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button variant={destructive ? 'danger' : 'primary'} onClick={onConfirm}>
-            {confirmLabel}
-          </Button>
-        </div>
-      </div>
-    </div>,
+      )}
+    </AnimatePresence>,
     document.body,
   )
 }

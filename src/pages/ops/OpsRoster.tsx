@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, CircleCheck, TriangleAlert, UserPlus } from 'lucide-react'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Drawer } from '../../components/ui/Drawer'
+import { PageHeader } from '../../components/layout/PageHeader'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
@@ -116,33 +117,37 @@ export default function OpsRoster() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* ── 1 · Header ── */}
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="eyebrow">Roster · people, daily targets and work hours</p>
-          <h1 className="mt-1 inline-flex items-center gap-2 text-3xl font-semibold text-fg">
-            Roster
-            <InfoTip
-              text="Everyone on the design team, with their daily target and work hours."
-              label="About the roster"
-            />
-          </h1>
-          {isLoading ? (
-            <Skeleton className="mt-2 h-4 w-72" />
+    <div className="mx-auto w-full max-w-[1100px] space-y-12">
+      {/* ── 1 · Header (4-question, §pillar 7) ── */}
+      <PageHeader
+        breadcrumbs={['Ops', 'Roster']}
+        title="Roster"
+        titleAccessory={
+          <InfoTip
+            text="Everyone on the design team, with their daily target and work hours."
+            label="About the roster"
+          />
+        }
+        history={
+          isLoading ? (
+            <Skeleton className="h-4 w-72" />
           ) : (
-            <p className="tnum mt-1 text-sm text-muted">{summaryParts.join(' · ')}</p>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => setEditor({ mode: 'add', team: 'Logo' })}
-          className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg transition-opacity duration-150 ease-out hover:opacity-90"
-        >
-          <UserPlus className="h-4 w-4" aria-hidden="true" />
-          Add designer
-        </button>
-      </header>
+            <span className="tnum">
+              {summaryParts.join(' · ')} — people, daily targets and work hours.
+            </span>
+          )
+        }
+        actions={
+          <button
+            type="button"
+            onClick={() => setEditor({ mode: 'add', team: 'Logo' })}
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-brand px-4 text-caption font-semibold text-brand-fg transition-opacity duration-150 ease-out hover:opacity-90 motion-safe:active:scale-[0.98]"
+          >
+            <UserPlus className="h-4 w-4" aria-hidden="true" />
+            Add designer
+          </button>
+        }
+      />
 
       {designersQ.error != null && (
         <ErrorBanner
@@ -176,11 +181,11 @@ export default function OpsRoster() {
           {attention.length > 0 ? (
             <section
               aria-label="Needs attention"
-              className="animate-fade-in rounded-2xl border border-warning/30 bg-warning-soft/40 p-4 sm:p-5"
+              className="animate-fade-in rounded-2xl border border-warning/30 bg-warning-soft/40 p-5 sm:p-6"
             >
               <div className="flex items-center gap-2">
                 <TriangleAlert className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
-                <h2 className="flex items-center gap-1.5 text-sm font-semibold text-fg">
+                <h2 className="flex items-center gap-1.5 text-caption font-semibold text-fg">
                   Needs attention <span className="tnum text-muted">· {attention.length}</span>
                   <InfoTip
                     text="These gaps stop the numbers from counting. Tap Fix to sort each one out."
@@ -194,7 +199,7 @@ export default function OpsRoster() {
                     key={i.designer.id}
                     className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1"
                   >
-                    <p className="min-w-0 text-sm text-fg">{issueText(i)}</p>
+                    <p className="min-w-0 max-w-prose text-caption text-fg">{issueText(i)}</p>
                     <button
                       type="button"
                       onClick={() =>
@@ -205,20 +210,20 @@ export default function OpsRoster() {
                         })
                       }
                       aria-label={`Fix ${i.designer.name}'s setup`}
-                      className="min-h-[2.75rem] shrink-0 rounded-xl border border-border bg-surface px-3.5 text-sm font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2"
+                      className="min-h-11 shrink-0 rounded-xl border border-border bg-surface px-3.5 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.97]"
                     >
                       Fix
                     </button>
                   </li>
                 ))}
               </ul>
-              <p className="mt-3 text-xs leading-relaxed text-muted">
+              <p className="mt-4 max-w-prose text-label font-normal leading-relaxed tracking-normal text-muted">
                 ClickUp lists named exactly after the designer link themselves within 15 minutes —
                 you only need to step in when the names differ.
               </p>
             </section>
           ) : (
-            <p className="flex items-center gap-2 text-sm text-muted">
+            <p className="flex items-center gap-2 text-caption text-muted">
               <CircleCheck className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
               Everyone is linked and scheduled.
             </p>
@@ -234,7 +239,7 @@ export default function OpsRoster() {
                 <button
                   type="button"
                   onClick={() => setEditor({ mode: 'add', team: 'Logo' })}
-                  className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg transition-opacity duration-150 ease-out hover:opacity-90"
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-brand px-4 text-caption font-semibold text-brand-fg transition-opacity duration-150 ease-out hover:opacity-90 motion-safe:active:scale-[0.98]"
                 >
                   <UserPlus className="h-4 w-4" aria-hidden="true" />
                   Add designer
@@ -357,7 +362,7 @@ function TeamSection({
     <section aria-label={`${team} team`}>
       <div className="flex items-center gap-2">
         <h2 className="eyebrow">{team}</h2>
-        <span className="tnum text-xs text-muted" aria-label={`${active.length} active`}>
+        <span className="tnum text-label font-normal tracking-normal text-muted" aria-label={`${active.length} active`}>
           {active.length}
         </span>
         <InfoTip
@@ -366,7 +371,7 @@ function TeamSection({
         />
       </div>
       {active.length === 0 && archived.length === 0 ? (
-        <div className="mt-2 rounded-2xl border border-dashed border-border bg-surface/50 px-4 py-5 text-sm text-muted">
+        <div className="mt-3 rounded-2xl border border-dashed border-border bg-surface/50 px-5 py-6 text-caption text-muted">
           No {team} designers yet —{' '}
           <button
             type="button"
@@ -378,11 +383,11 @@ function TeamSection({
           to start tracking this team's targets and attendance.
         </div>
       ) : (
-        <div className="card mt-2 overflow-hidden">
+        <div className="card mt-3 overflow-hidden">
           <div className="divide-y divide-border/40">
             {active.map(row)}
             {active.length === 0 && (
-              <p className="px-4 py-4 text-sm text-muted">
+              <p className="px-5 py-5 text-caption text-muted">
                 No active designers on this team — {archived.length} archived below.
               </p>
             )}
@@ -393,7 +398,7 @@ function TeamSection({
                 type="button"
                 onClick={() => setShowArchived((v) => !v)}
                 aria-expanded={showArchived}
-                className="flex min-h-[2.75rem] w-full items-center gap-1.5 px-4 text-left text-xs font-medium text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
+                className="flex min-h-11 w-full items-center gap-1.5 px-5 text-left text-label text-muted transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-fg"
               >
                 <ChevronRight
                   className={`h-3.5 w-3.5 shrink-0 transition-transform duration-150 ease-out ${

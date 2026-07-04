@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import {
   CircleCheck,
   Download,
@@ -7,8 +7,10 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from 'lucide-react'
+import { ActionButton } from '../../components/ui/ActionButton'
 import { DeltaChip } from '../../components/ui/DeltaChip'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { PageHeader } from '../../components/layout/PageHeader'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
@@ -53,21 +55,6 @@ interface ReportRow {
 }
 
 /**
- * Label + ⓘ for StatTile's string-typed `eyebrow` (copy-pass workaround, local
- * to this file — StatTile's props are owned elsewhere). The node keeps a
- * readable toString so StatTile's template-literal aria-labels stay sensible.
- */
-function labelTip(label: string, tip: string): string {
-  const node = (
-    <span className="inline-flex items-center gap-1">
-      {label}
-      <InfoTip text={tip} />
-    </span>
-  )
-  return Object.assign({}, node, { toString: () => label }) as unknown as string
-}
-
-/**
  * Per-designer period summaries (spec §13.1 drill / §22.9 in-app-first
  * reports): grouped by team because cross-team raw counts are not comparable —
  * attainment % is the only fair cross-team number (§2). Worst attainment
@@ -78,7 +65,6 @@ export default function OpsReports() {
   const toast = useToast()
   const openDesigner = useDesignerDrawer()
   const [periodKey, setPeriodKey] = useLocalStorage<PeriodKey>('pulse.ops.reports.period', 'this-week')
-  const [pdfPending, setPdfPending] = useState(false)
 
   const period = PERIODS.find((p) => p.value === periodKey) ?? PERIODS[0]
   const range = period.range(today)
@@ -188,7 +174,6 @@ export default function OpsReports() {
   // The PDF engine (jsPDF, ~120 kB gzip) is fetched only when the button is
   // pressed — visiting the Reports page never downloads it.
   const exportPdf = async () => {
-    setPdfPending(true)
     try {
       const { generateWeeklyReportPdf } = await import('../../lib/reportPdf')
       generateWeeklyReportPdf({
@@ -197,44 +182,46 @@ export default function OpsReports() {
         designers: designersQ.data ?? [],
       })
       toast({ message: `PDF for ${rangeLabel} downloaded` })
-    } catch {
+    } catch (e) {
       toast({ message: 'Could not build the PDF — check your connection and try again' })
-    } finally {
-      setPdfPending(false)
+      throw e // the stateful button resets to idle — never a false success ✓
     }
   }
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="eyebrow">Reports · {rangeLabel} · vs {fmtDate(prior.start)} – {fmtDate(prior.end)}</p>
-          <h1 className="mt-1 inline-flex items-center gap-2 text-3xl font-semibold text-fg">
-            Reports
-            <InfoTip text="How each person did over a period — targets met, quality and speed — with a PDF you can share." />
-          </h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1">
-            <SegmentedControl<PeriodKey>
-              options={PERIODS.map((p) => ({ value: p.value, label: p.label }))}
-              value={periodKey}
-              onChange={setPeriodKey}
-              ariaLabel="Report period"
-            />
-            <InfoTip text="Pick the time period. Every number is compared with the period before it." />
-          </div>
-          <button
-            type="button"
-            onClick={() => void exportPdf()}
-            disabled={loading || rows.length === 0 || pdfPending}
-            className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg hover:opacity-90 disabled:opacity-50"
-          >
-            <Download className="h-4 w-4" aria-hidden="true" />
-            {pdfPending ? 'Preparing…' : 'Download PDF'}
-          </button>
-        </div>
-      </header>
+    <div className="mx-auto w-full max-w-[1200px] space-y-12">
+      <PageHeader
+        breadcrumbs={['Ops', 'Reports']}
+        title="Reports"
+        titleAccessory={
+          <InfoTip text="How each person did over a period — targets met, quality and speed — with a PDF you can share." />
+        }
+        history={`${period.label} · ${rangeLabel}, compared with ${fmtDate(prior.start)} – ${fmtDate(prior.end)}.`}
+        actions={
+          <>
+            <span className="flex items-center gap-1">
+              <SegmentedControl<PeriodKey>
+                options={PERIODS.map((p) => ({ value: p.value, label: p.label }))}
+                value={periodKey}
+                onChange={setPeriodKey}
+                ariaLabel="Report period"
+              />
+              <InfoTip text="Pick the time period. Every number is compared with the period before it." />
+            </span>
+            {/* The one brand action on the page — stateful: dots while the PDF
+                builds, a crisp ✓ when it lands (manifesto pillar 8). */}
+            <ActionButton
+              onAction={exportPdf}
+              disabled={loading || rows.length === 0}
+              aria-label={`Download the ${period.label.toLowerCase()} PDF report`}
+              className="min-h-11 rounded-xl"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Download PDF
+            </ActionButton>
+          </>
+        }
+      />
 
       {(tasksQ.error || metricsQ.error) && (
         <ErrorBanner
@@ -258,12 +245,10 @@ export default function OpsReports() {
       />
 
       {/* ── Studio rollup (§20.2) ── */}
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Studio rollup">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-3" aria-label="Studio rollup">
         <StatTile
-          eyebrow={labelTip(
-            'Target met — whole studio',
-            'Out of all the projects the team was supposed to take, how many they finished.',
-          )}
+          eyebrow="Target met — whole studio"
+          tip="Out of all the projects the team was supposed to take, how many they finished."
           icon={Gauge}
           value={fmtPct(totals.attainment.cur)}
           delta={metricDelta(totals.attainment.cur, totals.attainment.prev, {
@@ -274,10 +259,8 @@ export default function OpsReports() {
           loading={loading}
         />
         <StatTile
-          eyebrow={labelTip(
-            'Right first time — whole studio',
-            'How many designs were accepted without anyone asking for changes. Higher is better.',
-          )}
+          eyebrow="Right first time — whole studio"
+          tip="How many designs were accepted without anyone asking for changes. Higher is better."
           icon={ShieldCheck}
           value={fmtPct(totals.fpq.cur)}
           delta={metricDelta(totals.fpq.cur, totals.fpq.prev, {
@@ -288,10 +271,8 @@ export default function OpsReports() {
           loading={loading}
         />
         <StatTile
-          eyebrow={labelTip(
-            'Cancelled orders',
-            'Orders lost because of a design problem. Check the project history before judging anyone.',
-          )}
+          eyebrow="Cancelled orders"
+          tip="Orders lost because of a design problem. Check the project history before judging anyone."
           icon={TriangleAlert}
           value={String(totals.cancelled.cur)}
           delta={metricDelta(totals.cancelled.cur, totals.cancelled.prev, { goodWhen: 'down' })}
@@ -305,16 +286,23 @@ export default function OpsReports() {
         />
       </section>
 
-      <p className="rounded-xl bg-surface-2 px-3 py-2.5 text-sm text-muted">
+      <p className="max-w-prose rounded-xl bg-surface-2 px-4 py-3 text-caption text-muted">
         A logo, a 25-page brand guide and an animation take very different amounts of work — so
         never compare raw counts between teams. Compare{' '}
         <strong className="text-fg">Target met %</strong> only.
       </p>
 
       {loading ? (
-        <div className="space-y-2" role="status" aria-label="Loading report">
+        <div className="card overflow-hidden" role="status" aria-label="Loading report">
+          <div className="border-b border-border/60 px-4 py-3">
+            <div className="skeleton h-3.5 w-64" />
+          </div>
           {[0, 1, 2, 3, 4].map((i) => (
-            <div key={i} className="skeleton h-12" />
+            <div key={i} className="flex items-center gap-6 border-b border-border/40 px-4 py-4 last:border-0">
+              <div className="skeleton h-4 w-4 rounded-full" />
+              <div className="skeleton h-4 w-40" />
+              <div className="skeleton ml-auto h-4 w-56" />
+            </div>
           ))}
         </div>
       ) : rows.length === 0 ? (
@@ -326,37 +314,37 @@ export default function OpsReports() {
         [...byTeam.entries()].map(([team, teamRows]) => (
           <section key={team} aria-label={`${team} team report`}>
             <h2 className="eyebrow">{team}</h2>
-            <div className="card mt-2 overflow-x-auto">
-              <table className="w-full text-left text-sm">
+            <div className="card mt-3 overflow-x-auto">
+              <table className="w-full text-left text-caption">
                 <thead>
-                  <tr className="border-b border-border/60 text-xs text-muted">
-                    <th scope="col" className="w-10 px-3 py-2.5"><span className="sr-only">State</span></th>
-                    <th scope="col" className="px-3 py-2.5 font-medium">Designer</th>
-                    <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                  <tr className="border-b border-border/60 text-label text-muted">
+                    <th scope="col" className="w-10 px-4 py-3"><span className="sr-only">State</span></th>
+                    <th scope="col" className="px-4 py-3 font-medium">Designer</th>
+                    <th scope="col" className="px-4 py-3 text-right font-medium">
                       <span className="inline-flex items-center gap-1">
                         Target met
                         <InfoTip text="Out of the projects this person was supposed to take, how many they finished." />
                       </span>
                     </th>
-                    <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                    <th scope="col" className="px-4 py-3 text-right font-medium">
                       <span className="inline-flex items-center gap-1">
                         Right first time
                         <InfoTip text="How many designs were accepted without anyone asking for changes. Higher is better." />
                       </span>
                     </th>
-                    <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                    <th scope="col" className="px-4 py-3 text-right font-medium">
                       <span className="inline-flex items-center gap-1">
                         Work time
                         <InfoTip text="The usual time from getting a project to sending the first design. Waiting for the client is not counted." />
                       </span>
                     </th>
-                    <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                    <th scope="col" className="px-4 py-3 text-right font-medium">
                       <span className="inline-flex items-center gap-1">
                         Fix time
                         <InfoTip text="The usual time to finish changes after someone asks for them." />
                       </span>
                     </th>
-                    <th scope="col" className="px-3 py-2.5 text-right font-medium">
+                    <th scope="col" className="px-4 py-3 text-right font-medium">
                       <span className="inline-flex items-center gap-1">
                         Cancelled
                         <InfoTip text="Orders lost because of a design problem." />
@@ -378,9 +366,9 @@ export default function OpsReports() {
                       <tr
                         key={designer.id}
                         onClick={() => openDesigner(designer.id)}
-                        className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-surface-2/60"
+                        className="cursor-pointer border-b border-border/40 last:border-0 transition-colors duration-150 ease-out hover:bg-surface-2/60"
                       >
-                        <td className="px-3 py-2.5">
+                        <td className="px-4 py-3">
                           {flagged ? (
                             <TriangleAlert className="h-4 w-4 text-danger" aria-label="Needs attention" />
                           ) : watch ? (
@@ -389,22 +377,22 @@ export default function OpsReports() {
                             <CircleCheck className="h-4 w-4 text-success" aria-label="On track" />
                           )}
                         </td>
-                        <td className="px-3 py-2.5">
+                        <td className="px-4 py-3">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
                               openDesigner(designer.id)
                             }}
-                            className="min-h-[2.75rem] text-left font-medium text-fg hover:text-brand"
+                            className="min-h-11 text-left font-medium text-fg transition-colors duration-150 ease-out hover:text-brand"
                           >
                             {designer.name}
                           </button>
                           {designer.specialty && (
-                            <span className="ml-2 text-xs font-normal text-muted">{designer.specialty}</span>
+                            <span className="ml-2 text-label font-normal tracking-normal text-muted">{designer.specialty}</span>
                           )}
                         </td>
-                        <td className="tnum px-3 py-2.5 text-right">
+                        <td className="tnum px-4 py-3 text-right">
                           <span className="font-medium text-fg">{fmtPct(cur.attainmentPct)}</span>
                           <span className="ml-1.5 inline-block align-middle">
                             {(() => {
@@ -415,25 +403,25 @@ export default function OpsReports() {
                               return d ? <DeltaChip direction={d.direction} good={d.good} label={d.label} /> : null
                             })()}
                           </span>
-                          <p className="text-xs font-normal text-muted">
+                          <p className="text-label font-normal tracking-normal text-muted">
                             finished {cur.completed} of {cur.expectedQuota}
                           </p>
                         </td>
-                        <td className="tnum px-3 py-2.5 text-right">
+                        <td className="tnum px-4 py-3 text-right">
                           <span className="font-medium text-fg">{fmtPct(cur.firstPassQualityPct)}</span>
-                          <p className="text-xs font-normal text-muted">
+                          <p className="text-label font-normal tracking-normal text-muted">
                             {cur.delivered > 0
                               ? `${cur.firstPassClean} of ${cur.delivered} with no changes`
                               : 'nothing sent yet'}
                           </p>
                         </td>
-                        <td className="tnum px-3 py-2.5 text-right text-fg">
+                        <td className="tnum px-4 py-3 text-right text-fg">
                           {fmtDuration(cur.productionMedianMin)}
                         </td>
-                        <td className="tnum px-3 py-2.5 text-right text-fg">
+                        <td className="tnum px-4 py-3 text-right text-fg">
                           {fmtDuration(cur.revisionTurnaroundMedianMin)}
                         </td>
-                        <td className="tnum px-3 py-2.5 text-right">
+                        <td className="tnum px-4 py-3 text-right">
                           <span className={cur.cancelled > 0 ? 'font-medium text-danger' : 'text-muted'}>
                             {cur.cancelled}
                           </span>

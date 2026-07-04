@@ -29,11 +29,11 @@ function friendlyAuthError(raw: string): string {
 
 function BrandMark() {
   return (
-    <div className="flex flex-col items-center gap-3 text-center">
+    <div className="flex flex-col items-center gap-4 text-center">
       <BrandLogo className="h-12 w-12" />
       <div>
-        <h1 className="text-2xl font-semibold leading-tight text-fg">Studio Pulse</h1>
-        <p className="eyebrow mt-1.5">See how the design team is doing</p>
+        <h1 className="text-card text-fg">Studio Pulse</h1>
+        <p className="eyebrow mt-2">See how the design team is doing</p>
       </div>
     </div>
   )
@@ -88,9 +88,9 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-bg px-4 py-10">
+    <main className="flex min-h-screen items-center justify-center bg-bg px-6 py-12">
       <div className="w-full max-w-sm">
-        <div className="card animate-fade-in flex flex-col gap-6 p-6 sm:p-8">
+        <div className="card animate-fade-in flex flex-col gap-8 p-8 sm:p-10">
           <BrandMark />
 
           {!supabaseConfigured ? (
@@ -98,10 +98,10 @@ export default function LoginPage() {
               role="alert"
               className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3"
             >
-              <p className="text-sm font-medium text-fg">
+              <p className="text-caption font-medium text-fg">
                 The app isn&apos;t connected to its database yet — see the README.
               </p>
-              <p className="mt-1 text-xs leading-relaxed text-muted">
+              <p className="mt-1.5 text-caption leading-relaxed text-muted">
                 Set <code className="font-mono">VITE_SUPABASE_URL</code> and{' '}
                 <code className="font-mono">VITE_SUPABASE_ANON_KEY</code>, then restart the dev
                 server. Sign-in stays off until that&apos;s done.
@@ -110,11 +110,11 @@ export default function LoginPage() {
           ) : (
             // Native validation stays ON (no noValidate): an empty submit gets
             // the browser's "fill in this field" bubble instead of a dead button.
-            <form onSubmit={(e) => void onSubmit(e)} className="flex flex-col gap-4">
+            <form onSubmit={(e) => void onSubmit(e)} className="flex flex-col gap-5">
               {error && <ErrorBanner message={error} />}
 
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="login-email" className="text-sm font-medium text-fg">
+              <div className="flex flex-col gap-2">
+                <label htmlFor="login-email" className="text-caption font-medium text-fg">
                   Email
                 </label>
                 <input
@@ -126,12 +126,12 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@studio.com"
-                  className="min-h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-base text-fg placeholder:text-muted/60"
+                  className="min-h-12 w-full rounded-xl border border-border bg-surface px-4 text-body text-fg placeholder:text-muted/60"
                 />
               </div>
 
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="login-password" className="text-sm font-medium text-fg">
+              <div className="flex flex-col gap-2">
+                <label htmlFor="login-password" className="text-caption font-medium text-fg">
                   Password
                 </label>
                 <input
@@ -142,15 +142,17 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="min-h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-base text-fg placeholder:text-muted/60"
+                  className="min-h-12 w-full rounded-xl border border-border bg-surface px-4 text-body text-fg placeholder:text-muted/60"
                 />
               </div>
 
+              {/* The single brand-colored action on the page (pillar 7);
+                  aria-busy + label swap make the working state explicit. */}
               <button
                 type="submit"
                 disabled={submitting}
                 aria-busy={submitting}
-                className="mt-1 min-h-11 w-full rounded-xl bg-brand px-4 text-base font-semibold text-brand-fg transition-opacity duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-1 min-h-12 w-full rounded-xl bg-brand px-4 text-body font-semibold text-brand-fg transition-[opacity,transform] duration-150 ease-out hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 motion-safe:active:scale-[0.98]"
               >
                 {submitting ? 'Signing in…' : 'Sign in'}
               </button>
@@ -158,7 +160,7 @@ export default function LoginPage() {
           )}
         </div>
 
-        <p className="mt-4 text-center text-xs text-muted">
+        <p className="mx-auto mt-6 max-w-prose text-center text-caption text-muted">
           Everyone sees only their own part — designers see just their own numbers.
         </p>
       </div>

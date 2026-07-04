@@ -53,11 +53,15 @@ export const TaskCard = memo(function TaskCard({
 
   const body = (
     <>
-      <p className="truncate text-sm font-medium text-fg" title={task.name ?? task.task_id}>
+      <p className="truncate text-caption font-medium text-fg" title={task.name ?? task.task_id}>
         {task.name ?? 'Untitled project'}
       </p>
-      {designerName && <p className="mt-0.5 truncate text-xs text-muted">{designerName}</p>}
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      {designerName && (
+        <p className="mt-0.5 truncate text-label normal-case tracking-normal text-muted">
+          {designerName}
+        </p>
+      )}
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         {status && <StatusBadge status={status} />}
         {isOpen &&
           (aging ? (
@@ -69,7 +73,7 @@ export const TaskCard = memo(function TaskCard({
               </span>
             </Badge>
           ) : (
-            <span className="inline-flex items-center gap-1 text-xs text-muted">
+            <span className="inline-flex h-5 items-center gap-1 text-label normal-case tracking-normal text-muted">
               <Clock className="h-3 w-3" aria-hidden="true" />
               <span className="tnum">{fmtDuration(age)}</span>
               <span className="sr-only"> in {STATUS_LABELS[status]}</span>
@@ -81,7 +85,7 @@ export const TaskCard = memo(function TaskCard({
           </Badge>
         )}
         {task.concept_count != null && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-xs text-muted">
+          <span className="tnum inline-flex h-5 items-center gap-1 rounded-full bg-surface-2 px-2 text-label text-muted">
             <Layers className="h-3 w-3" aria-hidden="true" />
             {task.concept_count} concepts
           </span>
@@ -90,7 +94,7 @@ export const TaskCard = memo(function TaskCard({
     </>
   )
 
-  const frame = `w-full rounded-xl border bg-surface p-3 text-left shadow-soft ${
+  const frame = `w-full rounded-xl border bg-surface p-3.5 text-left shadow-soft ${
     severe ? 'border-danger/50' : aging ? 'border-warning/50' : 'border-border/60'
   }`
 
@@ -100,8 +104,9 @@ export const TaskCard = memo(function TaskCard({
         type="button"
         onClick={() => onOpen(task.task_id)}
         // hover:bg is the theme-safe cue — the ink shadow alone is invisible
-        // on the dark cockpit background.
-        className={`${frame} block min-h-11 transition-[box-shadow,background-color] duration-200 ease-out hover:bg-surface-2/50 hover:shadow-raised`}
+        // on the dark cockpit background. active:scale is the tactile press
+        // (manifesto pillar 8 — the card physically reacts to pressure).
+        className={`${frame} block min-h-11 transition-[box-shadow,background-color,transform] duration-200 ease-out hover:bg-surface-2/50 hover:shadow-raised motion-safe:active:scale-[0.99]`}
         aria-label={`${task.name ?? 'Untitled project'} — ${
           status ? STATUS_LABELS[status] : 'no status'
         }, open history`}

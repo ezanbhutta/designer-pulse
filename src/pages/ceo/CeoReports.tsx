@@ -18,11 +18,14 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react'
+import { PageHeader } from '../../components/layout/PageHeader'
+import { ActionButton } from '../../components/ui/ActionButton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/ToastProvider'
+import { HeroMetric, Reveal, RevealItem } from './ceoKit'
 import {
   priorPeriod,
   summarizeDesigner,
@@ -38,6 +41,7 @@ import {
   firstName,
   lastFullWeekRange,
   mergeTasks,
+  metricDelta,
   productionMedianInPeriod,
   useConfigValues,
   useDesigners,
@@ -112,7 +116,11 @@ export default function CeoReports() {
       productionMedianInPeriod(metrics, activeIds, prior),
       active,
     )
-    return { rows, summary, active }
+    // Hero totals — the studio's week in one number, vs the week before.
+    const heroCompleted = rows.reduce((s, r) => s + r.cur.completed, 0)
+    const heroPrevCompleted = rows.reduce((s, r) => s + r.prev.completed, 0)
+    const heroExpected = rows.reduce((s, r) => s + r.cur.expectedQuota, 0)
+    return { rows, summary, active, heroCompleted, heroPrevCompleted, heroExpected }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, designersQ.data, tasksQ.data, metricsQ.data, openQ.data, quota, cfg, period.start, period.end])
 
@@ -138,29 +146,26 @@ export default function CeoReports() {
   }
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <h1 className="inline-flex items-center gap-2 text-3xl font-semibold text-fg">
-            Weekly reports{' '}
-            <InfoTip text="Your Monday review, already prepared — one card per designer with their numbers and a one-line summary." />
-          </h1>
-          {/* max-w keeps the subtitle from pushing the Download button below the header */}
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Each designer&apos;s week at a glance — target met, right first time, work time, and
-            which way they are heading. Covers a full Monday–Sunday week (Pakistan time)
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={download}
-          disabled={loading || !model || model.rows.length === 0}
-          className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-fg transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Download className="h-4 w-4" aria-hidden="true" />
-          Download PDF
-        </button>
-      </header>
+    <div className="mx-auto w-full max-w-6xl space-y-12">
+      <PageHeader
+        breadcrumbs={['CEO', 'Reports']}
+        title="Weekly reports"
+        titleAccessory={
+          <InfoTip text="Your Monday review, already prepared — one card per designer with their numbers and a one-line summary." />
+        }
+        history="Each designer's week at a glance — target met, right first time, work time, and which way they are heading. Covers a full Monday–Sunday week (Pakistan time)"
+        actions={
+          <ActionButton
+            onAction={() => download()}
+            disabled={loading || !model || model.rows.length === 0}
+            aria-label="Download this week's report as a PDF"
+            className="min-h-11"
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Download PDF
+          </ActionButton>
+        }
+      />
 
       {/* ── Period picker — defaults to the last full week; never blank (§20.4) ── */}
       <div className="flex items-center gap-2" role="group" aria-label="Report week">
@@ -173,10 +178,10 @@ export default function CeoReports() {
         >
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
         </button>
-        <span className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-medium text-fg">
+        <span className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface px-4 text-caption font-medium text-fg">
           <Calendar className="h-4 w-4 text-muted" aria-hidden="true" />
           Mon {fmtDate(period.start)} – Sun {fmtDate(period.end)}
-          {weeksBack === 0 && <span className="text-xs text-muted">· most recent full week</span>}
+          {weeksBack === 0 && <span className="text-label font-normal text-muted">· most recent full week</span>}
           <InfoTip text="The week this report covers. Use the arrows to look at earlier weeks." />
         </span>
         <button
@@ -189,6 +194,31 @@ export default function CeoReports() {
           <ChevronRight className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
+
+      {/* ── The headline number: the studio's week in one figure ───────────── */}
+      <HeroMetric
+        eyebrow="Projects finished"
+        tip="How many projects the whole studio closed in the selected week, compared with the week before."
+        value={model ? model.heroCompleted : null}
+        delta={
+          model
+            ? metricDelta(model.heroCompleted, model.heroPrevCompleted, {
+                goodWhen: 'up',
+                vs: 'vs the week before',
+              })
+            : null
+        }
+        caption={
+          model
+            ? `${
+                model.heroExpected > 0
+                  ? `of ${model.heroExpected} planned (${Math.round((model.heroCompleted / model.heroExpected) * 100)}% of target) · `
+                  : ''
+              }${model.rows.length} designer card${model.rows.length === 1 ? '' : 's'} below — the person who most needs a chat comes first in each team`
+            : null
+        }
+        loading={loading}
+      />
 
       {failed != null && (
         <ErrorBanner
@@ -210,18 +240,18 @@ export default function CeoReports() {
       ) : (
         model &&
         model.summary && (
-          <div className="card animate-fade-in p-6">
+          <div className="card animate-fade-in p-8">
             <h2 className="eyebrow inline-flex items-center gap-1">
               The week in one paragraph{' '}
               <InfoTip text="A short summary of the whole studio's week, written from the same numbers as the cards below." />
             </h2>
-            <p className="mt-2 text-sm leading-relaxed text-fg">{model.summary}</p>
+            <p className="mt-4 max-w-prose text-body text-fg">{model.summary}</p>
           </div>
         )
       )}
 
       {loading && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" role="status" aria-label="Loading reports">
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3" role="status" aria-label="Loading reports">
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <Skeleton key={i} className="h-48 w-full" />
           ))}
@@ -246,17 +276,19 @@ export default function CeoReports() {
           if (teamRows.length === 0) return null
           return (
             <section key={team} aria-label={`${team} team weekly reports`}>
-              <h2 className="mb-3 inline-flex items-center gap-1.5 text-lg font-semibold text-fg">
+              <h2 className="mb-6 inline-flex items-center gap-1.5 text-card text-fg">
                 {team}{' '}
                 <InfoTip
                   text={`The ${team} team's week, one card per designer — the person who most needs a chat comes first.`}
                 />
               </h2>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <Reveal className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
                 {teamRows.map((r) => (
-                  <ReportCard key={r.designer.id} row={r} />
+                  <RevealItem key={r.designer.id} className="h-full">
+                    <ReportCard row={r} />
+                  </RevealItem>
                 ))}
-              </div>
+              </Reveal>
             </section>
           )
         })}
@@ -277,20 +309,20 @@ function ReportCard({ row }: { row: ReportRow }) {
   const TrendIcon = meta.icon
   return (
     // The id is the anchor the Overview stand-outs drill into (/ceo/reports#<id>).
-    <article id={row.designer.id} className="card animate-fade-in scroll-mt-6 p-5">
+    <article id={row.designer.id} className="card h-full scroll-mt-6 p-8">
       <div className="flex items-start justify-between gap-2">
-        <h3 className="min-w-0 truncate text-base font-semibold text-fg">{row.designer.name}</h3>
+        <h3 className="min-w-0 truncate text-card text-fg">{row.designer.name}</h3>
         {/* Soft chip so a flat "—" reads as a deliberate status token, with the meaning on hover */}
         <span
           title={meta.label}
-          className={`flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-1.5 py-0.5 text-xs font-medium ${meta.className}`}
+          className={`flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-1.5 py-0.5 text-label font-medium ${meta.className}`}
         >
           <TrendIcon className="h-4 w-4" aria-hidden="true" />
           <span className="sr-only">{meta.label}</span>
         </span>
       </div>
-      <p className="mt-1.5 text-sm font-medium leading-snug text-fg">{row.interpretation}</p>
-      <dl className="tnum mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-border/60 pt-3 text-sm">
+      <p className="mt-3 text-caption font-medium leading-snug text-fg">{row.interpretation}</p>
+      <dl className="tnum mt-6 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border/60 pt-4 text-caption">
         <ReportStat
           label="Target met"
           tip="Out of the projects they were supposed to take, how many they finished. This is the only fair way to compare different teams."
@@ -344,12 +376,12 @@ function ReportStat({
 }) {
   return (
     <div>
-      <dt className="inline-flex items-center gap-1 text-xs text-muted">
+      <dt className="inline-flex items-center gap-1 text-label font-normal text-muted">
         {label} <InfoTip text={tip} />
       </dt>
       <dd className={`font-medium ${tone === 'danger' ? 'text-danger' : 'text-fg'}`}>
         {value}
-        {sub && <span className="ml-1 text-xs font-normal text-muted">({sub})</span>}
+        {sub && <span className="ml-1 text-label font-normal text-muted">({sub})</span>}
       </dd>
     </div>
   )
