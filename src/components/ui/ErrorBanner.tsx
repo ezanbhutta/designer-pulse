@@ -1,4 +1,5 @@
 import { RefreshCw, TriangleAlert } from 'lucide-react'
+import { Button } from './Button'
 
 export interface ErrorBannerProps {
   message: string
@@ -23,14 +24,10 @@ export function ErrorBanner({ message, asOf, onRetry }: ErrorBannerProps) {
         {asOf && <p className="mt-0.5 text-xs text-muted">Showing data as of {asOf}.</p>}
       </div>
       {onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="inline-flex min-h-[2.75rem] shrink-0 items-center gap-1.5 rounded-xl border border-border bg-surface px-3.5 text-sm font-medium text-fg transition-colors duration-150 hover:bg-surface-2"
-        >
+        <Button variant="secondary" onClick={onRetry}>
           <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
           Retry
-        </button>
+        </Button>
       )}
     </div>
   )

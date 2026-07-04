@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { TriangleAlert } from 'lucide-react'
+import { Button } from './Button'
 
 export interface ConfirmDialogProps {
   open: boolean
@@ -102,23 +103,12 @@ export function ConfirmDialog({
           </div>
         </div>
         <div className="mt-6 flex justify-end gap-3">
-          <button
-            ref={cancelRef}
-            type="button"
-            onClick={onCancel}
-            className="min-h-[2.75rem] rounded-xl border border-border bg-surface px-4 text-sm font-medium text-fg transition-colors duration-150 hover:bg-surface-2"
-          >
+          <Button ref={cancelRef} variant="secondary" onClick={onCancel}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className={`min-h-[2.75rem] rounded-xl px-4 text-sm font-semibold transition-opacity duration-150 hover:opacity-90 ${
-              destructive ? 'bg-danger text-bg' : 'bg-brand text-brand-fg'
-            }`}
-          >
+          </Button>
+          <Button variant={destructive ? 'danger' : 'primary'} onClick={onConfirm}>
             {confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>,

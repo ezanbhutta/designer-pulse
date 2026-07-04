@@ -16,7 +16,9 @@ const FILL_CLASS: Record<NonNullable<HBarRow['tone']>, string> = {
   success: 'bg-success',
   warning: 'bg-warning',
   danger: 'bg-danger',
-  waiting: 'bg-muted/50',
+  // /70 keeps the client-owned bar visibly lighter than solid `neutral`
+  // while clearing the 3:1 non-text contrast floor against the track.
+  waiting: 'bg-muted/70',
 }
 
 const defaultFormat = (v: number) => String(Math.round(v))
@@ -35,14 +37,16 @@ export function HBar({ rows, formatValue = defaultFormat, ariaLabel }: HBarProps
       {rows.map((row) => {
         const pct = Math.max(0, Math.min(100, (row.value / max) * 100))
         return (
-          <div key={row.label} className="flex items-center gap-3 py-1">
-            <div className="w-36 shrink-0 truncate text-sm">
-              <span className="text-fg">{row.label}</span>
+          <div key={row.label} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1">
+            {/* Full-width line on phones; a fixed column from sm up. The label
+                and its explainer truncate separately so neither hides the other. */}
+            <div className="w-full min-w-0 text-sm sm:w-56 sm:shrink-0">
+              <span className="block truncate text-fg">{row.label}</span>
               {row.secondary && (
-                <span className="ml-1.5 text-xs text-muted">{row.secondary}</span>
+                <span className="block truncate text-xs text-muted">{row.secondary}</span>
               )}
             </div>
-            <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2">
+            <div className="h-2 min-w-0 flex-1 basis-24 overflow-hidden rounded-full bg-surface-2">
               <div
                 className={`h-full rounded-full transition-[width] duration-200 ease-out ${FILL_CLASS[row.tone ?? 'neutral']}`}
                 style={{ width: `${pct}%` }}

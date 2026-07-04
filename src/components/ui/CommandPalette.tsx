@@ -144,13 +144,18 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
       e.preventDefault()
       const cmd = filtered[active]
       if (cmd) runCommand(cmd)
+    } else if (e.key === 'Tab') {
+      // Combobox pattern: focus stays in the search input; ArrowUp/Down move
+      // the selection. Letting Tab out would put focus on the page behind
+      // while the aria-modal palette still covers it.
+      e.preventDefault()
     }
   }
 
   if (!open) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-[55] flex items-start justify-center px-4 pt-[15vh]">
+    <div className="fixed inset-0 z-palette flex items-start justify-center px-4 pt-[15vh]">
       <div
         className="absolute inset-0 bg-bg/60 backdrop-blur-sm"
         onClick={closePalette}

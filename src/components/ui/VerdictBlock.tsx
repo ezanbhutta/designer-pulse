@@ -1,5 +1,6 @@
-import { CheckCircle2, CircleAlert, ExternalLink, OctagonAlert, TriangleAlert } from 'lucide-react'
+import { CheckCircle2, ExternalLink, Info, OctagonAlert, TriangleAlert } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { buttonClasses } from './Button'
 
 export interface VerdictItem {
   id: string
@@ -20,13 +21,14 @@ const SEVERITY_META: Record<
   VerdictItem['severity'],
   { icon: LucideIcon; className: string; label: string }
 > = {
-  info: { icon: CircleAlert, className: 'text-brand', label: 'Info' },
+  // Info wears a calm ⓘ — an exclamation glyph would make "steady, nothing
+  // needs you" items look like alarms (§20.7: calm verdicts are a feature).
+  info: { icon: Info, className: 'text-brand', label: 'Info' },
   warning: { icon: TriangleAlert, className: 'text-warning', label: 'Warning' },
   critical: { icon: OctagonAlert, className: 'text-danger', label: 'Critical' },
 }
 
-const actionClasses =
-  'inline-flex min-h-[2.75rem] shrink-0 items-center gap-1.5 rounded-xl border border-border bg-surface px-3.5 text-sm font-medium text-fg transition-colors duration-150 hover:bg-surface-2'
+const actionClasses = buttonClasses('secondary')
 
 /**
  * The §20.1 lead block — visually dominant (§20.8): every surface opens with

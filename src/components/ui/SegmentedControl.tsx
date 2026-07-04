@@ -62,7 +62,7 @@ export function SegmentedControl<T extends string>({
             tabIndex={selected ? 0 : -1}
             data-value={opt.value}
             onClick={() => onChange(opt.value)}
-            className={`min-h-[2.5rem] rounded-lg px-3.5 text-sm font-medium transition-colors duration-150 ${
+            className={`min-h-11 rounded-lg px-3.5 text-sm font-medium transition-colors duration-150 ${
               selected
                 ? 'bg-surface text-fg shadow-soft'
                 : 'text-muted hover:text-fg'

@@ -111,7 +111,7 @@ export function TaskTrail({ taskId }: TaskTrailProps) {
                 </>
               )}
               {src && (
-                <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-muted">
+                <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-muted">
                   {src}
                 </span>
               )}

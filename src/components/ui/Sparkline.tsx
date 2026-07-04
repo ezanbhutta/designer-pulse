@@ -36,11 +36,15 @@ export function Sparkline({ data, width = 120, height = 32, tone = 'muted' }: Sp
     .join(' ')
 
   return (
+    // Fills its container's width (the tile decides how wide); the fixed
+    // pixel height comes from the prop. preserveAspectRatio="none" +
+    // non-scaling-stroke keep the line weight honest at any width — safe
+    // because the SVG contains no text.
     <svg
       viewBox={`0 0 ${width} ${height}`}
-      width={width}
-      height={height}
-      className={TONE_CLASS[tone]}
+      preserveAspectRatio="none"
+      className={`w-full ${TONE_CLASS[tone]}`}
+      style={{ height }}
       aria-hidden="true"
       focusable="false"
     >
@@ -51,6 +55,7 @@ export function Sparkline({ data, width = 120, height = 32, tone = 'muted' }: Sp
         strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
       />
     </svg>
   )
