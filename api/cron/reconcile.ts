@@ -33,6 +33,7 @@ import {
   listDesignerMap,
   msToIso,
   recomputeTaskMetrics,
+  syncDesignerNames,
   upsertTaskFromClickUp,
 } from '../_lib/ingest'
 
@@ -81,6 +82,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // Self-extending mapping: link name-matching lists to unlinked designers
     // so their history starts flowing without anyone typing list ids.
     const autoLinked = await autoLinkDesignerLists(supa, lists, designers)
+    // ClickUp owns the spelling: linked designers wear the exact list name.
+    const renamed = await syncDesignerNames(supa, lists, designers)
 
     let mappedLists = 0
     let tasksChecked = 0
@@ -213,6 +216,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       lists: lists.length,
       mappedLists,
       autoLinked,
+      renamed,
       tasksChecked,
       backfilled,
       healed,

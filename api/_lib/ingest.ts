@@ -73,16 +73,19 @@ export async function autoLinkDesignerLists(
   const unlinked = (data ?? []) as Designer[]
   if (!unlinked.length) return []
 
+  // Whitespace-insensitive matching: ClickUp list names sometimes carry
+  // doubled spaces (e.g. "M.  Tariq") that no one can see or type.
+  const nameKey = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
   const byName = new Map<string, Designer[]>()
   for (const d of unlinked) {
-    const key = d.name.trim().toLowerCase()
+    const key = nameKey(d.name)
     byName.set(key, [...(byName.get(key) ?? []), d])
   }
 
   const linked: Array<{ list_id: string; list_name: string; designer: string }> = []
   for (const list of lists) {
     if (mapped.has(list.id)) continue
-    const candidates = byName.get(list.name.trim().toLowerCase())
+    const candidates = byName.get(nameKey(list.name))
     if (!candidates || candidates.length !== 1) continue // ambiguous or no match
     const designer = candidates[0]
     const { error: linkErr } = await supa
@@ -94,12 +97,44 @@ export async function autoLinkDesignerLists(
       console.error(`[ingest] auto-link failed for ${designer.name}`, linkErr)
       continue
     }
-    byName.delete(list.name.trim().toLowerCase())
+    byName.delete(nameKey(list.name))
     mapped.set(list.id, { ...designer, clickup_list_id: list.id })
     linked.push({ list_id: list.id, list_name: list.name, designer: designer.name })
     console.log(`[ingest] auto-linked list "${list.name}" (${list.id}) → designer ${designer.name}`)
   }
   return linked
+}
+
+/**
+ * ClickUp is the source of truth for designer NAMES too: a designer linked to
+ * a list always wears that list's exact name. Runs on every reconciliation,
+ * so a rename in ClickUp propagates within 15 minutes and nobody maintains
+ * two spellings of the same person.
+ */
+export async function syncDesignerNames(
+  supa: SupabaseAdmin,
+  lists: Array<{ id: string; name: string }>,
+  mapped: Map<string, Designer>,
+): Promise<Array<{ designer_id: string; from: string; to: string }>> {
+  const renamed: Array<{ designer_id: string; from: string; to: string }> = []
+  for (const list of lists) {
+    const designer = mapped.get(list.id)
+    if (!designer) continue
+    const exact = list.name.trim()
+    if (!exact || designer.name === exact) continue
+    const { error } = await supa
+      .from('designers')
+      .update({ name: exact, updated_at: new Date().toISOString() })
+      .eq('id', designer.id)
+    if (error) {
+      console.error(`[ingest] name sync failed for ${designer.name} → ${exact}`, error)
+      continue
+    }
+    renamed.push({ designer_id: designer.id, from: designer.name, to: exact })
+    mapped.set(list.id, { ...designer, name: exact })
+    console.log(`[ingest] designer renamed to exact ClickUp list name: "${designer.name}" → "${exact}"`)
+  }
+  return renamed
 }
 
 /**
