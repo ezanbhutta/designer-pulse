@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FocusEvent,
   type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
@@ -24,19 +25,36 @@ export interface ToastHandle {
 
 interface ToastRecord extends ToastOptions {
   id: number
+  /** Countdown frozen (hovered / focused) — WCAG 2.2.1 Timing Adjustable. */
+  paused: boolean
+  /** Ms left in the current countdown segment (full TOAST_MS at birth). */
+  remainingMs: number
 }
 
 const TOAST_MS = 5000
 
 const ToastContext = createContext<ToastHandle | null>(null)
 
-/** 5-second countdown bar so the Undo window is visible, not guessed. */
-function CountdownBar() {
-  const [started, setStarted] = useState(false)
+/**
+ * Countdown bar so the Undo window is visible, not guessed. Freezes in place
+ * while the toast is paused (hovered or holding focus) and resumes over the
+ * remaining time.
+ */
+function CountdownBar({ paused, remainingMs }: { paused: boolean; remainingMs: number }) {
+  const [running, setRunning] = useState(false)
   useEffect(() => {
-    const raf = requestAnimationFrame(() => setStarted(true))
-    return () => cancelAnimationFrame(raf)
-  }, [])
+    if (paused) {
+      setRunning(false)
+      return
+    }
+    const raf = requestAnimationFrame(() => setRunning(true))
+    return () => {
+      cancelAnimationFrame(raf)
+      setRunning(false)
+    }
+  }, [paused, remainingMs])
+
+  const startPct = (Math.max(0, remainingMs) / TOAST_MS) * 100
   return (
     <div
       className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden rounded-b-xl"
@@ -44,7 +62,11 @@ function CountdownBar() {
     >
       <div
         className="h-full bg-bg/50"
-        style={{ width: started ? '0%' : '100%', transition: `width ${TOAST_MS}ms linear` }}
+        style={
+          paused || !running
+            ? { width: `${startPct}%`, transition: 'none' }
+            : { width: '0%', transition: `width ${remainingMs}ms linear` }
+        }
       />
     </div>
   )
@@ -54,12 +76,14 @@ function CountdownBar() {
  * Undo-over-confirm (spec §20.6): every non-destructive action acts first,
  * then offers a 5-second Undo here. Toasts stack bottom-center, announce via
  * an aria-live="polite" region, and auto-dismiss with a visible countdown.
- * Success is felt, not just done (§20.7).
+ * Hovering or focusing a toast pauses its timer so slow readers never lose
+ * the Undo (WCAG 2.2.1). Success is felt, not just done (§20.7).
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastRecord[]>([])
   const nextId = useRef(1)
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+  const expiresAt = useRef(new Map<number, number>())
 
   const dismiss = useCallback((id: number) => {
     const timer = timers.current.get(id)
@@ -67,17 +91,48 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       clearTimeout(timer)
       timers.current.delete(id)
     }
+    expiresAt.current.delete(id)
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
   const push = useCallback(
     (opts: ToastOptions) => {
       const id = nextId.current++
-      setToasts((prev) => [...prev, { ...opts, id }])
+      setToasts((prev) => [...prev, { ...opts, id, paused: false, remainingMs: TOAST_MS }])
+      expiresAt.current.set(id, Date.now() + TOAST_MS)
       timers.current.set(
         id,
         setTimeout(() => dismiss(id), TOAST_MS),
       )
+    },
+    [dismiss],
+  )
+
+  const pause = useCallback((id: number) => {
+    const timer = timers.current.get(id)
+    if (!timer) return // already paused or gone
+    clearTimeout(timer)
+    timers.current.delete(id)
+    const remaining = Math.max(0, (expiresAt.current.get(id) ?? Date.now()) - Date.now())
+    setToasts((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, paused: true, remainingMs: remaining } : t)),
+    )
+  }, [])
+
+  const resume = useCallback(
+    (id: number) => {
+      if (timers.current.has(id)) return // already running
+      setToasts((prev) => {
+        const t = prev.find((x) => x.id === id)
+        if (!t || !t.paused) return prev
+        const remaining = Math.max(500, t.remainingMs) // always leave a beat to react
+        expiresAt.current.set(id, Date.now() + remaining)
+        timers.current.set(
+          id,
+          setTimeout(() => dismiss(id), remaining),
+        )
+        return prev.map((x) => (x.id === id ? { ...x, paused: false, remainingMs: remaining } : x))
+      })
     },
     [dismiss],
   )
@@ -109,6 +164,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [dismiss, push],
   )
 
+  const onToastBlur = useCallback(
+    (id: number) => (e: FocusEvent<HTMLDivElement>) => {
+      // Only resume when focus actually LEFT the toast, not moved within it.
+      if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+      resume(id)
+    },
+    [resume],
+  )
+
   return (
     <ToastContext.Provider value={handle}>
       {children}
@@ -117,12 +181,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           aria-live="polite"
           aria-label="Notifications"
           role="region"
-          className="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex flex-col items-center gap-2 px-4"
+          className="pointer-events-none fixed inset-x-0 bottom-6 z-toast flex flex-col items-center gap-2 px-4"
         >
           {toasts.map((t) => (
             <div
               key={t.id}
               role="status"
+              onMouseEnter={() => pause(t.id)}
+              onMouseLeave={() => resume(t.id)}
+              onFocus={() => pause(t.id)}
+              onBlur={onToastBlur(t.id)}
               className="animate-fade-in pointer-events-auto relative flex w-full max-w-md items-center gap-3 rounded-xl bg-fg px-4 py-3 text-bg shadow-raised"
             >
               <p className="min-w-0 flex-1 text-sm font-medium">{t.message}</p>
@@ -130,7 +198,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <button
                   type="button"
                   onClick={() => void handleUndo(t)}
-                  className="-my-2 inline-flex min-h-[2.75rem] shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-bg underline-offset-2 hover:underline"
+                  className="-my-2 inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-bg underline-offset-2 hover:underline"
                 >
                   <Undo2 className="h-4 w-4" aria-hidden="true" />
                   Undo
@@ -144,7 +212,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
-              <CountdownBar />
+              <CountdownBar paused={t.paused} remainingMs={t.remainingMs} />
             </div>
           ))}
         </div>,

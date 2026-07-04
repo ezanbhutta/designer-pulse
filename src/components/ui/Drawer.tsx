@@ -76,6 +76,13 @@ export function Drawer({ open, onClose, title, wide = false, children }: DrawerP
   useEffect(() => {
     if (!open || !rendered) return
     const onKeyDown = (e: KeyboardEvent) => {
+      // A stacked modal (e.g. a nested drawer or confirm dialog portaled on
+      // top) owns the keys while focus is inside it — don't close under it.
+      const target = e.target instanceof Element ? e.target : null
+      if (target && panelRef.current && !panelRef.current.contains(target)) {
+        const otherModal = target.closest('[role="dialog"], [role="alertdialog"]')
+        if (otherModal && otherModal !== panelRef.current) return
+      }
       if (e.key === 'Escape') {
         e.stopPropagation()
         onClose()
