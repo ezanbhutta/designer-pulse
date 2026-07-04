@@ -38,7 +38,7 @@ import { expectOk, supabaseAdmin } from '../_lib/supabaseAdmin'
 import { loadConfig } from '../_lib/config'
 import { fireAlert } from '../_lib/alerts'
 import { recomputeWithPriorDay } from '../_lib/attendance-runner'
-import { setClickUpDeadline } from '../_lib/clickup'
+import { getListTasks, setClickUpDeadline } from '../_lib/clickup'
 import {
   runDeepVerifySlice,
   verifyAgedOpenTasks,
@@ -143,7 +143,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
             .gte('created_at', pktInstant(workDate, '00:00').toISOString())
             .lt('created_at', pktInstant(addDays(workDate, 1), '00:00').toISOString())
           expectOk(countErr, `created-today count (${d.name})`)
-          const created = count ?? 0
+          let created = count ?? 0
+          if (expected - created > 0) {
+            // Trust but verify: count what ClickUp itself says was created in
+            // the designer's list this work day before accusing the assignment
+            // team — a dropped webhook or reconcile lag must never raise a
+            // false gap. (The higher of the two counts wins; missing tasks
+            // are imported by the next reconcile run anyway.)
+            let cuCreated = 0
+            for (let page = 0; page < 3; page++) {
+              const { tasks: createdBatch, lastPage } = await getListTasks(d.clickup_list_id, {
+                dateCreatedGt: pktInstant(workDate, '00:00').getTime(),
+                dateCreatedLt: pktInstant(addDays(workDate, 1), '00:00').getTime(),
+                includeClosed: true,
+                page,
+              })
+              cuCreated += createdBatch.length
+              if (lastPage || createdBatch.length === 0) break
+            }
+            created = Math.max(created, cuCreated)
+          }
           const gap = expected - created
           if (gap <= 0) continue
 
@@ -259,23 +278,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
       autoResolved += stale.length
     }
-    // Yesterday's assignment-gap alerts are history once the day is over.
-    const { data: staleGaps, error: sgErr } = await supa
+    // Assignment-gap alerts clean themselves up too: yesterday's are history
+    // once the day is over, and TODAY's resolve the moment the created count
+    // reaches the expected quota — late assignments and healed imports must
+    // not leave a stale accusation on the board all day.
+    const { data: gapAlertRows, error: sgErr } = await supa
       .from('alerts')
-      .select('id')
+      .select('id,designer_id,context')
       .eq('alert_type', 'assignment_gap')
       .in('status', ['open', 'acknowledged'])
-      .filter('context->>work_date', 'lt', today)
       .limit(2000)
-    expectOk(sgErr, 'stale gap alerts read')
-    const staleGapIds = ((staleGaps ?? []) as Array<{ id: number }>).map((a) => a.id)
-    if (staleGapIds.length) {
+    expectOk(sgErr, 'open gap alerts read')
+    const gapResolveIds: number[] = []
+    for (const a of (gapAlertRows ?? []) as Array<{
+      id: number
+      designer_id: string | null
+      context: Record<string, unknown> | null
+    }>) {
+      const workDate =
+        typeof a.context?.work_date === 'string' ? (a.context.work_date as string) : null
+      if (!workDate || workDate < today) {
+        gapResolveIds.push(a.id)
+        continue
+      }
+      if (!a.designer_id) continue
+      try {
+        const expected = expectedQuotaOn(a.designer_id, workDate, quota)
+        const { count: nowCount, error: gcErr } = await supa
+          .from('task_state')
+          .select('task_id', { count: 'exact', head: true })
+          .eq('designer_id', a.designer_id)
+          .eq('deleted', false)
+          .gte('created_at', pktInstant(workDate, '00:00').toISOString())
+          .lt('created_at', pktInstant(addDays(workDate, 1), '00:00').toISOString())
+        expectOk(gcErr, 'gap re-count')
+        if (expected - (nowCount ?? 0) <= 0) gapResolveIds.push(a.id)
+      } catch (err) {
+        console.error('[cron/pulse] gap re-check failed', err)
+      }
+    }
+    if (gapResolveIds.length) {
       const { error: sgResErr } = await supa
         .from('alerts')
         .update({ status: 'resolved', resolved_at: now.toISOString() })
-        .in('id', staleGapIds)
+        .in('id', gapResolveIds)
       expectOk(sgResErr, 'gap alerts auto-resolve')
-      autoResolved += staleGapIds.length
+      autoResolved += gapResolveIds.length
     }
 
     summary.work_date = today
@@ -286,6 +334,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     summary.agedChecked = agedVerify?.checked ?? 0
     summary.agedHealed = agedVerify?.healed ?? 0
     summary.agedGhosted = agedVerify?.ghosted ?? 0
+    summary.agedUntracked = agedVerify?.untracked ?? 0
 
     // ── (3) Attendance recompute — today + yesterday (spec §9.2) ──────────────
     // Parallel batches within the time budget. The start offset rotates every
@@ -338,6 +387,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       agedChecked: agedVerify?.checked ?? 0,
       agedHealed: agedVerify?.healed ?? 0,
       agedGhosted: agedVerify?.ghosted ?? 0,
+      agedUntracked: agedVerify?.untracked ?? 0,
       openTasks: openTasks.length,
       attendanceRuns,
       deepVerify,

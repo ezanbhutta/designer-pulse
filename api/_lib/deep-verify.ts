@@ -79,24 +79,46 @@ export async function runDeepVerifySlice(
         const ids = batch.map((t) => t.id)
         const { data, error } = await supa
           .from('task_state')
-          .select('task_id,current_status,deleted')
+          .select('task_id,current_status,deleted,list_id,designer_id')
           .in('task_id', ids)
         expectOk(error, 'deep-verify state read')
         const byId = new Map(
-          ((data ?? []) as Array<{ task_id: string; current_status: string | null; deleted: boolean }>).map(
-            (r) => [r.task_id, r],
-          ),
+          (
+            (data ?? []) as Array<{
+              task_id: string
+              current_status: string | null
+              deleted: boolean
+              list_id: string | null
+              designer_id: string | null
+            }>
+          ).map((r) => [r.task_id, r]),
         )
 
         for (const task of batch) {
           result.tasksChecked++
           const snapshot = canonicalizeStatus(task.status?.status ?? null)
           const row = byId.get(task.id)
+          // A task's HOME list decides who owns it. When a task was moved to
+          // another designer's list, the status may still match while the
+          // attribution is stale — that drift diverges too (spec §2: the list
+          // is the assignment).
+          const homeListId = task.list?.id ?? list.id
+          const homeDesigner = designers.get(homeListId)
+          const attributionDrift =
+            !!row &&
+            !row.deleted &&
+            homeDesigner != null &&
+            (row.list_id !== homeListId || row.designer_id !== homeDesigner.id)
           const diverged =
-            !row || row.deleted || (snapshot !== null && row.current_status !== snapshot)
+            !row ||
+            row.deleted ||
+            (snapshot !== null && row.current_status !== snapshot) ||
+            attributionDrift
           if (!diverged) continue
           if (timeLeft() < 4_000) return result // page redone next slice — idempotent
-          await backfillTaskHistory(supa, task, list.id, designer.id)
+          const healDesigner = homeDesigner ?? designer
+          const healListId = homeDesigner ? homeListId : list.id
+          await backfillTaskHistory(supa, task, healListId, healDesigner.id)
           await recomputeTaskMetrics(supa, task.id)
           result.healed++
         }
@@ -139,9 +161,11 @@ export interface AgedVerifyResult {
   checked: number
   healed: number
   ghosted: number
+  /** Rows whose ClickUp task moved to a list outside the roster. */
+  untracked: number
   /** Tasks ClickUp confirmed (now or within AGED_RECHECK_MS) as truly stuck. */
   confirmed: Set<string>
-  /** Tasks healed or ghosted — not stuck; their alerts should auto-resolve. */
+  /** Tasks healed/ghosted/untracked — not stuck; their alerts auto-resolve. */
   removed: Set<string>
 }
 
@@ -154,6 +178,7 @@ export async function verifyAgedOpenTasks(
     checked: 0,
     healed: 0,
     ghosted: 0,
+    untracked: 0,
     confirmed: new Set(),
     removed: new Set(),
   }
@@ -206,6 +231,21 @@ export async function verifyAgedOpenTasks(
               throw err
             }
             out.checked++
+            // Moved outside the roster? Reconcile and the deep sweep walk
+            // mapped lists only, so this row would otherwise sit on the board
+            // as "stuck" forever. Park it; if the list is ever mapped, the
+            // deep sweep re-imports it automatically.
+            const homeListId = live.list?.id ?? null
+            if (homeListId && !designers.has(homeListId)) {
+              await supa
+                .from('task_state')
+                .update({ deleted: true, updated_at: new Date().toISOString() })
+                .eq('task_id', row.task_id)
+              out.untracked++
+              out.removed.add(row.task_id)
+              delete log[row.task_id]
+              return
+            }
             const snapshot = canonicalizeStatus(live.status?.status ?? null)
             if (!snapshot || snapshot === row.current_status) {
               out.confirmed.add(row.task_id)
