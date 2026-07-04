@@ -302,5 +302,25 @@ async function onTaskUpdated(supa: SupabaseAdmin, taskId: string): Promise<void>
   const designers = await listDesignerMap(supa)
   const designer = designers.get(listId)
   if (!designer) return
+
+  // A task we have never seen (or one whose row was born status-less) must
+  // get its FULL history, not a status-less refresh — otherwise a mere
+  // comment on an unseen task creates an "Unknown status" orphan. Known,
+  // healthy rows keep the refresh-without-status rule (drift stays visible
+  // and heals via events + recompute).
+  const existing = await loadTaskState(supa, taskId)
+  if (!existing || existing.current_status == null) {
+    await backfillTaskHistory(supa, task, listId, designer.id)
+    await recomputeTaskMetrics(supa, taskId)
+    const cuStatus = canonicalizeStatus(task.status?.status ?? null)
+    if (cuStatus === 'cancelled' && existing?.current_status !== 'cancelled') {
+      await handleCancellation(supa, {
+        task_id: taskId,
+        designer_id: designer.id,
+        name: task.name,
+      })
+    }
+    return
+  }
   await upsertTaskFromClickUp(supa, task, designer.id, { writeStatus: false })
 }

@@ -249,7 +249,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // frozen by old imports heal without ever flagging anyone.
     const silentVerify: TaskState[] = []
     for (const t of openTasks) {
-      if (!t.current_status) continue
+      if (!t.current_status) {
+        // Status-less rows ("Unknown status" on the board) are orphans from
+        // half-ingested tasks — verify them against ClickUp live regardless
+        // of age so they rebuild within one cycle, never flagging anyone.
+        silentVerify.push(t)
+        continue
+      }
       const age = ageMinutes(t, now)
       if (t.current_status === 'client response') {
         if (age >= cfg.aging_days_client_response * 1440) silentVerify.push(t)
