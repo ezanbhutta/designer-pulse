@@ -12,7 +12,6 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { addDays, pktInstant, pktToday } from '../../shared/pkt'
 import { canonicalizeStatus, parseConceptCount } from '../../shared/statuses'
 import type { TaskState } from '../../shared/types'
 import { createSafetyResponder, requireCronAuth } from '../_lib/http'
@@ -22,11 +21,11 @@ import {
   DESIGNERS_SPACE_ID,
   discoverSpaceLists,
   getListTasks,
-  getTask,
   setClickUpDeadline,
   type ClickUpTask,
 } from '../_lib/clickup'
 import { getLastSync, setLastSync } from '../_lib/config'
+import { sweepDueToday } from '../_lib/due-sweep'
 import {
   autoLinkDesignerLists,
   backfillTaskHistory,
@@ -241,79 +240,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         }
     }
 
-    // PKT day window for the due-today sweep, computed once per run.
-    const today = pktToday()
-    const dueGt = pktInstant(today, '00:00').getTime()
-    const dueLt = pktInstant(addDays(today, 1), '00:00').getTime()
+    // ── Phase A: the due-today sweep for EVERY list, before anything heavy.
+    // Owner's law: the day's plate must ALWAYS match ClickUp, both directions.
+    // Rotating order inside the sweep guarantees no list is starved even when
+    // the budget dies early — the next run picks up where the rotation moved.
+    const sweep = await sweepDueToday(supa, lists, designers, started.getTime() + 14_000)
+    dueTodaySwept = sweep.tasks
+    duePhantomsHealed = sweep.phantoms
 
-    for (const list of lists) {
-      const designer = designers.get(list.id)
-      if (!designer) continue // list without a roster designer — skip
-      mappedLists++
-
-      // Owner's demand: the day's plate must ALWAYS match ClickUp. Pull every
-      // task DUE today in this list FIRST (a tiny set — at most a day's
-      // quota), so due-today counts on the dashboards can never lag behind
-      // ClickUp — no matter how old the task is, whether its webhook was
-      // dropped, or how recently the list was linked.
-      const dueSeenIds = new Set<string>()
-      for (let page = 0; ; page++) {
-        const { tasks: batch, lastPage } = await getListTasks(list.id, {
-          dueDateGt: dueGt,
-          dueDateLt: dueLt,
-          includeClosed: true,
-          page,
-        })
-        if (!batch.length) break
-        dueTodaySwept += batch.length
-        for (const t of batch) dueSeenIds.add(t.id)
-        await processBatch(list, designer, batch)
-        if (lastPage) break
-      }
-
-      // …and the OTHER direction: rows WE think are due today for this
-      // designer but ClickUp did not confirm are phantoms — a deleted task,
-      // a due date moved to another day, or a task moved elsewhere, whose
-      // update message was dropped. Verify each one against ClickUp live and
-      // correct it, so the due-today count matches ClickUp exactly both ways.
-      const { data: ourDueRows, error: ourDueErr } = await supa
-        .from('task_state')
-        .select('task_id')
-        .eq('designer_id', designer.id)
-        .eq('deleted', false)
-        .gte('due_date', new Date(dueGt).toISOString())
-        .lt('due_date', new Date(dueLt).toISOString())
-        .limit(500)
-      expectOk(ourDueErr, `due-today rows read (${list.name})`)
-      for (const row of (ourDueRows ?? []) as Array<{ task_id: string }>) {
-        if (dueSeenIds.has(row.task_id)) continue
-        let live: ClickUpTask | null = null
-        try {
-          live = await getTask(row.task_id)
-        } catch (err) {
-          if (err instanceof ClickUpBudgetError) throw err
-          const msg = err instanceof Error ? err.message : String(err)
-          if (!(msg.includes('404') || /not found/i.test(msg))) throw err
-        }
-        const homeListId = live?.list?.id ?? null
-        const homeDesigner = homeListId ? designers.get(homeListId) : undefined
-        if (!live || !homeDesigner) {
-          // Deleted in ClickUp, or moved to a list outside the roster — the
-          // row must not sit on anyone's plate.
-          const { error: ghostErr } = await supa
-            .from('task_state')
-            .update({ deleted: true, updated_at: new Date().toISOString() })
-            .eq('task_id', row.task_id)
-          expectOk(ghostErr, `due-phantom ghost (${row.task_id})`)
-        } else {
-          // Still real — rebuild from ClickUp so due date, list, designer and
-          // status all snap back to the truth.
-          await backfillTaskHistory(supa, live, homeListId!, homeDesigner.id)
-          await recomputeTaskMetrics(supa, row.task_id)
-        }
-        duePhantomsHealed++
-      }
-
+    // ── Phase B: updated-since walk, also rotated so a heavy backlogged list
+    // cannot permanently starve the tail. last_sync only advances when a full
+    // pass completes, so partial (budget-cut) runs safely redo the window.
+    const mapped = lists.filter((l) => designers.has(l.id))
+    mappedLists = mapped.length
+    const rotB = mapped.length ? Math.floor(started.getTime() / 900_000) % mapped.length : 0
+    const orderB = [...mapped.slice(rotB), ...mapped.slice(0, rotB)]
+    for (const list of orderB) {
+      const designer = designers.get(list.id)!
       // Process page-by-page (≤100 tasks each): after a long webhook outage a
       // busy list can hold 700+ updated tasks, and accumulating them first
       // meant one oversized `.in()` (gateway 414 → 500 → last_sync stuck) and

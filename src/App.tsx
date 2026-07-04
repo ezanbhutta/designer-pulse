@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { OPS_ROLES, homePathFor, useAuth } from './hooks/useAuth'
 import { useRealtimeInvalidation } from './hooks/useRealtime'
+import { useSyncTick } from './hooks/useSyncTick'
 import type { Role } from '../shared/types'
 
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'))
@@ -53,6 +54,7 @@ function PageFallback() {
 export default function App() {
   useSurfaceTheme()
   useRealtimeInvalidation()
+  useSyncTick()
   const { role } = useAuth()
 
   return (
