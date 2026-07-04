@@ -39,7 +39,11 @@ import { loadConfig } from '../_lib/config'
 import { fireAlert } from '../_lib/alerts'
 import { recomputeWithPriorDay } from '../_lib/attendance-runner'
 import { setClickUpDeadline } from '../_lib/clickup'
-import { runDeepVerifySlice } from '../_lib/deep-verify'
+import {
+  runDeepVerifySlice,
+  verifyAgedOpenTasks,
+  type AgedVerifyResult,
+} from '../_lib/deep-verify'
 
 export const config = { maxDuration: 60 }
 
@@ -158,7 +162,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
     }
 
-    // ── (2) Task aging (spec §11 T3, §12) ─────────────────────────────────────
+    // ── (2) Task aging — trust but verify (spec §11 T3, §12) ──────────────────
+    // Collect every open task past its threshold, then check the oldest
+    // candidates against ClickUp LIVE before flagging anything. Rows frozen by
+    // old imports (copied tasks, empty histories) heal on the spot; deleted
+    // ghosts are dropped; only tasks ClickUp confirms as stuck may alert.
     const { data: openRows, error: openErr } = await supa
       .from('task_state')
       .select('*')
@@ -168,14 +176,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     expectOk(openErr, 'open tasks read')
     const openTasks = (openRows ?? []) as TaskState[]
 
-    let agingAlerts = 0
-    let agingCompleted = true
-    const agedTaskIds = new Set<string>()
+    interface AgedCandidate {
+      t: TaskState
+      severity: 'warning' | 'critical'
+      message: string
+      days: number
+      thresholdDays: number
+    }
+    const candidates: AgedCandidate[] = []
     for (const t of openTasks) {
-      if (outOfTime()) {
-        agingCompleted = false
-        break
-      }
       if (!t.current_status) continue
       const thresholdDays =
         t.current_status === 'client response'
@@ -183,20 +192,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           : cfg.aging_days_default
       const age = ageMinutes(t, now)
       if (age < thresholdDays * 1440) continue
-      agedTaskIds.add(t.task_id)
       const days = Math.floor(age / 1440)
       const severity = age >= thresholdDays * 2 * 1440 ? 'critical' : 'warning'
       const message =
         t.current_status === 'client response'
           ? `"${t.name ?? t.task_id}" parked ${days}d in client response — nudge the client`
           : `"${t.name ?? t.task_id}" has sat ${days}d in ${STATUS_LABELS[t.current_status]}`
+      candidates.push({ t, severity, message, days, thresholdDays })
+    }
+
+    // Verified set shrinks agedTaskIds only via CONFIRMED heals/ghosts, so a
+    // budget-starved run can never mass-resolve alerts for unchecked tasks.
+    const agedTaskIds = new Set(candidates.map((c) => c.t.task_id))
+    let agedVerify: AgedVerifyResult | null = null
+    try {
+      agedVerify = await verifyAgedOpenTasks(
+        supa,
+        candidates.map((c) => c.t),
+        started + BUDGET_MS - 8_000, // reserve room for attendance + response
+      )
+      for (const id of agedVerify.removed) agedTaskIds.delete(id)
+    } catch (err) {
+      console.error('[cron/pulse] aged verification failed', err)
+    }
+
+    let agingAlerts = 0
+    for (const c of candidates) {
+      if (outOfTime()) break
+      // Not yet confirmed by ClickUp → no new alert; next runs will get to it.
+      if (!agedVerify?.confirmed.has(c.t.task_id)) continue
       const result = await fireAlert(supa, {
         alert_type: 'task_aging',
-        designer_id: t.designer_id,
-        task_id: t.task_id,
-        severity,
-        message,
-        context: { status: t.current_status, age_days: days, threshold_days: thresholdDays },
+        designer_id: c.t.designer_id,
+        task_id: c.t.task_id,
+        severity: c.severity,
+        message: c.message,
+        context: {
+          status: c.t.current_status,
+          age_days: c.days,
+          threshold_days: c.thresholdDays,
+        },
       })
       if (result.fired || result.escalated) agingAlerts++
     }
@@ -204,7 +239,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // ── (2b) Alerts clean themselves up: when the flagged condition no longer
     // holds, the alert resolves itself — no manual inbox sweeping.
     let autoResolved = 0
-    if (agingCompleted) {
+    {
       const { data: openAging, error: oaErr } = await supa
         .from('alerts')
         .select('id,task_id')
@@ -247,6 +282,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     summary.gapAlerts = gapAlerts
     summary.agingAlerts = agingAlerts
     summary.autoResolved = autoResolved
+    summary.agedCandidates = candidates.length
+    summary.agedChecked = agedVerify?.checked ?? 0
+    summary.agedHealed = agedVerify?.healed ?? 0
+    summary.agedGhosted = agedVerify?.ghosted ?? 0
 
     // ── (3) Attendance recompute — today + yesterday (spec §9.2) ──────────────
     // Parallel batches within the time budget. The start offset rotates every
@@ -295,6 +334,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       gapAlerts,
       agingAlerts,
       autoResolved,
+      agedCandidates: candidates.length,
+      agedChecked: agedVerify?.checked ?? 0,
+      agedHealed: agedVerify?.healed ?? 0,
+      agedGhosted: agedVerify?.ghosted ?? 0,
       openTasks: openTasks.length,
       attendanceRuns,
       deepVerify,
