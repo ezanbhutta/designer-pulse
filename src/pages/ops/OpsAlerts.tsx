@@ -4,6 +4,8 @@ import { BellOff, Check, CheckCheck, ExternalLink } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
+import { InboxZeroReward } from '../../components/ui/InboxZeroReward'
+import { PageHeader } from '../../components/layout/PageHeader'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { useToast } from '../../components/ui/ToastProvider'
@@ -193,34 +195,40 @@ export default function OpsAlerts() {
   }
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="eyebrow">Alerts · new → seen → done</p>
-          <h1 className="mt-1 inline-flex items-center gap-2 text-3xl font-semibold text-fg">
-            Alerts
-            <InfoTip text="The app watches for problems and lists them here. Mark one as Seen while you work on it, then Done when it is sorted." />
-          </h1>
-          <p className="mt-1 text-sm text-muted">
-            {openCount === 0
-              ? 'Nothing waiting.'
-              : `${openCount} waiting${criticalCount > 0 ? ` — ${criticalCount} urgent` : ''}.`}{' '}
-            <span className="text-xs">↑↓ move · A mark seen · R mark done</span>
-          </p>
-        </div>
-        <div className="flex items-center gap-1">
-          <SegmentedControl<View>
-            options={[
-              { value: 'open', label: 'Open' },
-              { value: 'all', label: 'All' },
-            ]}
-            value={view}
-            onChange={setView}
-            ariaLabel="Alert filter"
-          />
-          <InfoTip text="Open shows only alerts that still need action. All shows everything, including finished ones." />
-        </div>
-      </header>
+    <div className="mx-auto w-full max-w-[1000px] space-y-12">
+      <PageHeader
+        breadcrumbs={['Ops', 'Alerts']}
+        title="Alerts"
+        titleAccessory={
+          <InfoTip text="The app watches for problems and lists them here. Mark one as Seen while you work on it, then Done when it is sorted." />
+        }
+        history={
+          <>
+            {alertsQ.isLoading
+              ? 'Checking for problems…'
+              : openCount === 0
+                ? 'Nothing waiting — new problems show up here the moment the app spots them.'
+                : `${openCount} waiting${criticalCount > 0 ? ` — ${criticalCount} urgent` : ''}.`}{' '}
+            <span className="whitespace-nowrap text-label font-normal tracking-normal">
+              ↑↓ move · A mark seen · R mark done
+            </span>
+          </>
+        }
+        actions={
+          <span className="flex items-center gap-1">
+            <SegmentedControl<View>
+              options={[
+                { value: 'open', label: 'Open' },
+                { value: 'all', label: 'All' },
+              ]}
+              value={view}
+              onChange={setView}
+              ariaLabel="Alert filter"
+            />
+            <InfoTip text="Open shows only alerts that still need action. All shows everything, including finished ones." />
+          </span>
+        }
+      />
 
       {alertsQ.error && (
         <ErrorBanner
@@ -244,23 +252,30 @@ export default function OpsAlerts() {
             }`}
       </div>
 
-      <div className="space-y-8">
+      <div className="space-y-12">
         {alertsQ.isLoading ? (
+          // Skeleton mirrors the final rows: icon square + two text lines.
           <div className="space-y-2" role="status" aria-label="Loading alerts">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="skeleton h-20" />
+              <div key={i} className="card flex items-start gap-3 p-5">
+                <div className="skeleton h-9 w-9 rounded-xl" />
+                <div className="min-w-0 flex-1 space-y-2 py-0.5">
+                  <div className="skeleton h-4 w-2/3" />
+                  <div className="skeleton h-3.5 w-1/2" />
+                </div>
+              </div>
             ))}
           </div>
         ) : groups.length === 0 ? (
-          <EmptyState
-            icon={BellOff}
-            title="Nothing needs you right now."
-            hint={
-              view === 'open'
-                ? 'New problems show up here the moment the app spots them.'
-                : 'No alerts so far.'
-            }
-          />
+          view === 'open' ? (
+            // Clearing the alert queue is THE achievement moment (pillar 11).
+            <InboxZeroReward
+              title="Inbox zero"
+              message="Nothing needs you right now — new problems show up here the moment the app spots them."
+            />
+          ) : (
+            <EmptyState icon={BellOff} title="Nothing needs you right now." hint="No alerts so far." />
+          )
         ) : (
           groups.map((group) => (
             <section key={group.type} aria-label={TYPE_LABELS[group.type]}>
@@ -271,7 +286,7 @@ export default function OpsAlerts() {
                 </span>
                 <InfoTip text={TYPE_EXPLAINERS[group.type]} />
               </h2>
-              <div className="mt-2 space-y-2">
+              <div className="mt-3 space-y-2">
                 {group.alerts.map((a) => {
                   const p = presentAlert(a, designers)
                   const Icon = p.icon
@@ -286,8 +301,8 @@ export default function OpsAlerts() {
                       }}
                       onKeyDown={(e) => onRowKeyDown(e, a.id)}
                       aria-label={p.title}
-                      className={`card flex items-start gap-3 p-4 ${
-                        freshIds.has(a.id) ? 'animate-pulse-once' : ''
+                      className={`card flex items-start gap-4 p-5 transition-colors duration-150 ease-out hover:bg-surface-2/40 ${
+                        freshIds.has(a.id) ? 'motion-safe:animate-pulse-once' : ''
                       } ${resolved ? 'opacity-60' : ''}`}
                     >
                       <span
@@ -302,9 +317,11 @@ export default function OpsAlerts() {
                         <Icon className="h-4 w-4" aria-hidden="true" />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-fg">{p.title}</p>
-                        {p.suggestion && <p className="mt-0.5 text-sm text-muted">{p.suggestion}</p>}
-                        <p className="tnum mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                        <p className="text-caption font-semibold text-fg">{p.title}</p>
+                        {p.suggestion && (
+                          <p className="mt-1 max-w-prose text-caption text-muted">{p.suggestion}</p>
+                        )}
+                        <p className="tnum mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-label font-normal tracking-normal text-muted">
                           <Badge tone={SEVERITY_TONE[a.severity]}>{SEVERITY_LABELS[a.severity]}</Badge>
                           {a.status === 'acknowledged' && <Badge tone="neutral">Seen</Badge>}
                           {resolved && <Badge tone="success" icon={CheckCheck}>Done</Badge>}
@@ -318,10 +335,11 @@ export default function OpsAlerts() {
                             href={p.href}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex min-h-[2.25rem] items-center gap-1 rounded-lg px-2 text-xs font-medium text-brand hover:bg-brand-soft"
+                            className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-label text-brand transition-colors duration-150 ease-out hover:bg-brand-soft"
                           >
                             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                             {p.hrefLabel}
+                            <span className="sr-only">(opens in new tab)</span>
                           </a>
                         )}
                         {!resolved && (
@@ -330,7 +348,7 @@ export default function OpsAlerts() {
                               <button
                                 type="button"
                                 onClick={() => acknowledge(a)}
-                                className="inline-flex min-h-[2.75rem] items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-xs font-medium text-fg hover:bg-surface-2"
+                                className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-label text-fg transition-colors duration-150 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.97]"
                                 aria-label={`Mark seen: ${p.title}`}
                               >
                                 <Check className="h-3.5 w-3.5" aria-hidden="true" />
@@ -340,7 +358,7 @@ export default function OpsAlerts() {
                             <button
                               type="button"
                               onClick={() => resolve(a)}
-                              className="inline-flex min-h-[2.75rem] items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-xs font-medium text-fg hover:bg-surface-2"
+                              className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface px-2.5 text-label text-fg transition-colors duration-150 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.97]"
                               aria-label={`Mark done: ${p.title}`}
                             >
                               <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />

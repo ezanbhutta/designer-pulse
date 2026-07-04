@@ -529,7 +529,7 @@ export default function OpsBoard() {
               href={clickupTaskUrl(trailTask.task_id) ?? '#'}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-2"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2"
             >
               <ExternalLink className="h-4 w-4" aria-hidden="true" />
               Open in ClickUp

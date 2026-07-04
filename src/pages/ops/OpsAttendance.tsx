@@ -20,6 +20,7 @@ import { Badge } from '../../components/ui/Badge'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
+import { PageHeader } from '../../components/layout/PageHeader'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { StatTile } from '../../components/ui/StatTile'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
@@ -69,21 +70,6 @@ const STATUS_DISPLAY: Record<AttendanceStatus, string> = {
   WeeklyOff: 'Day off',
   Absent: 'Absent',
   Incomplete: 'Incomplete',
-}
-
-/**
- * Label + ⓘ for StatTile's string-typed `eyebrow` (copy-pass workaround, local
- * to this file — StatTile's props are owned elsewhere). The node keeps a
- * readable toString so StatTile's template-literal aria-labels stay sensible.
- */
-function labelTip(label: string, tip: string): string {
-  const node = (
-    <span className="inline-flex items-center gap-1">
-      {label}
-      <InfoTip text={tip} />
-    </span>
-  )
-  return Object.assign({}, node, { toString: () => label }) as unknown as string
 }
 
 interface DayRow {

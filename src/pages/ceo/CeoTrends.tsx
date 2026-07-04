@@ -6,9 +6,10 @@
  * Workload Forecast warns of next week's overload before it lands.
  */
 
-import { useMemo, type ReactNode } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CheckCircle2, Flame, TrendingUp } from 'lucide-react'
+import { PageHeader } from '../../components/layout/PageHeader'
 import { Badge } from '../../components/ui/Badge'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
@@ -18,6 +19,7 @@ import { StatTile } from '../../components/ui/StatTile'
 import { TrendLine, type TrendPoint } from '../../components/ui/TrendLine'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
+import { CornerTip, HeroMetric, Reveal, RevealItem } from './ceoKit'
 import {
   priorPeriod,
   summarizeDesigner,
@@ -32,6 +34,7 @@ import {
   burnoutRisk,
   fpqInPeriod,
   mergeTasks,
+  metricDelta,
   productionMedianInPeriod,
   useAttendanceWindow,
   useConfigValues,
@@ -232,18 +235,30 @@ export default function CeoTrends() {
     .sort((a, b) => severityRank[a.severity] - severityRank[b.severity])
     .slice(0, 4)
 
+  // Hero read: the latest week's quality score against its own 12-week average.
+  const latestQuality =
+    model && model.qualityPoints.length > 0
+      ? model.qualityPoints[model.qualityPoints.length - 1].value
+      : null
+  const qualityDelta =
+    latestQuality != null && model?.qualityBaseline != null
+      ? metricDelta(latestQuality, Math.round(model.qualityBaseline), {
+          goodWhen: 'up',
+          format: (v) => `${v} pts`,
+          vs: 'vs its 12-week average',
+        })
+      : null
+
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="inline-flex items-center gap-2 text-3xl font-semibold text-fg">
-          Trends{' '}
+    <div className="mx-auto w-full max-w-6xl space-y-12">
+      <PageHeader
+        breadcrumbs={['CEO', 'Trends']}
+        title="Trends"
+        titleAccessory={
           <InfoTip text="How quality, speed, overload and workload have been moving over the last 12 weeks." />
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          The last 12 weeks, week by week. Each line is compared with its own 12-week average, so
-          problems show up early — before they become a crisis
-        </p>
-      </header>
+        }
+        history="The last 12 weeks, week by week. Each line is compared with its own 12-week average, so problems show up early — before they become a crisis"
+      />
 
       {failed != null && (
         <ErrorBanner
