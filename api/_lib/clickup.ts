@@ -108,7 +108,7 @@ const remainingMs = () => deadlineAt - Date.now()
 
 async function request<T>(
   path: string,
-  init?: { method?: 'GET' | 'POST'; body?: unknown },
+  init?: { method?: 'GET' | 'POST' | 'PUT'; body?: unknown },
 ): Promise<T> {
   const token = process.env.CLICKUP_API_TOKEN
   if (!token) throw new Error('CLICKUP_API_TOKEN is not set')
@@ -295,4 +295,15 @@ export async function createWebhook(
 export async function getWebhooks(teamId: string): Promise<ClickUpWebhook[]> {
   const data = await request<{ webhooks?: ClickUpWebhook[] }>(`/team/${teamId}/webhook`)
   return data.webhooks ?? []
+}
+
+/** Re-activate (or re-point) an existing webhook — ClickUp suspends webhooks it deems failing. */
+export async function updateWebhook(
+  webhookId: string,
+  endpoint: string,
+): Promise<{ id: string; webhook: ClickUpWebhook }> {
+  return request<{ id: string; webhook: ClickUpWebhook }>(`/webhook/${webhookId}`, {
+    method: 'PUT',
+    body: { endpoint, events: [...WEBHOOK_EVENTS], status: 'active' },
+  })
 }

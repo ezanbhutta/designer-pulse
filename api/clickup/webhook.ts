@@ -58,14 +58,41 @@ function signatureOk(raw: Buffer, header: string | undefined, secret: string): b
   return given.length === expected.length && timingSafeEqual(given, expected)
 }
 
+/**
+ * Current signing secret(s): app_config first (kept fresh by reconcile's
+ * ensureWebhookHealthy, so an auto-re-created webhook verifies immediately),
+ * the env var as fallback/transition. Both are tried — deliveries signed with
+ * either remain valid during a rotation window.
+ */
+async function webhookSecrets(supa: SupabaseAdmin): Promise<string[]> {
+  const out: string[] = []
+  try {
+    const { data } = await supa
+      .from('app_config')
+      .select('value')
+      .eq('key', 'clickup_webhook_secret')
+      .maybeSingle()
+    const v = data?.value
+    if (typeof v === 'string' && v) out.push(v)
+  } catch {
+    /* DB hiccup — fall back to env */
+  }
+  const env = process.env.CLICKUP_WEBHOOK_SECRET
+  if (env && !out.includes(env)) out.push(env)
+  return out
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (req.method !== 'POST') {
     json(res, 405, { error: 'POST only' })
     return
   }
-  const secret = process.env.CLICKUP_WEBHOOK_SECRET
-  if (!secret) {
-    json(res, 500, { error: 'CLICKUP_WEBHOOK_SECRET is not set' })
+  const supa = supabaseAdmin()
+  const secrets = await webhookSecrets(supa)
+  if (!secrets.length) {
+    json(res, 500, {
+      error: 'no webhook secret available — set CLICKUP_WEBHOOK_SECRET or run reconcile once',
+    })
     return
   }
   // A 429 Retry-After of 60s+ must never out-wait the invocation: cap every
@@ -76,7 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   const raw = await readRawBody(req)
   const sigHeader = req.headers['x-signature']
   const sig = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader
-  if (!signatureOk(raw, sig, secret)) {
+  if (!secrets.some((s) => signatureOk(raw, sig, s))) {
     json(res, 401, { error: 'bad signature' })
     return
   }
@@ -91,7 +118,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
   // Do the work BEFORE responding — the function may freeze right after.
   try {
-    await processEvent(supabaseAdmin(), payload)
+    await processEvent(supa, payload)
   } catch (err) {
     // Still 200: retry storms get webhooks disabled by ClickUp, and the
     // reconciliation cron heals any gap (spec §5.2).

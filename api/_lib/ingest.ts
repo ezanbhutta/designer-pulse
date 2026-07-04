@@ -18,7 +18,13 @@ import {
 } from '../../shared/metrics'
 import type { CanonicalStatus } from '../../shared/statuses'
 import type { ClickupEvent, Designer, TaskState } from '../../shared/types'
-import { getTaskTimeInStatus, type ClickUpTask } from './clickup'
+import {
+  createWebhook,
+  getTaskTimeInStatus,
+  getWebhooks,
+  updateWebhook,
+  type ClickUpTask,
+} from './clickup'
 import { expectOk, type SupabaseAdmin } from './supabaseAdmin'
 import { fireAlert } from './alerts'
 
@@ -103,6 +109,61 @@ export async function autoLinkDesignerLists(
     console.log(`[ingest] auto-linked list "${list.name}" (${list.id}) → designer ${designer.name}`)
   }
   return linked
+}
+
+const WEBHOOK_SECRET_KEY = 'clickup_webhook_secret'
+
+/**
+ * The instant channel guarantees itself: every reconciliation verifies our
+ * ClickUp webhook is registered and healthy — re-creates it if missing,
+ * re-activates it if ClickUp suspended it after delivery failures — and keeps
+ * the signing secret in app_config so the receiver always verifies against
+ * the CURRENT secret, even right after an automatic re-create. One API call
+ * when all is well; null (no-op) when env doesn't identify the team or the
+ * public URL (e.g. local runs).
+ */
+export async function ensureWebhookHealthy(
+  supa: SupabaseAdmin,
+): Promise<{ status: 'active' | 'recreated' | 'reactivated'; failCount: number } | null> {
+  const teamId = process.env.CLICKUP_TEAM_ID
+  const host = (process.env.VERCEL_PROJECT_PRODUCTION_URL ?? '').replace(/^https?:\/\//, '')
+  if (!teamId || !host) return null
+  const endpoint = `https://${host}/api/clickup/webhook`
+
+  const hooks = await getWebhooks(teamId)
+  let ours = hooks.find((w) => w.endpoint === endpoint) ?? null
+  let status: 'active' | 'recreated' | 'reactivated' = 'active'
+  if (!ours) {
+    const created = await createWebhook(teamId, endpoint)
+    ours = created.webhook ?? null
+    status = 'recreated'
+    console.log(`[ingest] ClickUp webhook re-created for ${endpoint}`)
+  } else if ((ours.health?.status ?? 'active') !== 'active') {
+    const wasStatus = ours.health?.status
+    const updated = await updateWebhook(ours.id, endpoint)
+    ours = updated.webhook ?? ours
+    status = 'reactivated'
+    console.log(
+      `[ingest] ClickUp webhook re-activated (was ${wasStatus}, fails=${ours?.health?.fail_count ?? 0})`,
+    )
+  }
+
+  // Keep the receiver's signing secret current — app_config beats stale env.
+  const secret = ours?.secret
+  if (secret) {
+    const { data, error: readErr } = await supa
+      .from('app_config')
+      .select('value')
+      .eq('key', WEBHOOK_SECRET_KEY)
+      .maybeSingle()
+    if (!readErr && (data?.value ?? null) !== secret) {
+      const { error } = await supa
+        .from('app_config')
+        .upsert({ key: WEBHOOK_SECRET_KEY, value: secret }, { onConflict: 'key' })
+      if (error) console.error('[ingest] webhook secret save failed', error)
+    }
+  }
+  return { status, failCount: ours?.health?.fail_count ?? 0 }
 }
 
 /**

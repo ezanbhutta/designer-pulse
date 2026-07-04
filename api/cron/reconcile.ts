@@ -30,6 +30,7 @@ import { getLastSync, setLastSync } from '../_lib/config'
 import {
   autoLinkDesignerLists,
   backfillTaskHistory,
+  ensureWebhookHealthy,
   handleCancellation,
   insertEvent,
   listDesignerMap,
@@ -77,6 +78,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const autoLinked = await autoLinkDesignerLists(supa, lists, designers)
     // ClickUp owns the spelling: linked designers wear the exact list name.
     const renamed = await syncDesignerNames(supa, lists, designers)
+    // The instant channel guarantees itself: verify/repair the ClickUp
+    // webhook registration + signing secret every run.
+    let webhook: Awaited<ReturnType<typeof ensureWebhookHealthy>> = null
+    try {
+      webhook = await ensureWebhookHealthy(supa)
+    } catch (err) {
+      if (err instanceof ClickUpBudgetError) throw err
+      console.error('[cron/reconcile] webhook ensure failed', err)
+    }
 
     let mappedLists = 0
     let tasksChecked = 0
@@ -328,6 +338,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       mappedLists,
       autoLinked,
       renamed,
+      webhook,
       tasksChecked,
       backfilled,
       healed,
