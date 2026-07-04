@@ -353,8 +353,11 @@ export async function deleteQuotaException(id: string) {
 
 // ── ClickUp deep links (§22.1 — the tool never writes to ClickUp) ────────────
 
+/** ClickUp workspace (team) id — list URLs don't open without it in the path. */
+const CLICKUP_TEAM_ID = '9018453434'
+
 export function clickupListUrl(listId: string | null | undefined): string | null {
-  return listId ? `https://app.clickup.com/v/li/${listId}` : null
+  return listId ? `https://app.clickup.com/${CLICKUP_TEAM_ID}/v/li/${listId}` : null
 }
 
 export function clickupTaskUrl(taskId: string | null | undefined): string | null {
