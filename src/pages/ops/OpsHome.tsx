@@ -1,21 +1,31 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { motion, useReducedMotion } from 'framer-motion'
 import {
   ArrowRight,
+  ArrowUpRight,
   CheckCircle2,
   ExternalLink,
   Gauge,
   Inbox,
+  Info,
+  OctagonAlert,
   PackagePlus,
   RotateCcw,
+  TriangleAlert,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { AnimatedCounter } from '../../components/ui/AnimatedCounter'
 import { Drawer } from '../../components/ui/Drawer'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
+import { InboxZeroReward } from '../../components/ui/InboxZeroReward'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { StatTile } from '../../components/ui/StatTile'
-import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
+import { staggerContainer, staggerItem } from '../../components/ui/motion'
+import { PageHeader } from '../../components/layout/PageHeader'
+import type { VerdictItem } from '../../components/ui/VerdictBlock'
 import { TaskCard } from '../../components/shared/TaskCard'
 import { TaskTrail } from '../../components/shared/TaskTrail'
 import {
@@ -54,31 +64,29 @@ import {
   useTasksSince,
 } from './opsData'
 
-/**
- * Label + ⓘ for StatTile's string-typed `eyebrow` (copy-pass workaround, local
- * to this file — StatTile's props are owned elsewhere). The node keeps a
- * readable toString so StatTile's template-literal aria-labels stay sensible.
- */
-function labelTip(label: string, tip: string): string {
-  const node = (
-    <span className="inline-flex items-center gap-1">
-      {label}
-      <InfoTip text={tip} />
-    </span>
-  )
-  return Object.assign({}, node, { toString: () => label }) as unknown as string
+/** Severity glyphs — a distinct icon per level, never color alone (§20.10). */
+const SEVERITY_META: Record<
+  VerdictItem['severity'],
+  { icon: LucideIcon; className: string; label: string }
+> = {
+  info: { icon: Info, className: 'text-brand', label: 'Info' },
+  warning: { icon: TriangleAlert, className: 'text-warning', label: 'Warning' },
+  critical: { icon: OctagonAlert, className: 'text-danger', label: 'Critical' },
 }
 
 /**
- * The Ops attention surface (spec §13.1 / §20.11): what needs a human NOW,
- * ranked — assignment gaps, aging tasks (the client-response swamp called
- * out), fresh cancellations, attendance flags — then today's numbers with
- * deltas and causes, spare capacity, and the aging preview.
+ * THE ACTION INBOX (manifesto pillar 6, adapted to real data): the page exists
+ * so the Ops manager can fix blockages. The ranked verdict items ARE the page —
+ * a staggered, spring-entering list where every row carries its own 1-click
+ * next step (a ClickUp deep link or an in-app drill — the tool never writes to
+ * ClickUp, §22.1). Empty inbox = the reward. Today's numbers are pushed below
+ * as monitoring, not action.
  */
 export default function OpsHome() {
   const navigate = useNavigate()
   const openDesigner = useDesignerDrawer()
   const cfg = useConfigValues()
+  const reduced = useReducedMotion()
   // Minute tick so an unattended cockpit rolls over PKT midnight and task
   // ages/shift math never freeze at the last render.
   const [now, setNow] = useState(() => new Date())
@@ -180,7 +188,7 @@ export default function OpsHome() {
     }
   }, [recentTasks, designers, openTasks, ctx, cfg, today, yesterday, now])
 
-  // ── Verdict items, ranked (§20.1) ───────────────────────────────────────────
+  // ── Inbox items, ranked (§20.1) ─────────────────────────────────────────────
   const verdictItems = useMemo(() => {
     const items: VerdictItem[] = []
     const alerts = alertsQ.data ?? []
@@ -200,7 +208,7 @@ export default function OpsHome() {
           ? `Has ${row.filled} of ${row.expected} projects due today. Handing out work is the team lead's job, not theirs.`
           : undefined,
         action: href
-          ? { label: `Open ${d ? firstName(d.name) : 'the'} list in ClickUp`, href }
+          ? { label: `Open ${d ? firstName(d.name) : 'the'} list`, href }
           : { label: 'Open Alerts', onClick: () => navigate('/ops/alerts') },
       })
     }
@@ -270,7 +278,7 @@ export default function OpsHome() {
         detail: `Has ${r.filled} of ${r.expected} projects due today · day started ${
           r.schedule ? fmtShiftTime(r.schedule.shift_start) : '—'
         } PKT`,
-        action: href ? { label: 'Open list in ClickUp', href } : undefined,
+        action: href ? { label: 'Open their list', href } : undefined,
       })
     }
 
@@ -320,16 +328,36 @@ export default function OpsHome() {
   const anySpare = spareRows.some((r) => r.spare > 0)
 
   const loading = openTasksQ.isLoading || tasksQ.isLoading
+  const inboxLoading = loading || alertsQ.isLoading
+
+  // The hover-revealed 1-click action (manifesto pillar 6): parked invisible on
+  // pointer screens until the row is hovered or focused; always visible on
+  // touch. High-contrast neutral (bg-fg) — brand stays reserved.
+  const actionCls =
+    'inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-fg px-4 text-caption font-medium text-bg transition-[opacity,transform,background-color] duration-150 ease-out hover:opacity-90 motion-safe:active:scale-[0.97] md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100'
 
   return (
-    <div className="space-y-6">
-      <header>
-        <p className="eyebrow">Team overview · {fmtDate(today)} · all times PKT</p>
-        <h1 className="mt-1 inline-flex items-center gap-2 text-3xl font-semibold text-fg">
-          Today
+    <div className="mx-auto w-full max-w-[1000px] space-y-16">
+      <PageHeader
+        breadcrumbs={['Ops', 'Today']}
+        title="Today"
+        titleAccessory={
           <InfoTip text="A live picture of today — what needs you, today's numbers, who has room for more work, and what is stuck." />
-        </h1>
-      </header>
+        }
+        history={
+          inboxLoading
+            ? `${fmtDate(today)} · all times PKT — checking the board…`
+            : verdictItems.length === 0
+              ? `${fmtDate(today)} · all times PKT — nothing needs a human, ${openTasks.length} project${
+                  openTasks.length === 1 ? '' : 's'
+                } moving on their own.`
+              : `${fmtDate(today)} · all times PKT — ${verdictItems.length} thing${
+                  verdictItems.length === 1 ? '' : 's'
+                } need${verdictItems.length === 1 ? 's' : ''} a human, ${openTasks.length} project${
+                  openTasks.length === 1 ? '' : 's'
+                } in motion.`
+        }
+      />
 
       {openTasksQ.error && (
         <ErrorBanner
@@ -343,104 +371,198 @@ export default function OpsHome() {
         />
       )}
 
-      <VerdictBlock
-        title="Needs attention now"
-        items={verdictItems}
-        emptyMessage="Nothing needs you right now — everyone has enough work and nothing is stuck."
-        loading={loading || alertsQ.isLoading}
-      />
+      {/* ── 1 · THE INBOX — the reason this page exists ─────────────────────── */}
+      <section aria-label="Action inbox">
+        <div className="mb-6 flex items-baseline justify-between gap-4">
+          <h2 className="inline-flex items-center gap-2.5 text-card text-fg">
+            Needs a human
+            {!inboxLoading && verdictItems.length > 0 && (
+              <span className="tnum inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-surface-2 px-2 text-caption font-semibold text-fg ring-1 ring-border">
+                <AnimatedCounter value={verdictItems.length} />
+              </span>
+            )}
+            <InfoTip text="Everything that needs a person right now, worst first. Each row carries its own one-click next step." />
+          </h2>
+          <p className="text-label uppercase text-muted">worst first</p>
+        </div>
 
-      {/* ── Today's numbers (§20.2: delta + cause on every tile) ── */}
-      <section aria-label="Today's numbers" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile
-          eyebrow={labelTip(
-            'Given out today',
-            "How many new projects were handed to designers today, out of the team's total for the day.",
-          )}
-          icon={PackagePlus}
-          value={`${derived.totalAssignedToday} of ${derived.totalExpected}`}
-          delta={metricDelta(derived.totalAssignedToday, derived.assignedYesterday, {
-            goodWhen: 'up',
-            vs: 'vs yesterday by this time',
-          })}
-          cause={
-            underQuotaCount > 0
-              ? `${underQuotaCount} ${underQuotaCount === 1 ? 'person still needs' : 'people still need'} more work`
-              : 'everyone working today has enough work'
-          }
-          state={underQuotaCount > 0 ? 'watch' : 'ok'}
-          loading={tasksQ.isLoading}
-        />
-        <StatTile
-          eyebrow={labelTip('Finished today', 'Projects closed as done today.')}
-          icon={CheckCircle2}
-          value={String(derived.completedTodayTasks.length)}
-          delta={metricDelta(derived.completedTodayTasks.length, derived.completedYesterday, {
-            goodWhen: 'up',
-            vs: 'vs yesterday by this time',
-          })}
-          cause={
-            derived.completedTodayTasks.length > 0
-              ? `${completedClean} of ${derived.completedTodayTasks.length} were right first time — no changes asked`
-              : 'nothing finished yet today'
-          }
-          loading={tasksQ.isLoading || metricsQ.isLoading}
-        />
-        <StatTile
-          eyebrow={labelTip(
-            'Fixes in progress',
-            'Projects where someone asked for changes and the designer is fixing them now.',
-          )}
-          icon={RotateCcw}
-          value={String(openRevisions.length)}
-          delta={metricDelta(openRevisions.length, revisionsAtDayStart, {
-            goodWhen: 'down',
-            vs: 'vs start of day',
-          })}
-          cause={
-            openRevisions.length > 0
-              ? `${csrRounds} caught by our checkers · ${clientRounds} caught by clients`
-              : 'no fixes in progress right now'
-          }
-          state={openRevisions.length > 0 ? 'watch' : 'ok'}
-          loading={openTasksQ.isLoading}
-          // Land on the stage-grouped board so the revision column is visible
-          // no matter which grouping was used last.
-          onClick={() => navigate('/ops/board?group=status')}
-        />
-        <StatTile
-          eyebrow={labelTip(
-            'Busy level',
-            "How full today's plates are — only projects DUE today count, compared to today's total target.",
-          )}
-          icon={Gauge}
-          value={fmtPct(utilization)}
-          cause={`${derived.totalFilled} projects due today across ${designers.length} ${
-            designers.length === 1 ? 'person' : 'people'
-          }`}
-          reference={
-            heaviest && heaviest.util != null
-              ? `busiest: ${heaviest.designer.name} at ${heaviest.util}%`
-              : null
-          }
-          state={utilization == null ? null : utilization > 120 ? 'watch' : 'ok'}
-          loading={openTasksQ.isLoading}
-        />
+        {/* One quiet announcement for screen readers as the inbox changes. */}
+        <div aria-live="polite" className="sr-only">
+          {inboxLoading
+            ? 'Checking what needs attention'
+            : verdictItems.length === 0
+              ? 'Nothing needs you right now'
+              : `${verdictItems.length} item${verdictItems.length === 1 ? '' : 's'} need attention`}
+        </div>
+
+        {inboxLoading ? (
+          // Skeleton mirrors the final list — same card, same row anatomy.
+          <div
+            className="divide-y divide-border/60 rounded-2xl border border-border bg-surface shadow-edge"
+            role="status"
+            aria-label="Loading the inbox"
+          >
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex items-start gap-4 p-6">
+                <div className="skeleton h-10 w-10 rounded-full" />
+                <div className="min-w-0 flex-1 space-y-2.5 py-1">
+                  <div className="skeleton h-4 w-3/4" />
+                  <div className="skeleton h-3.5 w-1/2" />
+                </div>
+                <div className="skeleton h-11 w-36 rounded-xl" />
+              </div>
+            ))}
+          </div>
+        ) : verdictItems.length === 0 ? (
+          <InboxZeroReward
+            title="All clear"
+            message="Nothing needs you right now — everyone has enough work and nothing is stuck. New problems appear here the moment the app spots them."
+          />
+        ) : (
+          <motion.ul
+            variants={staggerContainer}
+            initial={reduced ? false : 'hidden'}
+            animate="show"
+            className="divide-y divide-border/60 rounded-2xl border border-border bg-surface shadow-edge"
+          >
+            {verdictItems.map((item) => {
+              const meta = SEVERITY_META[item.severity]
+              const Icon = meta.icon
+              return (
+                <motion.li
+                  key={item.id}
+                  variants={staggerItem}
+                  className="group flex flex-wrap items-center gap-4 p-6 transition-colors duration-150 ease-out first:rounded-t-2xl last:rounded-b-2xl hover:bg-surface-2/50 sm:flex-nowrap"
+                >
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 ring-1 ring-border">
+                    <Icon className={`h-5 w-5 ${meta.className}`} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-caption font-semibold leading-snug text-fg">
+                      <span className="sr-only">{meta.label}: </span>
+                      {item.text}
+                    </p>
+                    {item.detail && (
+                      <p className="mt-1 max-w-prose text-caption leading-snug text-muted">
+                        {item.detail}
+                      </p>
+                    )}
+                  </div>
+                  {item.action &&
+                    (item.action.href ? (
+                      <a href={item.action.href} target="_blank" rel="noreferrer" className={actionCls}>
+                        {item.action.label}
+                        <ExternalLink className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
+                        <span className="sr-only">(opens in new tab)</span>
+                      </a>
+                    ) : (
+                      <button type="button" onClick={item.action.onClick} className={actionCls}>
+                        {item.action.label}
+                        <ArrowUpRight className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
+                      </button>
+                    ))}
+                </motion.li>
+              )
+            })}
+          </motion.ul>
+        )}
       </section>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      {/* ── 2 · Today's pulse — monitoring, pushed below the action layer ───── */}
+      <section aria-label="Today's pulse">
+        <div className="mb-6 flex items-baseline gap-2">
+          <h2 className="inline-flex items-center gap-2 text-card text-fg">
+            Today's pulse
+            <InfoTip text="Today's numbers at a glance — each one says how it compares with yesterday and why." />
+          </h2>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatTile
+            eyebrow="Given out today"
+            tip="How many new projects were handed to designers today, out of the team's total for the day."
+            icon={PackagePlus}
+            value={`${derived.totalAssignedToday} of ${derived.totalExpected}`}
+            delta={metricDelta(derived.totalAssignedToday, derived.assignedYesterday, {
+              goodWhen: 'up',
+              vs: 'vs yesterday by this time',
+            })}
+            cause={
+              underQuotaCount > 0
+                ? `${underQuotaCount} ${underQuotaCount === 1 ? 'person still needs' : 'people still need'} more work`
+                : 'everyone working today has enough work'
+            }
+            state={underQuotaCount > 0 ? 'watch' : 'ok'}
+            loading={tasksQ.isLoading}
+          />
+          <StatTile
+            eyebrow="Finished today"
+            tip="Projects closed as done today."
+            icon={CheckCircle2}
+            value={String(derived.completedTodayTasks.length)}
+            delta={metricDelta(derived.completedTodayTasks.length, derived.completedYesterday, {
+              goodWhen: 'up',
+              vs: 'vs yesterday by this time',
+            })}
+            cause={
+              derived.completedTodayTasks.length > 0
+                ? `${completedClean} of ${derived.completedTodayTasks.length} were right first time — no changes asked`
+                : 'nothing finished yet today'
+            }
+            loading={tasksQ.isLoading || metricsQ.isLoading}
+          />
+          <StatTile
+            eyebrow="Fixes in progress"
+            tip="Projects where someone asked for changes and the designer is fixing them now."
+            icon={RotateCcw}
+            value={String(openRevisions.length)}
+            delta={metricDelta(openRevisions.length, revisionsAtDayStart, {
+              goodWhen: 'down',
+              vs: 'vs start of day',
+            })}
+            cause={
+              openRevisions.length > 0
+                ? `${csrRounds} caught by our checkers · ${clientRounds} caught by clients`
+                : 'no fixes in progress right now'
+            }
+            state={openRevisions.length > 0 ? 'watch' : 'ok'}
+            loading={openTasksQ.isLoading}
+            // Land on the stage-grouped board so the revision column is visible
+            // no matter which grouping was used last.
+            onClick={() => navigate('/ops/board?group=status')}
+          />
+          <StatTile
+            eyebrow="Busy level"
+            tip="How full today's plates are — only projects DUE today count, compared to today's total target."
+            icon={Gauge}
+            value={fmtPct(utilization)}
+            cause={`${derived.totalFilled} projects due today across ${designers.length} ${
+              designers.length === 1 ? 'person' : 'people'
+            }`}
+            reference={
+              heaviest && heaviest.util != null
+                ? `busiest: ${heaviest.designer.name} at ${heaviest.util}%`
+                : null
+            }
+            state={utilization == null ? null : utilization > 120 ? 'watch' : 'ok'}
+            loading={openTasksQ.isLoading}
+          />
+        </div>
+      </section>
+
+      {/* ── 3 · Context panels ──────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
         {/* ── Spare capacity right now (§20.11 hidden insight) ── */}
-        <section className="card p-5">
+        <section className="card p-6 md:p-8">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="inline-flex items-center gap-1 text-lg font-semibold text-fg">
+            <h2 className="inline-flex items-center gap-2 text-card text-fg">
               Who has room for more
               <InfoTip text="People who can take more projects today. Only projects DUE today fill a plate — status doesn't matter. Giving them work is the team lead's job, not theirs." />
             </h2>
-            <span className="text-xs text-muted">most free first</span>
+            <span className="text-label uppercase text-muted">most free first</span>
           </div>
-          <div className="mt-4 space-y-1">
+          <div className="mt-6 space-y-1">
             {loading ? (
-              [0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-12" />)
+              [0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-14" />)
             ) : spareRows.length === 0 ? (
               <EmptyState
                 icon={Inbox}
@@ -459,19 +581,21 @@ export default function OpsHome() {
                 return (
                   <div
                     key={r.designer.id}
-                    className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-surface-2"
+                    className="flex items-center gap-3 rounded-xl px-3 py-2 transition-colors duration-150 ease-out hover:bg-surface-2"
                   >
                     <button
                       type="button"
                       onClick={() => openDesigner(r.designer.id)}
-                      className="min-h-[2.75rem] min-w-0 flex-1 text-left"
+                      className="min-h-11 min-w-0 flex-1 text-left"
                       aria-label={`Open ${r.designer.name}'s details`}
                     >
-                      <p className="truncate text-sm font-medium text-fg">
+                      <p className="truncate text-caption font-medium text-fg">
                         {r.designer.name}
-                        <span className="ml-2 text-xs font-normal text-muted">{r.designer.team}</span>
+                        <span className="ml-2 text-label font-normal tracking-normal text-muted">
+                          {r.designer.team}
+                        </span>
                       </p>
-                      <p className="tnum text-xs text-muted">
+                      <p className="tnum text-label font-normal tracking-normal text-muted">
                         {r.filled} due today, target {r.expected}
                         {r.spare > 0
                           ? ` — ${r.spare} open slot${r.spare === 1 ? '' : 's'}`
@@ -481,7 +605,7 @@ export default function OpsHome() {
                       </p>
                     </button>
                     <span
-                      className={`tnum text-sm font-medium ${
+                      className={`tnum text-caption font-medium ${
                         r.spare > 0 ? 'text-success' : r.spare < 0 ? 'text-danger' : 'text-muted'
                       }`}
                     >
@@ -492,7 +616,7 @@ export default function OpsHome() {
                         href={href}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex h-11 w-11 items-center justify-center rounded-xl text-brand hover:bg-brand-soft"
+                        className="flex h-11 w-11 items-center justify-center rounded-xl text-brand transition-colors duration-150 ease-out hover:bg-brand-soft motion-safe:active:scale-95"
                         aria-label={`Open ${r.designer.name}'s list in ClickUp`}
                         title="Open list in ClickUp"
                       >
@@ -507,20 +631,20 @@ export default function OpsHome() {
         </section>
 
         {/* ── Aging preview ── */}
-        <section className="card p-5">
+        <section className="card p-6 md:p-8">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="inline-flex items-center gap-1 text-lg font-semibold text-fg">
+            <h2 className="inline-flex items-center gap-2 text-card text-fg">
               Stuck projects
               <InfoTip text="Projects that have not moved for too long. The ones waiting on clients are the most important to chase." />
             </h2>
             <Link
               to="/ops/board"
-              className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
+              className="inline-flex items-center gap-1 text-caption font-medium text-brand hover:underline"
             >
               Open the board <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Link>
           </div>
-          <div className="mt-4 space-y-2">
+          <div className="mt-6 space-y-2">
             {openTasksQ.isLoading ? (
               [0, 1, 2].map((i) => <div key={i} className="skeleton h-20" />)
             ) : derived.agingTasks.length === 0 ? (
@@ -542,7 +666,7 @@ export default function OpsHome() {
               ))
             )}
             {derived.agingTasks.length > 5 && (
-              <p className="text-xs text-muted">
+              <p className="text-label font-normal tracking-normal text-muted">
                 +{derived.agingTasks.length - 5} more on the Board page
               </p>
             )}
@@ -561,7 +685,7 @@ export default function OpsHome() {
               href={clickupTaskUrl(trailTask.task_id) ?? '#'}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-2"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2"
             >
               <ExternalLink className="h-4 w-4" aria-hidden="true" />
               Open in ClickUp

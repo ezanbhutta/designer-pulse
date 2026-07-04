@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CheckCircle2, ChevronDown, ChevronRight, ExternalLink, TriangleAlert } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
+import { PageHeader } from '../../components/layout/PageHeader'
 import { Drawer } from '../../components/ui/Drawer'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
@@ -184,76 +185,83 @@ export default function OpsBoard() {
     derived.agingCount === 0 && underQuota.length === 0 && derived.unmapped.length === 0
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="eyebrow">Live board · {fmtDate(today)} PKT</p>
-          <h1 className="mt-1 inline-flex items-center gap-2 text-3xl font-semibold text-fg">
-            Board
-            <InfoTip text="Every open project, in columns. Each column is one stage of the work. The oldest problems rise to the top of each column." />
-          </h1>
-          {/* Verdict first (§20.1) */}
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-            {healthy ? (
-              <Badge tone="success" icon={CheckCircle2}>
-                All good — nothing is stuck and everyone has enough work
-              </Badge>
-            ) : (
-              <>
-                {derived.agingCount > 0 && (
-                  <Badge tone="warning" icon={TriangleAlert}>
-                    {derived.agingCount} stuck too long
-                  </Badge>
-                )}
-                {derived.clientWait > 0 && (
-                  <Badge tone="waiting">{derived.clientWait} waiting for client</Badge>
-                )}
-                {underQuota.length > 0 && (
-                  <Badge tone="warning" icon={TriangleAlert}>
-                    {underQuota.length} {underQuota.length === 1 ? 'person needs' : 'people need'} more work
-                  </Badge>
-                )}
-                {derived.unmapped.length > 0 && (
-                  <Badge tone="warning" icon={TriangleAlert}>
-                    {derived.unmapped.length} project{derived.unmapped.length === 1 ? '' : 's'} with an
-                    unknown status
-                  </Badge>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1">
-            <SegmentedControl<GroupBy>
-              options={[
-                { value: 'status', label: 'By stage' },
-                { value: 'designer', label: 'By person' },
-              ]}
-              value={groupBy}
-              onChange={setGroupBy}
-              ariaLabel="Group board by"
-            />
-            <InfoTip text="Choose how to group the board — by the stage each project is at, or by the person doing it." />
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setShowClosed(!showClosed)}
-              aria-expanded={showClosed}
-              className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-2"
-            >
-              {showClosed ? (
-                <ChevronDown className="h-4 w-4" aria-hidden="true" />
+    <div className="space-y-12">
+      <PageHeader
+        breadcrumbs={['Ops', 'Board']}
+        title="Board"
+        titleAccessory={
+          <InfoTip text="Every open project, in columns. Each column is one stage of the work. The oldest problems rise to the top of each column." />
+        }
+        history={
+          /* Verdict first (§20.1): the live health read, chips not prose. */
+          openTasksQ.isLoading ? (
+            `Live board · ${fmtDate(today)} PKT — loading every open project…`
+          ) : (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span>Live board · {fmtDate(today)} PKT ·</span>
+              {healthy ? (
+                <Badge tone="success" icon={CheckCircle2}>
+                  All good — nothing is stuck and everyone has enough work
+                </Badge>
               ) : (
-                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                <>
+                  {derived.agingCount > 0 && (
+                    <Badge tone="warning" icon={TriangleAlert}>
+                      {derived.agingCount} stuck too long
+                    </Badge>
+                  )}
+                  {derived.clientWait > 0 && (
+                    <Badge tone="waiting">{derived.clientWait} waiting for client</Badge>
+                  )}
+                  {underQuota.length > 0 && (
+                    <Badge tone="warning" icon={TriangleAlert}>
+                      {underQuota.length} {underQuota.length === 1 ? 'person needs' : 'people need'} more work
+                    </Badge>
+                  )}
+                  {derived.unmapped.length > 0 && (
+                    <Badge tone="warning" icon={TriangleAlert}>
+                      {derived.unmapped.length} project{derived.unmapped.length === 1 ? '' : 's'} with an
+                      unknown status
+                    </Badge>
+                  )}
+                </>
               )}
-              Closed today ({closedToday.length})
-            </button>
-            <InfoTip text="Projects finished or cancelled today. Click to show or hide their columns." />
-          </div>
-        </div>
-      </header>
+            </span>
+          )
+        }
+        actions={
+          <>
+            <span className="flex items-center gap-1">
+              <SegmentedControl<GroupBy>
+                options={[
+                  { value: 'status', label: 'By stage' },
+                  { value: 'designer', label: 'By person' },
+                ]}
+                value={groupBy}
+                onChange={setGroupBy}
+                ariaLabel="Group board by"
+              />
+              <InfoTip text="Choose how to group the board — by the stage each project is at, or by the person doing it." />
+            </span>
+            <span className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setShowClosed(!showClosed)}
+                aria-expanded={showClosed}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.98]"
+              >
+                {showClosed ? (
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                )}
+                Closed today ({closedToday.length})
+              </button>
+              <InfoTip text="Projects finished or cancelled today. Click to show or hide their columns." />
+            </span>
+          </>
+        }
+      />
 
       {openTasksQ.error && (
         <ErrorBanner
@@ -268,32 +276,39 @@ export default function OpsBoard() {
       )}
 
       {openTasksQ.isLoading ? (
-        <div className="flex gap-4 overflow-x-auto pb-2" role="status" aria-label="Loading board">
+        // Skeleton mirrors the final board — same column width, header pill,
+        // count, and card heights, so nothing shifts when data lands.
+        <div className="flex gap-5 overflow-x-auto pb-2" role="status" aria-label="Loading board">
           {OPEN_STATUSES.map((s) => (
-            <div key={s} className="w-64 shrink-0 space-y-2">
-              <div className="skeleton h-5 w-32" />
-              <div className="skeleton h-24" />
-              <div className="skeleton h-24" />
+            <div key={s} className="w-72 shrink-0">
+              <div className="flex items-center justify-between px-1">
+                <div className="skeleton h-5 w-32 rounded-full" />
+                <div className="skeleton h-4 w-6" />
+              </div>
+              <div className="mt-3 space-y-2">
+                <div className="skeleton h-24" />
+                <div className="skeleton h-24" />
+              </div>
             </div>
           ))}
         </div>
       ) : groupBy === 'status' ? (
         // ── Kanban by status ──
-        <div className="flex items-start gap-4 overflow-x-auto pb-4">
+        <div className="flex items-start gap-5 overflow-x-auto pb-4">
           {[...OPEN_STATUSES, ...(showClosed ? TERMINAL_STATUSES : [])].map((status) => {
             const tasks = derived.byStatus.get(status) ?? []
             return (
-              <section key={status} className="w-64 shrink-0" aria-label={STATUS_LABELS[status]}>
+              <section key={status} className="w-72 shrink-0" aria-label={STATUS_LABELS[status]}>
                 <div className="flex items-center justify-between gap-2 px-1">
                   <span className="inline-flex items-center gap-1">
                     <StatusBadge status={status} />
                     <InfoTip text={STATUS_EXPLAINERS[status]} />
                   </span>
-                  <span className="tnum text-sm text-muted">{tasks.length}</span>
+                  <span className="tnum text-caption text-muted">{tasks.length}</span>
                 </div>
-                <div className="mt-2 space-y-2">
+                <div className="mt-3 space-y-2">
                   {tasks.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-xs text-muted">
+                    <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-caption text-muted">
                       {status === 'revision'
                         ? 'No change requests — nice and clean'
                         : status === 'cancelled'
@@ -313,7 +328,7 @@ export default function OpsBoard() {
                         />
                       ))}
                       {tasks.length > COLUMN_CAP && (
-                        <p className="text-center text-xs text-muted">
+                        <p className="text-center text-label font-normal tracking-normal text-muted">
                           +{tasks.length - COLUMN_CAP} more — switch to "By person" to see them
                         </p>
                       )}
@@ -325,17 +340,17 @@ export default function OpsBoard() {
           })}
           {/* ── Unmapped-status bucket — never invisible to Ops ── */}
           {derived.unmapped.length > 0 && (
-            <section className="w-64 shrink-0" aria-label="Unknown status">
+            <section className="w-72 shrink-0" aria-label="Unknown status">
               <div className="flex items-center justify-between gap-2 px-1">
                 <Badge tone="warning" icon={TriangleAlert}>
                   Unknown status
                 </Badge>
-                <span className="tnum text-sm text-muted">{derived.unmapped.length}</span>
+                <span className="tnum text-caption text-muted">{derived.unmapped.length}</span>
               </div>
-              <p className="mt-2 rounded-xl bg-warning-soft px-3 py-2 text-xs leading-snug text-warning">
+              <p className="mt-3 rounded-xl bg-warning-soft px-3 py-2 text-caption leading-snug text-warning">
                 We do not recognize this status name — check the list's statuses in ClickUp.
               </p>
-              <div className="mt-2 space-y-2">
+              <div className="mt-3 space-y-2">
                 {derived.unmapped.slice(0, COLUMN_CAP).map((t) => (
                   <TaskCard
                     key={t.task_id}
@@ -347,7 +362,7 @@ export default function OpsBoard() {
                   />
                 ))}
                 {derived.unmapped.length > COLUMN_CAP && (
-                  <p className="text-center text-xs text-muted">
+                  <p className="text-center text-label font-normal tracking-normal text-muted">
                     +{derived.unmapped.length - COLUMN_CAP} more with unknown statuses
                   </p>
                 )}
@@ -357,22 +372,22 @@ export default function OpsBoard() {
         </div>
       ) : (
         // ── Grouped by designer (teams first — cross-team raw counts aren't comparable, §2) ──
-        <div className="space-y-8">
+        <div className="space-y-12">
           {[...teams.entries()].map(([team, members]) => (
             <section key={team} aria-label={`${team} team`}>
               <h2 className="eyebrow">{team}</h2>
-              <div className="mt-3 space-y-5">
+              <div className="mt-4 space-y-6">
                 {members.map((d) => {
                   const tasks = byDesigner.map.get(d.id) ?? []
                   const gap = derived.gapRows.find((r) => r.d.id === d.id)
                   const listUrl = clickupListUrl(d.clickup_list_id)
                   return (
-                    <div key={d.id} className="card p-4">
+                    <div key={d.id} className="card p-6">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <button
                           type="button"
                           onClick={() => openDesigner(d.id)}
-                          className="min-h-[2.75rem] text-left text-sm font-semibold text-fg hover:text-brand"
+                          className="min-h-11 text-left text-caption font-semibold text-fg transition-colors duration-150 ease-out hover:text-brand"
                         >
                           {d.name}
                           <span className="ml-2 font-normal text-muted">
@@ -390,7 +405,7 @@ export default function OpsBoard() {
                             href={listUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex min-h-[2.75rem] items-center gap-1 text-xs font-medium text-brand hover:underline"
+                            className="inline-flex min-h-11 items-center gap-1 text-label text-brand hover:underline"
                           >
                             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                             Open list in ClickUp
@@ -399,7 +414,7 @@ export default function OpsBoard() {
                       </div>
                       {gap?.gapLive && (
                         <div
-                          className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-warning-soft px-3 py-2 text-sm text-warning"
+                          className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-warning-soft px-3 py-2 text-caption text-warning"
                           role="status"
                         >
                           <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -411,9 +426,9 @@ export default function OpsBoard() {
                           </span>
                         </div>
                       )}
-                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                         {tasks.length === 0 ? (
-                          <p className="text-sm text-muted">
+                          <p className="text-caption text-muted">
                             No projects right now — they can take new work.
                           </p>
                         ) : (
@@ -432,18 +447,18 @@ export default function OpsBoard() {
           {byDesigner.orphaned.length > 0 && (
             <section aria-label="No designer or former designer">
               <h2 className="eyebrow">No designer / former designer</h2>
-              <div className="card mt-3 p-4">
+              <div className="card mt-4 p-6">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone="warning" icon={TriangleAlert}>
                     {byDesigner.orphaned.length} open project
                     {byDesigner.orphaned.length === 1 ? '' : 's'} without an active designer
                   </Badge>
-                  <span className="text-xs text-muted">
+                  <span className="text-caption text-muted">
                     These have no designer, or their designer has left the roster — give them to
                     someone in ClickUp.
                   </span>
                 </div>
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   {byDesigner.orphaned.slice(0, COLUMN_CAP).map((t) => (
                     <TaskCard
                       key={t.task_id}
@@ -456,7 +471,7 @@ export default function OpsBoard() {
                   ))}
                 </div>
                 {byDesigner.orphaned.length > COLUMN_CAP && (
-                  <p className="mt-2 text-xs text-muted">
+                  <p className="mt-3 text-label font-normal tracking-normal text-muted">
                     +{byDesigner.orphaned.length - COLUMN_CAP} more without an active designer
                   </p>
                 )}
@@ -479,14 +494,14 @@ export default function OpsBoard() {
         title={trailTask?.name ?? 'Project'}
       >
         {trailTask && (
-          <div className="space-y-5">
+          <div className="space-y-6">
             <div className="flex flex-wrap items-center gap-2">
               {trailTask.current_status && <StatusBadge status={trailTask.current_status} />}
-              <span className="tnum text-sm text-muted">
+              <span className="tnum text-caption text-muted">
                 at this stage for {fmtDuration(ageMinutes(trailTask))}
               </span>
             </div>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-caption">
               <dt className="text-muted">Designer</dt>
               <dd className="text-fg">
                 {trailTask.designer_id

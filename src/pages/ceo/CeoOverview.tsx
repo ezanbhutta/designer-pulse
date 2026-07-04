@@ -6,9 +6,10 @@
  * privately — never on any designer-visible surface (§22.10).
  */
 
-import { useMemo, type ReactNode } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Clock, GitBranch, Package, ShieldCheck, Sparkles } from 'lucide-react'
+import { Clock, GitBranch, ShieldCheck, Sparkles } from 'lucide-react'
+import { PageHeader } from '../../components/layout/PageHeader'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { StatTile } from '../../components/ui/StatTile'
@@ -16,6 +17,7 @@ import { HBar, type HBarRow } from '../../components/ui/HBar'
 import { DeltaChip } from '../../components/ui/DeltaChip'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { CornerTip, HeroMetric, Reveal, RevealItem } from './ceoKit'
 import {
   ageMinutes,
   pipelineBottleneck,
@@ -335,17 +337,15 @@ export default function CeoOverview() {
     model?.fpqNow.pct != null && model.fpqPrev.pct != null ? model.fpqPrev.pct - model.fpqNow.pct : 0
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="inline-flex items-center gap-2 text-3xl font-semibold text-fg">
-          Overview{' '}
+    <div className="mx-auto w-full max-w-6xl space-y-12">
+      <PageHeader
+        breadcrumbs={['CEO', 'Overview']}
+        title="Overview"
+        titleAccessory={
           <InfoTip text="A quick look at the whole studio this week — what is going well and what needs your attention." />
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          Week of {fmtDate(week.start)}, compared with the same days last week · all times are
-          Pakistan time · this page is view-only — work is assigned in ClickUp
-        </p>
-      </header>
+        }
+        history={`Week of ${fmtDate(week.start)} so far, compared with the same days last week · all times are Pakistan time · view-only — work is assigned in ClickUp`}
+      />
 
       {failed != null && (
         <ErrorBanner
@@ -369,169 +369,161 @@ export default function CeoOverview() {
         />
       </CornerTip>
 
+      {/* ── The headline number (manifesto pillar 2): one hero-tier metric ── */}
+      <HeroMetric
+        eyebrow="Finished this week"
+        tip="How many projects the whole studio has closed since Monday. The small line below shows the last 8 weeks."
+        value={model ? model.completionsNow : null}
+        delta={
+          model ? metricDelta(model.completionsNow, model.completionsPrev, { goodWhen: 'up' }) : null
+        }
+        caption={
+          model
+            ? `${
+                model.teamCompletionsLine
+                  ? `So far — ${model.teamCompletionsLine} · `
+                  : 'Nothing finished yet this week · '
+              }the 8-week average is ${model.weeklyAvg} per week`
+            : null
+        }
+        sparkline={model?.weeklyCompletions}
+        loading={loading}
+      />
+
       {/* ── Team health (§13.2): every number with delta + cause + reference ── */}
-      <section aria-label="Studio health this week" className="grid gap-4 md:grid-cols-3">
-        <CornerTip tip="How many projects the team closes each week.">
-          <StatTile
-            eyebrow="Finished per week"
-            icon={Package}
-            value={String(model?.completionsNow ?? 0)}
-            delta={model ? metricDelta(model.completionsNow, model.completionsPrev, { goodWhen: 'up' }) : null}
-            cause={
-              model
-                ? model.teamCompletionsLine
-                  ? `Finished so far this week — ${model.teamCompletionsLine}`
-                  : 'Nothing finished yet this week'
-                : null
-            }
-            reference={model ? `8-week average ${model.weeklyAvg}/wk` : null}
-            sparkline={model?.weeklyCompletions}
-            loading={loading}
-          />
-        </CornerTip>
-        <CornerTip
-          tip="How many designs were accepted without anyone asking for changes. Higher is better."
-          below
-        >
-          <StatTile
-            eyebrow="Right first time"
-            icon={ShieldCheck}
-            value={fmtPct(model?.fpqNow.pct ?? null)}
-            delta={
-              model
-                ? metricDelta(model.fpqNow.pct, model.fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v} pts` })
-                : null
-            }
-            cause={
-              model && model.fpqNow.delivered > 0
-                ? `${model.fpqNow.clean} of ${model.fpqNow.delivered} designs accepted with no changes — ${model.fpqNow.csrCaughtRounds} change requests from our checkers, ${model.fpqNow.clientCaughtRounds} from clients`
-                : 'No designs sent yet this week'
-            }
-            reference={model?.teamFpqLine ? `By team: ${model.teamFpqLine}` : null}
-            state={
-              model?.fpqNow.pct == null
-                ? null
-                : fpqDrop > cfg.quality_decay_pct
-                  ? 'flag'
-                  : fpqDrop > cfg.quality_decay_pct / 2
-                    ? 'watch'
-                    : 'ok'
-            }
-            loading={loading}
-          />
-        </CornerTip>
-        <CornerTip tip="How long clients take to reply. This is the client's time, not the team's.">
-          <StatTile
-            eyebrow="Client waiting time"
-            icon={Clock}
-            value={fmtDuration(model?.clientWaitNow ?? null)}
-            delta={
-              model
-                ? metricDelta(model.clientWaitNow, model.clientWaitPrev, {
-                    goodWhen: 'down',
-                    format: (v) => fmtDuration(v),
-                  })
-                : null
-            }
-            cause="Time spent waiting for clients to reply — it never counts against the team"
-            reference={
-              model
-                ? `${model.clientWaitSample} project${model.clientWaitSample === 1 ? '' : 's'} waited on a client reply in this window`
-                : null
-            }
-            loading={loading}
-          />
-        </CornerTip>
+      <section aria-label="Studio health this week">
+        <Reveal className="grid gap-6 md:grid-cols-2">
+          <RevealItem className="h-full">
+            <StatTile
+              eyebrow="Right first time"
+              tip="How many designs were accepted without anyone asking for changes. Higher is better."
+              icon={ShieldCheck}
+              value={fmtPct(model?.fpqNow.pct ?? null)}
+              delta={
+                model
+                  ? metricDelta(model.fpqNow.pct, model.fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v} pts` })
+                  : null
+              }
+              cause={
+                model && model.fpqNow.delivered > 0
+                  ? `${model.fpqNow.clean} of ${model.fpqNow.delivered} designs accepted with no changes — ${model.fpqNow.csrCaughtRounds} change requests from our checkers, ${model.fpqNow.clientCaughtRounds} from clients`
+                  : 'No designs sent yet this week'
+              }
+              reference={model?.teamFpqLine ? `By team: ${model.teamFpqLine}` : null}
+              state={
+                model?.fpqNow.pct == null
+                  ? null
+                  : fpqDrop > cfg.quality_decay_pct
+                    ? 'flag'
+                    : fpqDrop > cfg.quality_decay_pct / 2
+                      ? 'watch'
+                      : 'ok'
+              }
+              loading={loading}
+            />
+          </RevealItem>
+          <RevealItem className="h-full">
+            <StatTile
+              eyebrow="Client waiting time"
+              tip="How long clients take to reply. This is the client's time, not the team's."
+              icon={Clock}
+              value={fmtDuration(model?.clientWaitNow ?? null)}
+              delta={
+                model
+                  ? metricDelta(model.clientWaitNow, model.clientWaitPrev, {
+                      goodWhen: 'down',
+                      format: (v) => fmtDuration(v),
+                    })
+                  : null
+              }
+              cause="Time spent waiting for clients to reply — it never counts against the team"
+              reference={
+                model
+                  ? `${model.clientWaitSample} project${model.clientWaitSample === 1 ? '' : 's'} waited on a client reply in this window`
+                  : null
+              }
+              loading={loading}
+            />
+          </RevealItem>
+        </Reveal>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
+      <Reveal className="grid gap-6 xl:grid-cols-2">
         {/* ── Pipeline Bottleneck (§22.5) — shown as "Where work waits" ────── */}
-        <div className="card p-6">
-          <div className="flex items-center gap-2">
-            <GitBranch className="h-4 w-4 text-muted" aria-hidden="true" />
-            <h2 className="eyebrow inline-flex items-center gap-1">
-              Where work waits{' '}
-              <InfoTip text="Shows which step projects sit in the longest — making, checking, or waiting for clients." />
-            </h2>
+        <RevealItem>
+          <div className="card h-full p-8">
+            <div className="flex items-center gap-2">
+              <GitBranch className="h-4 w-4 text-muted" aria-hidden="true" />
+              <h2 className="eyebrow inline-flex items-center gap-1">
+                Where work waits{' '}
+                <InfoTip text="Shows which step projects sit in the longest — making, checking, or waiting for clients." />
+              </h2>
+            </div>
+            <p className="mt-4 max-w-prose text-body text-fg">
+              {model?.constraint?.line ?? (loading ? '' : 'No open projects right now — nothing is waiting.')}
+            </p>
+            <p className="mt-2 text-caption text-muted">
+              For each step, the bar shows how long open projects have usually been sitting there.
+            </p>
+            <div className="mt-6">
+              {loading ? (
+                <div className="space-y-2" role="status" aria-label="Loading the waiting picture">
+                  {[0, 1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-6 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <HBar
+                  rows={model?.bottleneckRows ?? []}
+                  formatValue={(v) => fmtDuration(v)}
+                  ariaLabel="How long projects usually sit in each step"
+                />
+              )}
+            </div>
           </div>
-          <p className="mt-2 text-sm font-medium text-fg">
-            {model?.constraint?.line ?? (loading ? '' : 'No open projects right now — nothing is waiting.')}
-          </p>
-          <p className="mt-1 text-xs text-muted">
-            For each step, the bar shows how long open projects have usually been sitting there.
-          </p>
-          <div className="mt-4">
+        </RevealItem>
+
+        {/* ── Outliers — normalized, cross-team-fair, PRIVATE (§22.10) ─────── */}
+        <RevealItem>
+          <div className="card h-full p-8">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-muted" aria-hidden="true" />
+              <h2 className="eyebrow inline-flex items-center gap-1">
+                Stand-outs this week{' '}
+                <InfoTip text="The strongest and weakest results this week, using fair measures only — never raw project counts." />
+              </h2>
+            </div>
+            <p className="mt-2 max-w-prose text-caption text-muted">
+              Compared on &quot;Right first time&quot; and &quot;Target met&quot; only — never raw
+              counts, because a small logo and a 25-page brand guide are not the same amount of work.
+            </p>
             {loading ? (
-              <div className="space-y-2" role="status" aria-label="Loading the waiting picture">
+              <div className="mt-6 space-y-2" role="status" aria-label="Loading stand-outs">
                 {[0, 1, 2, 3].map((i) => (
                   <Skeleton key={i} className="h-6 w-full" />
                 ))}
               </div>
             ) : (
-              <HBar
-                rows={model?.bottleneckRows ?? []}
-                formatValue={(v) => fmtDuration(v)}
-                ariaLabel="How long projects usually sit in each step"
-              />
+              <div className="mt-6 grid gap-8 sm:grid-cols-2">
+                <OutlierList
+                  title="Right first time"
+                  tip="How many designs were accepted without anyone asking for changes. Higher is better."
+                  rows={model?.fpqRanked ?? []}
+                />
+                <OutlierList
+                  title="Target met"
+                  tip="Out of the projects they were supposed to take, how many they finished. This is the only fair way to compare different teams."
+                  rows={model?.attRanked ?? []}
+                />
+              </div>
             )}
+            <p className="mt-6 border-t border-border pt-4 text-caption text-muted">
+              Only you can see this list — designers are never shown rankings. Use it for coaching,
+              not shaming.
+            </p>
           </div>
-        </div>
-
-        {/* ── Outliers — normalized, cross-team-fair, PRIVATE (§22.10) ─────── */}
-        <div className="card p-6">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-muted" aria-hidden="true" />
-            <h2 className="eyebrow inline-flex items-center gap-1">
-              Stand-outs this week{' '}
-              <InfoTip text="The strongest and weakest results this week, using fair measures only — never raw project counts." />
-            </h2>
-          </div>
-          <p className="mt-1 text-xs text-muted">
-            Compared on &quot;Right first time&quot; and &quot;Target met&quot; only — never raw
-            counts, because a small logo and a 25-page brand guide are not the same amount of work.
-          </p>
-          {loading ? (
-            <div className="mt-4 space-y-2" role="status" aria-label="Loading stand-outs">
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-6 w-full" />
-              ))}
-            </div>
-          ) : (
-            <div className="mt-4 grid gap-6 sm:grid-cols-2">
-              <OutlierList
-                title="Right first time"
-                tip="How many designs were accepted without anyone asking for changes. Higher is better."
-                rows={model?.fpqRanked ?? []}
-              />
-              <OutlierList
-                title="Target met"
-                tip="Out of the projects they were supposed to take, how many they finished. This is the only fair way to compare different teams."
-                rows={model?.attRanked ?? []}
-              />
-            </div>
-          )}
-          <p className="mt-4 border-t border-border pt-3 text-xs text-muted">
-            Only you can see this list — designers are never shown rankings. Use it for coaching,
-            not shaming.
-          </p>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-/**
- * Places a small ⓘ in the corner of a card whose component only accepts a
- * plain-string heading (StatTile, VerdictBlock). `below` drops the icon under
- * the tile's top-right state pill so the two never overlap.
- */
-function CornerTip({ tip, below, children }: { tip: string; below?: boolean; children: ReactNode }) {
-  return (
-    <div className="relative">
-      {children}
-      <span className={`absolute right-4 ${below ? 'top-11' : 'top-4'}`}>
-        <InfoTip text={tip} />
-      </span>
+        </RevealItem>
+      </Reveal>
     </div>
   )
 }
@@ -539,7 +531,7 @@ function CornerTip({ tip, below, children }: { tip: string; below?: boolean; chi
 /** Top-3 / bottom-3 compact list. Bottom half is worst-first — the eye lands on the problem. */
 function OutlierList({ title, tip, rows }: { title: string; tip: string; rows: OutlierRow[] }) {
   const heading = (
-    <h3 className="inline-flex items-center gap-1 text-sm font-semibold text-fg">
+    <h3 className="inline-flex items-center gap-1 text-caption font-semibold text-fg">
       {title} <InfoTip text={tip} />
     </h3>
   )
@@ -547,7 +539,7 @@ function OutlierList({ title, tip, rows }: { title: string; tip: string; rows: O
     return (
       <div>
         {heading}
-        <p className="mt-2 text-sm text-muted">Nothing to show yet this week.</p>
+        <p className="mt-2 text-caption text-muted">Nothing to show yet this week.</p>
       </div>
     )
   }
@@ -589,14 +581,14 @@ function OutlierItem({ row }: { row: OutlierRow }) {
       >
         <span className="min-w-0 flex-1">
           <span
-            className="block truncate text-sm text-fg"
+            className="block truncate text-caption text-fg"
             title={`${row.designer.name} — ${row.designer.team}`}
           >
-            {row.designer.name} <span className="text-xs text-muted">{row.designer.team}</span>
+            {row.designer.name} <span className="text-label text-muted">{row.designer.team}</span>
           </span>
-          <span className="block truncate text-xs text-muted">{row.sample}</span>
+          <span className="block truncate text-label text-muted">{row.sample}</span>
         </span>
-        <span className="tnum shrink-0 text-sm font-medium text-fg">{row.value}%</span>
+        <span className="tnum shrink-0 text-caption font-semibold text-fg">{row.value}%</span>
         {row.delta && row.delta.direction !== 'flat' && (
           <DeltaChip direction={row.delta.direction} good={row.delta.good} label={row.delta.label.trim()} />
         )}
