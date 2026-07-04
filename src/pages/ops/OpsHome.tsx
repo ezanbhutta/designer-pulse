@@ -5,7 +5,10 @@ import { motion, useReducedMotion } from 'framer-motion'
 import {
   ArrowRight,
   ArrowUpRight,
+  Ban,
   CheckCircle2,
+  ChevronDown,
+  Clock,
   ExternalLink,
   Gauge,
   Inbox,
@@ -14,6 +17,7 @@ import {
   PackagePlus,
   RotateCcw,
   TriangleAlert,
+  UserCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { AnimatedCounter } from '../../components/ui/AnimatedCounter'
@@ -64,14 +68,32 @@ import {
   useTasksSince,
 } from './opsData'
 
-/** Severity glyphs — a distinct icon per level, never color alone (§20.10). */
+/** Severity → a11y label + the soft-tinted icon chip (color as a quiet accent
+ *  on a small chip only — the substrate stays grayscale, §20.10). */
 const SEVERITY_META: Record<
   VerdictItem['severity'],
-  { icon: LucideIcon; className: string; label: string }
+  { chip: string; label: string; fallback: LucideIcon }
 > = {
-  info: { icon: Info, className: 'text-brand', label: 'Info' },
-  warning: { icon: TriangleAlert, className: 'text-warning', label: 'Warning' },
-  critical: { icon: OctagonAlert, className: 'text-danger', label: 'Critical' },
+  info: { chip: 'bg-brand-soft text-brand', label: 'For your awareness', fallback: Info },
+  warning: { chip: 'bg-warning-soft text-warning', label: 'Needs a look', fallback: TriangleAlert },
+  critical: { chip: 'bg-danger-soft text-danger', label: 'Urgent', fallback: OctagonAlert },
+}
+
+/** A distinct glyph per KIND — so a stuck task, a lost order and an attendance
+ *  flag never read as one grey wall of identical icons. */
+type InboxKind = 'stuck' | 'cancelled' | 'cancelled-group' | 'attendance' | 'capacity'
+const KIND_ICON: Record<InboxKind, LucideIcon> = {
+  stuck: Clock,
+  cancelled: Ban,
+  'cancelled-group': Ban,
+  attendance: UserCheck,
+  capacity: Inbox,
+}
+
+interface InboxItem extends VerdictItem {
+  kind: InboxKind
+  /** For 'cancelled-group': the individual lost orders, revealed on expand. */
+  children?: Array<VerdictItem & { kind: InboxKind }>
 }
 
 /**
@@ -113,6 +135,7 @@ export default function OpsHome() {
   const recentCancelled = useMemo(() => (cancelledQ.data ?? []).slice(0, 50), [cancelledQ.data])
 
   const [trailTask, setTrailTask] = useState<TaskState | null>(null)
+  const [cancelsOpen, setCancelsOpen] = useState(false)
 
   const designers = useActiveDesigners()
   const designerById = useMemo(
@@ -190,7 +213,7 @@ export default function OpsHome() {
 
   // ── Inbox items, ranked (§20.1) ─────────────────────────────────────────────
   const verdictItems = useMemo(() => {
-    const items: VerdictItem[] = []
+    const items: InboxItem[] = []
     const alerts = alertsQ.data ?? []
 
     // 1. Assignment gaps past shift-start + offset (fired by the pulse cron).
@@ -200,6 +223,7 @@ export default function OpsHome() {
       const href = d ? clickupListUrl(d.clickup_list_id) : null
       items.push({
         id: `gap-${a.id}`,
+        kind: 'capacity',
         severity: 'warning',
         text:
           a.message ??
@@ -220,6 +244,7 @@ export default function OpsHome() {
       const href = clickupTaskUrl(task.task_id)
       items.push({
         id: `age-${task.task_id}`,
+        kind: 'stuck',
         severity: age >= threshold * 2 ? 'critical' : 'warning',
         text: `"${task.name ?? task.task_id}" stuck in ${
           task.current_status ? STATUS_LABELS[task.current_status] : 'one stage'
@@ -230,20 +255,43 @@ export default function OpsHome() {
     }
 
     // 3. Fresh cancellations — designer-fault terminal loss (last 24h).
+    // Collapsed into ONE expandable row when there are several: seven identical
+    // "lost because of a design problem" sentences is noise, not information
+    // (delete-30% / minimal-cognitive-load). The explanation is said once on
+    // the header; each order opens its own history on expand.
     const dayAgo = Date.now() - 24 * 3600_000
-    for (const t of recentCancelled.filter((x) => {
+    const cancelTasks = recentCancelled.filter((x) => {
       const at = x.closed_at ?? x.last_event_at
       return at != null && new Date(at).getTime() >= dayAgo
-    })) {
+    })
+    if (cancelTasks.length === 1) {
+      const t = cancelTasks[0]
       const d = t.designer_id ? designerById.get(t.designer_id) : undefined
       items.push({
         id: `cancel-${t.task_id}`,
+        kind: 'cancelled',
         severity: 'critical',
-        text: `Cancelled: "${t.name ?? t.task_id}"${d ? ` — ${d.name}` : ''}`,
-        detail: 'The order was lost because of a design problem. Check the project history before judging anyone.',
-        // The 10-second fault check happens in-app: the trail drawer shows the
-        // full history (with the ClickUp deep link inside, one tap away).
+        text: `Order lost: "${t.name ?? t.task_id}"${d ? ` — ${d.name}` : ''}`,
+        detail: 'The order was lost because of a design problem. Open its history before judging anyone.',
         action: { label: 'See what happened', onClick: () => setTrailTask(t) },
+      })
+    } else if (cancelTasks.length > 1) {
+      items.push({
+        id: 'cancel-group',
+        kind: 'cancelled-group',
+        severity: 'critical',
+        text: `${cancelTasks.length} orders lost today`,
+        detail: 'Each was lost because of a design problem. Open one to read its full history before judging anyone.',
+        children: cancelTasks.map((t) => {
+          const d = t.designer_id ? designerById.get(t.designer_id) : undefined
+          return {
+            id: `cancel-${t.task_id}`,
+            kind: 'cancelled' as const,
+            severity: 'critical' as const,
+            text: `"${t.name ?? t.task_id}"${d ? ` — ${d.name}` : ''}`,
+            action: { label: 'See what happened', onClick: () => setTrailTask(t) },
+          }
+        }),
       })
     }
 
@@ -252,6 +300,7 @@ export default function OpsHome() {
       const d = designerById.get(row.designer_id)
       items.push({
         id: `review-${row.id}`,
+        kind: 'attendance',
         severity: 'info',
         text: `Double-check ${d?.name ?? 'a designer'}'s day — the system closed it because they forgot to press Check out`,
         detail: 'There was no check-out and no sign of work. Please confirm before the day counts.',
@@ -271,6 +320,7 @@ export default function OpsHome() {
       const href = clickupListUrl(r.designer.clickup_list_id)
       items.push({
         id: `slots-${r.designer.id}`,
+        kind: 'capacity',
         severity: 'info',
         text: `${r.designer.name} has ${slots} open slot${slots === 1 ? '' : 's'} — ${
           firstName(r.designer.name)
@@ -334,7 +384,7 @@ export default function OpsHome() {
   // pointer screens until the row is hovered or focused; always visible on
   // touch. High-contrast neutral (bg-fg) — brand stays reserved.
   const actionCls =
-    'ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-fg px-4 text-caption font-medium text-bg transition-[opacity,transform,background-color] duration-150 ease-out hover:opacity-90 motion-safe:active:scale-[0.97] md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100'
+    'ml-auto inline-flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-surface px-3.5 text-caption font-medium text-muted transition-colors duration-150 ease-out group-hover:border-transparent group-hover:bg-fg group-hover:text-bg hover:border-transparent hover:bg-fg hover:text-bg focus-visible:border-transparent focus-visible:bg-fg focus-visible:text-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg motion-safe:active:scale-[0.97]'
 
   return (
     <div className="mx-auto w-full max-w-[1000px] space-y-16">
@@ -423,25 +473,80 @@ export default function OpsHome() {
             variants={staggerContainer}
             initial={reduced ? false : 'hidden'}
             animate="show"
-            className="divide-y divide-border/60 rounded-2xl border border-border bg-surface shadow-edge"
+            className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border bg-surface shadow-edge"
           >
             {verdictItems.map((item) => {
-              const meta = SEVERITY_META[item.severity]
-              const Icon = meta.icon
+              // The expandable "N orders lost" cluster — one calm header, the
+              // individual orders on demand (collapse repetition, not detail).
+              if (item.kind === 'cancelled-group' && item.children) {
+                const KindIcon = KIND_ICON[item.kind]
+                return (
+                  <motion.li key={item.id} variants={staggerItem}>
+                    <button
+                      type="button"
+                      onClick={() => setCancelsOpen((v) => !v)}
+                      aria-expanded={cancelsOpen}
+                      className="group flex w-full items-center gap-4 p-5 text-left transition-colors duration-150 ease-out hover:bg-surface-2/50 sm:p-6"
+                    >
+                      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${SEVERITY_META[item.severity].chip}`}>
+                        <KindIcon className="h-5 w-5" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-caption font-semibold leading-snug text-fg">
+                          <span className="sr-only">{SEVERITY_META[item.severity].label}: </span>
+                          {item.text}
+                        </p>
+                        {item.detail && (
+                          <p className="mt-1 max-w-prose text-caption leading-snug text-muted">{item.detail}</p>
+                        )}
+                      </div>
+                      <span className="ml-auto inline-flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3.5 text-caption font-medium text-muted transition-colors group-hover:border-transparent group-hover:bg-fg group-hover:text-bg">
+                        {cancelsOpen ? 'Hide' : 'Review each'}
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform duration-200 ${cancelsOpen ? 'rotate-180' : ''}`}
+                          aria-hidden="true"
+                        />
+                      </span>
+                    </button>
+                    {cancelsOpen && (
+                      <ul className="divide-y divide-border/50 border-t border-border/50 bg-surface-2/30">
+                        {item.children.map((child) => (
+                          <li
+                            key={child.id}
+                            className="group flex items-center gap-4 py-3.5 pl-[4.5rem] pr-5 transition-colors duration-150 hover:bg-surface-2/60 sm:pr-6"
+                          >
+                            <p className="min-w-0 flex-1 truncate text-caption text-fg" title={child.text}>
+                              {child.text}
+                            </p>
+                            {child.action?.onClick && (
+                              <button type="button" onClick={child.action.onClick} className={actionCls}>
+                                {child.action.label}
+                                <ArrowUpRight className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
+                              </button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </motion.li>
+                )
+              }
+
+              const KindIcon = KIND_ICON[item.kind]
               return (
                 <motion.li
                   key={item.id}
                   variants={staggerItem}
-                  className="group flex flex-wrap items-center gap-x-4 gap-y-3 p-5 transition-colors duration-150 ease-out first:rounded-t-2xl last:rounded-b-2xl hover:bg-surface-2/50 sm:p-6"
+                  className="group flex flex-wrap items-center gap-x-4 gap-y-3 p-5 transition-colors duration-150 ease-out hover:bg-surface-2/50 sm:p-6"
                 >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 ring-1 ring-border">
-                    <Icon className={`h-5 w-5 ${meta.className}`} aria-hidden="true" />
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${SEVERITY_META[item.severity].chip}`}>
+                    <KindIcon className="h-5 w-5" aria-hidden="true" />
                   </span>
                   {/* flex-basis lets the action drop to its own line on narrow
                       screens instead of crushing the sentence into a sliver. */}
                   <div className="min-w-0 flex-[1_1_16rem]">
                     <p className="text-caption font-semibold leading-snug text-fg">
-                      <span className="sr-only">{meta.label}: </span>
+                      <span className="sr-only">{SEVERITY_META[item.severity].label}: </span>
                       {item.text}
                     </p>
                     {item.detail && (
