@@ -28,10 +28,18 @@ import {
   qk,
 } from '../../lib/queries'
 import { supabase } from '../../lib/supabase'
-import { addDays, dowOf, pktDateOf, pktInstant, pktToday, shiftWindow } from '../../../shared/pkt'
+import {
+  addDays,
+  pktDateOf,
+  pktInstant,
+  pktToday,
+  shiftWindow,
+  startOfWeek,
+} from '../../../shared/pkt'
 import type { QuotaContext } from '../../../shared/aggregate'
 import { CONFIG_DEFAULTS } from '../../../shared/types'
 import type { Config, Designer, DesignerSchedule, TaskState } from '../../../shared/types'
+import { dueOnDay } from '../../../shared/aggregate'
 import type { CanonicalStatus } from '../../../shared/statuses'
 
 // ── Reference data ────────────────────────────────────────────────────────────
@@ -147,11 +155,6 @@ export interface PeriodRange {
   end: string
 }
 
-/** Monday of the week containing `date` (work weeks start Monday). */
-export function startOfWeek(date: string): string {
-  return addDays(date, -((dowOf(date) + 6) % 7))
-}
-
 export function thisWeekRange(today: string = pktToday()): PeriodRange {
   return { start: startOfWeek(today), end: today }
 }
@@ -179,6 +182,21 @@ export function createdOn(task: TaskState, date: string): boolean {
 export function closedOn(task: TaskState, date: string, status: CanonicalStatus): boolean {
   const at = task.closed_at ?? task.last_event_at
   return task.current_status === status && at != null && pktDateOf(at) === date
+}
+
+/**
+ * Slots filled for a day (owner's rule): ONLY projects whose DUE DATE falls
+ * on that PKT day are that day's work — status and creation date don't
+ * matter. A task due tomorrow, even one being worked on right now, belongs to
+ * tomorrow. Deduped by task id across the two task sets.
+ */
+export function slotsFilledToday(
+  openTasks: TaskState[],
+  recentTasks: TaskState[],
+  designerId: string,
+  today: string,
+): number {
+  return dueOnDay([...openTasks, ...recentTasks], designerId, today)
 }
 
 /**

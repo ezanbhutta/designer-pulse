@@ -278,9 +278,35 @@ export function activeLoad(tasks: TaskState[], designerId: string): number {
   ).length
 }
 
-export function utilizationPct(tasks: TaskState[], designerId: string, todayQuota: number): number | null {
+/**
+ * The plate for a day (owner's rule): ONLY tasks whose DUE DATE falls on that
+ * PKT day are that day's work — status and creation date don't matter. A task
+ * due tomorrow, even one being worked right now, belongs to tomorrow. Deduped
+ * by task id so merged task sets can be passed safely.
+ */
+export function dueOnDay(tasks: TaskState[], designerId: string, day: string): number {
+  const ids = new Set<string>()
+  for (const t of tasks) {
+    if (
+      t.designer_id === designerId &&
+      !t.deleted &&
+      t.due_date != null &&
+      pktDateOf(t.due_date) === day
+    ) {
+      ids.add(t.task_id)
+    }
+  }
+  return ids.size
+}
+
+export function utilizationPct(
+  tasks: TaskState[],
+  designerId: string,
+  todayQuota: number,
+  day: string,
+): number | null {
   if (todayQuota <= 0) return null
-  return Math.round((activeLoad(tasks, designerId) / todayQuota) * 100)
+  return Math.round((dueOnDay(tasks, designerId, day) / todayQuota) * 100)
 }
 
 /** Minutes a task has sat in its current status. */

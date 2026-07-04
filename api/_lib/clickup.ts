@@ -211,6 +211,10 @@ export interface ListTasksOptions {
   dateCreatedGt?: number
   /** ms epoch — only tasks created before this instant. */
   dateCreatedLt?: number
+  /** ms epoch — only tasks due after this instant. */
+  dueDateGt?: number
+  /** ms epoch — only tasks due before this instant. */
+  dueDateLt?: number
   includeClosed?: boolean
   page?: number
   /** 'created' = stable pagination for cursors; default 'updated'. */
@@ -232,6 +236,8 @@ export async function getListTasks(
   if (opts.dateUpdatedGt != null) params.set('date_updated_gt', String(Math.floor(opts.dateUpdatedGt)))
   if (opts.dateCreatedGt != null) params.set('date_created_gt', String(Math.floor(opts.dateCreatedGt)))
   if (opts.dateCreatedLt != null) params.set('date_created_lt', String(Math.floor(opts.dateCreatedLt)))
+  if (opts.dueDateGt != null) params.set('due_date_gt', String(Math.floor(opts.dueDateGt)))
+  if (opts.dueDateLt != null) params.set('due_date_lt', String(Math.floor(opts.dueDateLt)))
   const data = await request<{ tasks?: ClickUpTask[]; last_page?: boolean }>(
     `/list/${listId}/task?${params.toString()}`,
   )

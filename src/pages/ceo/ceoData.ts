@@ -31,8 +31,8 @@ import {
   fetchTasksSince,
   qk,
 } from '../../lib/queries'
-import { addDays, dowOf, pktDateOf, pktInstant, pktToday } from '../../../shared/pkt'
-import { median } from '../../../shared/aggregate'
+import { addDays, pktDateOf, pktInstant, pktToday, startOfWeek } from '../../../shared/pkt'
+import { burnoutComposite, median } from '../../../shared/aggregate'
 import type { DesignerPeriodSummary, QuotaContext } from '../../../shared/aggregate'
 import { STATUS_LABELS, type CanonicalStatus } from '../../../shared/statuses'
 import { CONFIG_DEFAULTS } from '../../../shared/types'
@@ -156,11 +156,6 @@ export function mergeTasks(windowTasks: TaskState[], openTasks: TaskState[]): Ta
 export interface PeriodRange {
   start: string
   end: string
-}
-
-/** Monday of the week containing `date`. */
-export function startOfWeek(date: string): string {
-  return addDays(date, -((dowOf(date) + 6) % 7))
 }
 
 /** CEO decision window default: this week so far (Mon → today, §20.4). */
@@ -391,27 +386,14 @@ export interface BurnoutRisk {
   flagged: boolean
 }
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
-
-const PRESENT: Array<AttendanceDaily['status']> = ['Present', 'HolidayWorked']
-
 /**
- * Burnout composite per spec §11 Tier 4, computed client-side over two
- * equal adjacent windows (current vs prior). Weights are fixed by the spec's
- * definition and documented here:
- *
- *   40% rising revision turnaround — recovery speed decaying under load.
- *       raw = % increase of the current median over the prior median,
- *       saturating at a doubling (=100).
- *   40% falling attainment — output dropping against their own quota.
- *       raw = percentage-point drop × 2, saturating at a 50pp drop (=100).
- *   20% shrinking warm-up gap WITH sustained presence — online as usual and
- *       starting faster, yet producing less: the classic grind signal.
- *       Applied only when present-days hold at ≥80% of the prior window;
- *       raw = % shrink of the median warm-up gap.
- *
- * score = 0.4·turnaround + 0.4·attainment + 0.2·warmup, rounded; flag when
- * above `burnout_score` from app_config (§18).
+ * CEO Trends read of the canonical burnout composite. The MATH lives in
+ * shared/aggregate.ts `burnoutComposite` — the exact function the nightly
+ * cron alerts on — so the score on the Trends board always matches the alert
+ * that fired for the same designer/window. This wrapper only scopes the
+ * attendance rows to the designer, wraps each moving component in a
+ * plain-language cause, and flags when the score is above `burnout_score`
+ * from app_config (§18).
  */
 export function burnoutRisk(
   designerId: string,
@@ -422,60 +404,44 @@ export function burnoutRisk(
   threshold: number,
   fmtDur: (min: number | null | undefined) => string,
 ): BurnoutRisk {
-  const causes: string[] = []
+  const mine = (rows: AttendanceDaily[]) => rows.filter((a) => a.designer_id === designerId)
+  const c = burnoutComposite(cur, prior, mine(curAtt), mine(priorAtt))
 
-  // 40% — rising revision turnaround
-  let turnaround = 0
+  const causes: string[] = []
   if (
+    c.turnaroundRise > 0 &&
     cur.revisionTurnaroundMedianMin != null &&
     prior.revisionTurnaroundMedianMin != null &&
-    prior.revisionTurnaroundMedianMin > 0 &&
-    cur.revisionTurnaroundMedianMin > prior.revisionTurnaroundMedianMin
+    prior.revisionTurnaroundMedianMin > 0
   ) {
-    const risePct =
+    const risePct = Math.round(
       ((cur.revisionTurnaroundMedianMin - prior.revisionTurnaroundMedianMin) /
         prior.revisionTurnaroundMedianMin) *
-      100
-    turnaround = clamp(risePct, 0, 100)
+        100,
+    )
     causes.push(
-      `fixes are taking ${Math.round(risePct)}% longer (${fmtDur(prior.revisionTurnaroundMedianMin)} → ${fmtDur(cur.revisionTurnaroundMedianMin)})`,
+      `fixes are taking ${risePct}% longer (${fmtDur(prior.revisionTurnaroundMedianMin)} → ${fmtDur(cur.revisionTurnaroundMedianMin)})`,
     )
   }
-
-  // 40% — falling attainment
-  let attainment = 0
-  if (cur.attainmentPct != null && prior.attainmentPct != null && cur.attainmentPct < prior.attainmentPct) {
-    const dropPp = prior.attainmentPct - cur.attainmentPct
-    attainment = clamp(dropPp * 2, 0, 100)
+  if (c.attainmentFall > 0 && cur.attainmentPct != null && prior.attainmentPct != null) {
     causes.push(`"target met" fell from ${prior.attainmentPct}% to ${cur.attainmentPct}%`)
   }
-
-  // 20% — shrinking warm-up gap with sustained presence
-  let warmup = 0
-  const presentDays = (rows: AttendanceDaily[]) =>
-    rows.filter((a) => a.designer_id === designerId && a.status != null && PRESENT.includes(a.status))
-  const curPresent = presentDays(curAtt)
-  const priorPresent = presentDays(priorAtt)
-  const gapMedian = (rows: AttendanceDaily[]) =>
-    median(rows.map((a) => a.warmup_gap_min).filter((v): v is number => v != null))
-  const curGap = gapMedian(curPresent)
-  const priorGap = gapMedian(priorPresent)
-  const sustained = priorPresent.length > 0 && curPresent.length >= priorPresent.length * 0.8
-  if (sustained && curGap != null && priorGap != null && priorGap > 0 && curGap < priorGap) {
-    const shrinkPct = ((priorGap - curGap) / priorGap) * 100
-    warmup = clamp(shrinkPct, 0, 100)
+  if (c.warmupShrink > 0) {
     causes.push(
-      `still showing up as usual (${curPresent.length} days vs ${priorPresent.length}) and starting work sooner (${fmtDur(priorGap)} → ${fmtDur(curGap)}), yet finishing less`,
+      `still showing up as usual (${c.presentCur} days vs ${c.presentPrev}) and starting work sooner (${fmtDur(c.warmupPrevMin)} → ${fmtDur(c.warmupCurMin)}), yet finishing less`,
     )
   }
 
-  const score = Math.round(0.4 * turnaround + 0.4 * attainment + 0.2 * warmup)
   return {
     designerId,
-    score,
-    components: { turnaround: Math.round(turnaround), attainment: Math.round(attainment), warmup: Math.round(warmup) },
+    score: c.score,
+    components: {
+      turnaround: Math.round(c.turnaroundRise * 100),
+      attainment: Math.round(c.attainmentFall * 100),
+      warmup: Math.round(c.warmupShrink * 100),
+    },
     causes,
-    flagged: score > threshold,
+    flagged: c.score > threshold,
   }
 }
 

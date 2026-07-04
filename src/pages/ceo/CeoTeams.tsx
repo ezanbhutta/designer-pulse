@@ -17,7 +17,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { TrendLine, type TrendPoint } from '../../components/ui/TrendLine'
 import {
-  activeLoad,
+  dueOnDay,
   expectedQuotaOn,
   summarizeDesigner,
   type DesignerPeriodSummary,
@@ -111,7 +111,8 @@ export default function CeoTeams() {
         ? Math.round((trendValues.reduce((s, v) => s + v, 0) / trendValues.length) * 10) / 10
         : null
 
-      const loadNow = members.reduce((s, d) => s + activeLoad(openQ.data!, d.id), 0)
+      // Owner's rule: today's plate = projects DUE today, nothing else.
+      const loadNow = members.reduce((s, d) => s + dueOnDay(openQ.data!, d.id, today), 0)
       const quotaToday = members.reduce((s, d) => s + expectedQuotaOn(d.id, today, quota), 0)
 
       const rows: DesignerRow[] = members
@@ -266,7 +267,7 @@ function TeamCard({ model: t }: { model: TeamModel }) {
           >
             {utilizationPctNow == null
               ? `${t.loadNow} project${t.loadNow === 1 ? '' : 's'} in hand · no planned slots today`
-              : `Busy level ${utilizationPctNow}% — ${t.loadNow} projects in hand for ${t.quotaToday} planned slots today${utilizationPctNow > 120 ? ' · too much on their plate' : utilizationPctNow < 60 ? ' · room for more' : ''}`}
+              : `Busy level ${utilizationPctNow}% — ${t.loadNow} projects due today for ${t.quotaToday} planned slots${utilizationPctNow > 120 ? ' · too much on their plate' : utilizationPctNow < 60 ? ' · room for more' : ''}`}
           </Badge>
           <InfoTip text="How full the team's plate is right now: projects being worked on, compared with the slots planned for today." />
         </span>

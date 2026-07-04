@@ -57,6 +57,7 @@ import {
   pktInstant,
   pktToday,
   shiftWindow,
+  startOfWeek,
 } from '../../../shared/pkt'
 import {
   ageMinutes,
@@ -109,17 +110,6 @@ const ATT_TONE: Record<AttendanceStatus, BadgeProps['tone']> = {
   WeeklyOff: 'neutral',
   Absent: 'warning',
   Incomplete: 'warning',
-}
-
-/** Plain-English display words for attendance statuses (display only). */
-const ATT_LABEL: Record<AttendanceStatus, string> = {
-  Present: 'Present',
-  HolidayWorked: 'Holiday · worked',
-  Leave: 'On leave',
-  Holiday: 'Holiday',
-  WeeklyOff: 'Day off',
-  Absent: 'Absent',
-  Incomplete: 'Day not closed',
 }
 
 // ── Theme toggle (light-default self-view, §21.9 — override persists) ─────────
@@ -199,8 +189,7 @@ function SelfViewBody() {
 
   const today = pktToday(now)
   const dates = useMemo(() => {
-    const dow = dowOf(today)
-    const weekStart = addDays(today, -((dow + 6) % 7)) // Monday of this PKT week
+    const weekStart = startOfWeek(today) // Monday of this PKT week
     // Week-to-date (§20.4): Monday..today, compared against the SAME elapsed
     // window last week — never a partial week vs a complete prior one.
     const weekEnd = today

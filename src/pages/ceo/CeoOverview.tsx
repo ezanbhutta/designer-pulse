@@ -176,7 +176,7 @@ export default function CeoOverview() {
       .filter((x): x is NonNullable<typeof x> => x != null)
       .sort((a, b) => b.drop - a.drop)
       .slice(0, 2)
-    for (const { d, c, p, drop } of decays) {
+    for (const { d, c, p } of decays) {
       const revised = c.delivered - c.firstPassClean
       const sourceClause =
         c.clientCaughtRounds === 0 && c.csrCaughtRounds > 0

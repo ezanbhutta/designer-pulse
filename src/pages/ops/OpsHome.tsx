@@ -28,11 +28,9 @@ import {
 import { fmtDate, fmtDuration, fmtPct, fmtShiftTime, fmtTime } from '../../lib/format'
 import { addDays, pktInstant, pktToday } from '../../../shared/pkt'
 import {
-  activeLoad,
   ageMinutes,
   expectedQuotaOn,
   scheduleFor,
-  utilizationPct,
 } from '../../../shared/aggregate'
 import { STATUS_LABELS } from '../../../shared/statuses'
 import type { TaskState } from '../../../shared/types'
@@ -44,6 +42,7 @@ import {
   firstName,
   metricDelta,
   minutesSinceShiftStart,
+  slotsFilledToday,
   useAttendanceRange,
   useConfigValues,
   useDesignerDrawer,
@@ -122,16 +121,18 @@ export default function OpsHome() {
       const schedule = scheduleFor(ctx.schedules, d.id, today)
       const sinceShift = minutesSinceShiftStart(schedule, today, now)
       const assigned = assignedToday.get(d.id) ?? 0
-      const load = activeLoad(openTasks, d.id)
+      // Owner's rule: ONLY projects due today are today's plate — status and
+      // creation date don't matter.
+      const filled = slotsFilledToday(openTasks, recentTasks, d.id, today)
       return {
         designer: d,
         expected,
         schedule,
         sinceShift,
         assigned,
-        load,
-        spare: expected - load,
-        util: utilizationPct(openTasks, d.id, expected),
+        filled,
+        spare: expected - filled,
+        util: expected > 0 ? Math.round((filled / expected) * 100) : null,
       }
     })
 
@@ -142,7 +143,7 @@ export default function OpsHome() {
 
     const totalExpected = rows.reduce((s, r) => s + r.expected, 0)
     const totalAssignedToday = rows.reduce((s, r) => s + r.assigned, 0)
-    const totalLoad = rows.reduce((s, r) => s + r.load, 0)
+    const totalFilled = rows.reduce((s, r) => s + r.filled, 0)
 
     const assignedYesterday = recentTasks.filter(
       (t) => t.designer_id && createdOn(t, yesterday),
@@ -155,7 +156,7 @@ export default function OpsHome() {
       agingTasks,
       totalExpected,
       totalAssignedToday,
-      totalLoad,
+      totalFilled,
       assignedYesterday,
       completedTodayTasks,
       completedYesterday,
@@ -179,7 +180,7 @@ export default function OpsHome() {
           a.message ??
           `${d?.name ?? 'A designer'} has open slots — they can take more projects today`,
         detail: row
-          ? `Given ${row.assigned} of ${row.expected} projects for today. Handing out work is the team lead's job, not theirs.`
+          ? `Has ${row.filled} of ${row.expected} projects due today. Handing out work is the team lead's job, not theirs.`
           : undefined,
         action: href
           ? { label: `Open ${d ? firstName(d.name) : 'the'} list in ClickUp`, href }
@@ -239,7 +240,7 @@ export default function OpsHome() {
     for (const r of derived.rows) {
       if (r.expected <= 0 || alertedIds.has(r.designer.id)) continue
       if (r.sinceShift == null || r.sinceShift < cfg.assignment_gap_check_offset_min) continue
-      const slots = r.expected - r.assigned
+      const slots = r.expected - r.filled
       if (slots <= 0) continue
       const href = clickupListUrl(r.designer.clickup_list_id)
       items.push({
@@ -248,7 +249,7 @@ export default function OpsHome() {
         text: `${r.designer.name} has ${slots} open slot${slots === 1 ? '' : 's'} — ${
           firstName(r.designer.name)
         } can take more projects today`,
-        detail: `Given ${r.assigned} of ${r.expected} for today · day started ${
+        detail: `Has ${r.filled} of ${r.expected} projects due today · day started ${
           r.schedule ? fmtShiftTime(r.schedule.shift_start) : '—'
         } PKT`,
         action: href ? { label: 'Open list in ClickUp', href } : undefined,
@@ -289,7 +290,7 @@ export default function OpsHome() {
 
   const utilization =
     derived.totalExpected > 0
-      ? Math.round((derived.totalLoad / derived.totalExpected) * 100)
+      ? Math.round((derived.totalFilled / derived.totalExpected) * 100)
       : null
   const heaviest = [...derived.rows]
     .filter((r) => r.util != null)
@@ -390,11 +391,11 @@ export default function OpsHome() {
         <StatTile
           eyebrow={labelTip(
             'Busy level',
-            "How full the team's plate is right now, compared to today's total target.",
+            "How full today's plates are — only projects DUE today count, compared to today's total target.",
           )}
           icon={Gauge}
           value={fmtPct(utilization)}
-          cause={`${derived.totalLoad} projects being worked on across ${designers.length} ${
+          cause={`${derived.totalFilled} projects due today across ${designers.length} ${
             designers.length === 1 ? 'person' : 'people'
           }`}
           reference={
@@ -413,7 +414,7 @@ export default function OpsHome() {
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="inline-flex items-center gap-1 text-lg font-semibold text-fg">
               Who has room for more
-              <InfoTip text="People who can take more projects today. Giving them work is the team lead's job, not theirs." />
+              <InfoTip text="People who can take more projects today. Only projects DUE today fill a plate — status doesn't matter. Giving them work is the team lead's job, not theirs." />
             </h2>
             <span className="text-xs text-muted">most free first</span>
           </div>
@@ -451,7 +452,7 @@ export default function OpsHome() {
                         <span className="ml-2 text-xs font-normal text-muted">{r.designer.team}</span>
                       </p>
                       <p className="tnum text-xs text-muted">
-                        {r.load} on their plate, target {r.expected}
+                        {r.filled} due today, target {r.expected}
                         {r.spare > 0
                           ? ` — ${r.spare} open slot${r.spare === 1 ? '' : 's'}`
                           : r.spare < 0

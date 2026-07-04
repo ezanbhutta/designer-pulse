@@ -12,10 +12,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { addDays, dateRange, pktInstant, pktToday } from '../../shared/pkt'
 import {
+  burnoutComposite,
   priorPeriod,
   summarizeDesigner,
   workloadForecast,
-  type DesignerPeriodSummary,
   type QuotaContext,
 } from '../../shared/aggregate'
 import type {
@@ -265,80 +265,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   }
 }
 
-// ── Burnout composite ─────────────────────────────────────────────────────────
-
-/**
- * Burnout risk, 0–100 (spec §11 Tier 4) — a leading indicator of "online but
- * producing less". Weighted, normalized components, this 7 days vs prior 7:
- *
- *   0.40 · rising revision turnaround — median turnaround grew; a 2× rise
- *          saturates the component ((cur/prev − 1), clamped 0..1).
- *   0.35 · falling quota attainment — a 50-point attainment drop saturates
- *          ((prev − cur) / 50, clamped 0..1).
- *   0.25 · shrinking warm-up gap WITH sustained presence — present at least
- *          as many days, starting activity sooner after check-in, while the
- *          other signals degrade ((prevWarm − curWarm) / max(prevWarm, 30),
- *          clamped 0..1; zero unless presence held steady).
- *
- * Components missing their baseline (no prior data) contribute 0 — the score
- * only rises on evidenced movement, never on absence of data.
- */
-function burnoutComposite(
-  cur: DesignerPeriodSummary,
-  prev: DesignerPeriodSummary,
-  attCur: AttendanceDaily[],
-  attPrev: AttendanceDaily[],
-): {
-  score: number
-  turnaroundRise: number
-  attainmentFall: number
-  warmupShrink: number
-  presentCur: number
-  presentPrev: number
-} {
-  const clamp01 = (x: number) => Math.min(1, Math.max(0, x))
-
-  let turnaroundRise = 0
-  if (
-    prev.revisionTurnaroundMedianMin != null &&
-    prev.revisionTurnaroundMedianMin > 0 &&
-    cur.revisionTurnaroundMedianMin != null
-  ) {
-    turnaroundRise = clamp01(cur.revisionTurnaroundMedianMin / prev.revisionTurnaroundMedianMin - 1)
-  }
-
-  let attainmentFall = 0
-  if (prev.attainmentPct != null && cur.attainmentPct != null) {
-    attainmentFall = clamp01((prev.attainmentPct - cur.attainmentPct) / 50)
-  }
-
-  const isPresent = (a: AttendanceDaily) => a.status === 'Present' || a.status === 'HolidayWorked'
-  const presentCur = attCur.filter(isPresent).length
-  const presentPrev = attPrev.filter(isPresent).length
-  const warmCur = meanWarmup(attCur)
-  const warmPrev = meanWarmup(attPrev)
-  let warmupShrink = 0
-  if (
-    presentCur >= presentPrev &&
-    presentCur > 0 &&
-    warmPrev != null &&
-    warmCur != null &&
-    warmCur < warmPrev
-  ) {
-    warmupShrink = clamp01((warmPrev - warmCur) / Math.max(warmPrev, 30))
-  }
-
-  const score = Math.round(100 * (0.4 * turnaroundRise + 0.35 * attainmentFall + 0.25 * warmupShrink))
-  return { score, turnaroundRise, attainmentFall, warmupShrink, presentCur, presentPrev }
-}
-
-function meanWarmup(rows: AttendanceDaily[]): number | null {
-  const vals = rows
-    .map((r) => r.warmup_gap_min)
-    .filter((v): v is number => v != null && Number.isFinite(v))
-  if (!vals.length) return null
-  return vals.reduce((s, v) => s + v, 0) / vals.length
-}
+// Burnout composite lives in shared/aggregate.ts (spec §11 Tier 4) — ONE
+// canonical scoring shared with the CEO Trends board, so the alert that fires
+// here always matches the score the CEO reads for the same designer/window.
 
 const fmtMin = (v: number | null) => (v == null ? '—' : `${v}m`)
 const fmtPct = (v: number | null) => (v == null ? '—' : `${v}%`)

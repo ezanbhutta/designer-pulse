@@ -30,6 +30,7 @@ import {
   createdOn,
   firstName,
   minutesSinceShiftStart,
+  slotsFilledToday,
   useConfigValues,
   useDesignerDrawer,
   useDesigners,
@@ -105,8 +106,10 @@ export default function OpsBoard() {
         const expected = expectedQuotaOn(d.id, today, ctx)
         const schedule = scheduleFor(ctx.schedules, d.id, today)
         const since = minutesSinceShiftStart(schedule, today, now)
-        const assigned = assignedToday.get(d.id) ?? 0
-        return { d, expected, assigned, gapLive: expected > 0 && assigned < expected && since != null && since >= cfg.assignment_gap_check_offset_min }
+        // Owner's rule: ONLY projects due today are today's plate — status
+        // and creation date don't matter.
+        const filled = slotsFilledToday(openTasks, todayTasksQ.data ?? [], d.id, today)
+        return { d, expected, filled, gapLive: expected > 0 && filled < expected && since != null && since >= cfg.assignment_gap_check_offset_min }
       })
 
     const agingCount = openTasks.filter(
@@ -349,7 +352,7 @@ export default function OpsBoard() {
                             {gap && gap.expected > 0 && (
                               <span className="tnum">
                                 {' '}
-                                · given {gap.assigned} of {gap.expected} today
+                                · has {gap.filled} of {gap.expected} today
                               </span>
                             )}
                           </span>
@@ -373,8 +376,8 @@ export default function OpsBoard() {
                         >
                           <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
                           <span>
-                            {gap.expected - gap.assigned} open slot
-                            {gap.expected - gap.assigned === 1 ? '' : 's'} — {firstName(d.name)} can
+                            {gap.expected - gap.filled} open slot
+                            {gap.expected - gap.filled === 1 ? '' : 's'} — {firstName(d.name)} can
                             take more projects today. Handing out work is the team lead's job, not
                             theirs.
                           </span>

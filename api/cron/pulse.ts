@@ -3,10 +3,10 @@
  * §12), all in PKT (spec §22.2):
  *  1. Assignment gaps: at shift_start + assignment_gap_check_offset_min for
  *     each active designer, expected quota (schedule + exceptions, zeroed on
- *     off/leave/holiday days) vs tasks created today in their list. A
- *     shortfall is idle paid capacity — attributed to the PM/assignment team,
- *     never the designer. The proposed action is a ClickUp deep link, never a
- *     write (spec §22.1).
+ *     off/leave/holiday days) vs projects DUE that day (owner's rule — status
+ *     and creation date don't matter). A shortfall is idle paid capacity —
+ *     attributed to the PM/assignment team, never the designer. The proposed
+ *     action is a ClickUp deep link, never a write (spec §22.1).
  *  2. Task aging: open tasks past aging_days_default in their current status
  *     (aging_days_client_response for `client response`) → warning; past 2×
  *     the threshold → escalated to critical.
@@ -34,7 +34,7 @@ import type {
   TaskState,
 } from '../../shared/types'
 import { createSafetyResponder, requireCronAuth } from '../_lib/http'
-import { expectOk, supabaseAdmin } from '../_lib/supabaseAdmin'
+import { expectOk, supabaseAdmin, type SupabaseAdmin } from '../_lib/supabaseAdmin'
 import { loadConfig } from '../_lib/config'
 import { fireAlert } from '../_lib/alerts'
 import { recomputeWithPriorDay } from '../_lib/attendance-runner'
@@ -65,6 +65,30 @@ const BUDGET_MS = 22_000
 const SAFETY_FLUSH_MS = 26_000
 /** Designers recomputed concurrently per batch. */
 const ATT_PARALLEL = 6
+
+/**
+ * Slots filled for a work day (owner's rule): ONLY tasks whose DUE DATE falls
+ * on that PKT day are that day's work — status and creation date don't
+ * matter. A task due tomorrow, even one being worked right now, belongs to
+ * tomorrow.
+ */
+async function slotsFilledDb(
+  supa: SupabaseAdmin,
+  designerId: string,
+  workDate: string,
+): Promise<number> {
+  const startIso = pktInstant(workDate, '00:00').toISOString()
+  const endIso = pktInstant(addDays(workDate, 1), '00:00').toISOString()
+  const { count, error } = await supa
+    .from('task_state')
+    .select('task_id', { count: 'exact', head: true })
+    .eq('designer_id', designerId)
+    .eq('deleted', false)
+    .gte('due_date', startIso)
+    .lt('due_date', endIso)
+  expectOk(error, `slots-filled read (${designerId})`)
+  return count ?? 0
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
@@ -128,35 +152,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           const expected = expectedQuotaOn(d.id, workDate, quota)
           if (expected <= 0) continue // off day / leave / holiday — no slots expected
 
-          const { count, error: countErr } = await supa
-            .from('task_state')
-            .select('task_id', { count: 'exact', head: true })
-            .eq('designer_id', d.id)
-            .eq('deleted', false)
-            .gte('created_at', pktInstant(workDate, '00:00').toISOString())
-            .lt('created_at', pktInstant(addDays(workDate, 1), '00:00').toISOString())
-          expectOk(countErr, `created-today count (${d.name})`)
-          let created = count ?? 0
-          if (expected - created > 0) {
-            // Trust but verify: count what ClickUp itself says was created in
-            // the designer's list this work day before accusing the assignment
-            // team — a dropped webhook or reconcile lag must never raise a
-            // false gap. (The higher of the two counts wins; missing tasks
-            // are imported by the next reconcile run anyway.)
-            let cuCreated = 0
+          // Owner's rule: ONLY projects due this work day fill its slots —
+          // status and creation date don't matter. A task due tomorrow, even
+          // one being worked right now, belongs to tomorrow.
+          let filled = await slotsFilledDb(supa, d.id, workDate)
+          if (expected - filled > 0) {
+            // Trust but verify against ClickUp live before accusing the
+            // assignment team — a dropped webhook or reconcile lag must never
+            // raise a false gap. (The higher count wins; missing tasks are
+            // imported by the next reconcile run anyway.)
+            let cuDue = 0
             for (let page = 0; page < 3; page++) {
-              const { tasks: createdBatch, lastPage } = await getListTasks(d.clickup_list_id, {
-                dateCreatedGt: pktInstant(workDate, '00:00').getTime(),
-                dateCreatedLt: pktInstant(addDays(workDate, 1), '00:00').getTime(),
+              const { tasks: dueBatch, lastPage } = await getListTasks(d.clickup_list_id, {
+                dueDateGt: pktInstant(workDate, '00:00').getTime(),
+                dueDateLt: pktInstant(addDays(workDate, 1), '00:00').getTime(),
                 includeClosed: true,
                 page,
               })
-              cuCreated += createdBatch.length
-              if (lastPage || createdBatch.length === 0) break
+              cuDue += dueBatch.length
+              if (lastPage || dueBatch.length === 0) break
             }
-            created = Math.max(created, cuCreated)
+            filled = Math.max(filled, cuDue)
           }
-          const gap = expected - created
+          const gap = expected - filled
           if (gap <= 0) continue
 
           const result = await fireAlert(supa, {
@@ -165,7 +183,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
             severity: 'warning',
             // §20.3 wording — an observation + a deep-link action, never a write.
             message: `${gap} slot${gap === 1 ? '' : 's'} open — open ${d.name}'s list in ClickUp`,
-            context: { work_date: workDate, expected, created, gap },
+            context: { work_date: workDate, expected, filled, gap },
           })
           if (result.fired) gapAlerts++
         } catch (err) {
@@ -300,15 +318,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       if (!a.designer_id) continue
       try {
         const expected = expectedQuotaOn(a.designer_id, workDate, quota)
-        const { count: nowCount, error: gcErr } = await supa
-          .from('task_state')
-          .select('task_id', { count: 'exact', head: true })
-          .eq('designer_id', a.designer_id)
-          .eq('deleted', false)
-          .gte('created_at', pktInstant(workDate, '00:00').toISOString())
-          .lt('created_at', pktInstant(addDays(workDate, 1), '00:00').toISOString())
-        expectOk(gcErr, 'gap re-count')
-        if (expected - (nowCount ?? 0) <= 0) gapResolveIds.push(a.id)
+        const nowFilled = await slotsFilledDb(supa, a.designer_id, workDate)
+        if (expected - nowFilled <= 0) gapResolveIds.push(a.id)
       } catch (err) {
         console.error('[cron/pulse] gap re-check failed', err)
       }

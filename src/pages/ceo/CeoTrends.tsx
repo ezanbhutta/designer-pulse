@@ -118,7 +118,7 @@ export default function CeoTrends() {
     }
     const speedBaseline = mean(speedPoints.map((p) => p.value))
 
-    // Burnout Risk board — weights documented in ceoData.burnoutRisk (§11 T4).
+    // Burnout Risk board — canonical scoring in shared/aggregate.burnoutComposite (§11 T4).
     const curAtt = attendanceQ.data.filter((a) => a.work_date >= cur14.start && a.work_date <= cur14.end)
     const priorAtt = attendanceQ.data.filter(
       (a) => a.work_date >= prior14.start && a.work_date <= prior14.end,
