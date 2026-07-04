@@ -8,6 +8,7 @@
  */
 
 import jsPDF from 'jspdf'
+import { BRAND_MARK_PATH, BRAND_VIOLET } from '../components/ui/BrandLogo'
 import { fmtDuration } from './format'
 import type { DesignerPeriodSummary } from '../../shared/aggregate'
 import type { Designer, Team } from '../../shared/types'
@@ -76,14 +77,24 @@ const pct = (v: number | null): string => (v == null ? '—' : `${v}%`)
  * quality % with clean/delivered, production median, revision rounds,
  * cancellations), and the cross-team caveat in the footer of every page.
  */
-export function generateWeeklyReportPdf(args: WeeklyReportArgs): void {
+export async function generateWeeklyReportPdf(args: WeeklyReportArgs): Promise<void> {
   const { period, teamName, rows, designers } = args
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
 
   const byId = new Map(designers.map((d) => [d.id, d]))
   const teams = TEAM_ORDER.filter((t) => !teamName || t === teamName)
 
-  let y = drawHeader(doc, period, teamName)
+  // The HaseebMadeIt mark, rendered once to a high-res PNG (jsPDF can't
+  // rasterize SVG itself). A failed render falls back to the text-only
+  // header rather than blocking the download.
+  let logoPng: string | null = null
+  try {
+    logoPng = await renderBrandLogoPng(256)
+  } catch {
+    logoPng = null
+  }
+
+  let y = drawHeader(doc, period, teamName, logoPng)
 
   for (const team of teams) {
     const teamRows = rows
@@ -116,11 +127,50 @@ export function generateWeeklyReportPdf(args: WeeklyReportArgs): void {
 
 // ── Sections ──────────────────────────────────────────────────────────────────
 
-function drawHeader(doc: jsPDF, period: { start: string; end: string }, teamName?: string): number {
+/** SVG → PNG data-url via canvas, so the brand mark prints in the PDF header. */
+function renderBrandLogoPng(sizePx: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sizePx}" height="${sizePx}" viewBox="0 0 392.35 392.35"><rect width="392.35" height="392.35" rx="60" fill="${BRAND_VIOLET}"/><path fill="#FFFFFF" d="${BRAND_MARK_PATH}"/></svg>`
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }))
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = sizePx
+        canvas.height = sizePx
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('no 2d context')
+        ctx.drawImage(img, 0, 0, sizePx, sizePx)
+        resolve(canvas.toDataURL('image/png'))
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(String(err)))
+      } finally {
+        URL.revokeObjectURL(url)
+      }
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('logo render failed'))
+    }
+    img.src = url
+  })
+}
+
+function drawHeader(
+  doc: jsPDF,
+  period: { start: string; end: string },
+  teamName?: string,
+  logoPng?: string | null,
+): number {
+  let titleX = MARGIN_X
+  if (logoPng) {
+    doc.addImage(logoPng, 'PNG', MARGIN_X, 13.5, 8, 8)
+    titleX = MARGIN_X + 11
+  }
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
   doc.setTextColor(...INK)
-  doc.text('Studio Pulse — Weekly Designer Report', MARGIN_X, 20)
+  doc.text('Studio Pulse — Weekly Designer Report', titleX, 20)
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)

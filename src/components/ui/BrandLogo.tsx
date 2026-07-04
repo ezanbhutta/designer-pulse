@@ -1,0 +1,27 @@
+/**
+ * The HaseebMadeIt brand mark — six white bars in a rising chart formation on
+ * the violet (#7229FF) rounded square. This is the official brand asset (same
+ * artwork as /public/favicon.svg): it never re-colors with the theme, exactly
+ * like a printed logo wouldn't.
+ */
+
+export const BRAND_VIOLET = '#7229FF'
+
+export const BRAND_MARK_PATH =
+  'M187.32,115.24h17.71c2.46,0,4.46,1.99,4.46,4.46v61.29c0,1.98-1.31,3.73-3.21,4.28l-17.71,5.16c-2.86.83-5.7-1.31-5.7-4.28v-66.45c0-2.46,1.99-4.46,4.46-4.46ZM167.44,142.55v50.69c0,1.98-1.31,3.73-3.21,4.28l-17.71,5.16c-2.86.83-5.7-1.31-5.7-4.28v-55.85c0-2.46,1.99-4.46,4.46-4.46h17.71c2.46,0,4.46,1.99,4.46,4.46ZM144.03,219.52l17.71-5.16c2.86-.83,5.7,1.31,5.7,4.28v31.16c0,2.46-1.99,4.46-4.46,4.46h-17.71c-2.46,0-4.46-1.99-4.46-4.46v-26c0-1.98,1.31-3.73,3.21-4.28ZM186.07,207.27l17.71-5.16c2.86-.83,5.7,1.31,5.7,4.28v66.26c0,2.46-1.99,4.46-4.46,4.46h-17.71c-2.46,0-4.46-1.99-4.46-4.46v-61.1c0-1.99,1.31-3.73,3.21-4.28ZM224.9,249.8v-50.5c0-1.98,1.31-3.73,3.21-4.28l17.71-5.16c2.86-.83,5.7,1.31,5.7,4.28v55.66c0,2.46-1.99,4.46-4.46,4.46h-17.71c-2.46,0-4.46-1.99-4.46-4.46ZM251.52,142.55v26.19c0,1.99-1.31,3.73-3.21,4.28l-17.71,5.16c-2.86.83-5.7-1.31-5.7-4.28v-31.35c0-2.46,1.99-4.46,4.46-4.46h17.71c2.46,0,4.46,1.99,4.46,4.46h0Z'
+
+export function BrandLogo({ className = 'h-9 w-9' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 392.35 392.35"
+      className={`shrink-0 ${className}`}
+      role="img"
+      aria-label="Studio Pulse by HaseebMadeIt"
+    >
+      <rect width="392.35" height="392.35" rx="60" fill={BRAND_VIOLET} />
+      <path fill="#fff" d={BRAND_MARK_PATH} />
+    </svg>
+  )
+}
+
+export default BrandLogo

@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
-import { Activity, LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react'
+import { LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react'
+import { BrandLogo } from '../ui/BrandLogo'
 import { useAuth } from '../../hooks/useAuth'
 import { CommandPalette, OPEN_PALETTE_EVENT, type Command } from '../ui/CommandPalette'
 import { ToastProvider } from '../ui/ToastProvider'
@@ -162,9 +163,7 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
         {/* ── Left rail: icons at md, icon + label at lg (§22.3) ─────────── */}
         <aside className="sticky top-0 hidden h-screen w-[4.5rem] shrink-0 flex-col border-r border-border bg-surface px-3 py-4 md:flex lg:w-60">
           <div className="flex items-center gap-2.5 px-2 pb-5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand text-brand-fg">
-              <Activity className="h-5 w-5" aria-hidden="true" />
-            </span>
+            <BrandLogo className="h-9 w-9" />
             <div className="hidden min-w-0 lg:block">
               <p className="truncate text-sm font-semibold leading-tight text-fg">Studio Pulse</p>
               <p className="truncate text-xs text-muted">{title}</p>
@@ -222,9 +221,7 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
             >
               <Menu className="h-5 w-5" aria-hidden="true" />
             </button>
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-brand-fg">
-              <Activity className="h-4 w-4" aria-hidden="true" />
-            </span>
+            <BrandLogo className="h-8 w-8" />
             <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-fg">{title}</h1>
           </header>
 
@@ -252,9 +249,7 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
           >
             <div className="flex items-center justify-between pb-4">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-brand-fg">
-                  <Activity className="h-5 w-5" aria-hidden="true" />
-                </span>
+                <BrandLogo className="h-9 w-9" />
                 <div>
                   <p className="text-sm font-semibold leading-tight text-fg">Studio Pulse</p>
                   <p className="text-xs text-muted">{title}</p>

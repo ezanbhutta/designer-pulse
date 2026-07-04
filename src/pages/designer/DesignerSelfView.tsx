@@ -44,6 +44,7 @@ import { Badge, type BadgeProps } from '../../components/ui/Badge'
 import { TrendLine, type TrendPoint } from '../../components/ui/TrendLine'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
+import { BrandLogo } from '../../components/ui/BrandLogo'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { fmtDate, fmtDuration, fmtShiftTime, fmtTime } from '../../lib/format'
 import {
@@ -663,7 +664,10 @@ function PageHeader({
   return (
     <header className="flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <p className="eyebrow">Studio Pulse</p>
+        <span className="flex items-center gap-1.5">
+          <BrandLogo className="h-4 w-4" />
+          <p className="eyebrow">Studio Pulse</p>
+        </span>
         <h1 className="mt-1 text-2xl font-semibold leading-tight text-fg">
           {greeting}, {name.split(' ')[0]}
         </h1>

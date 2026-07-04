@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Activity } from 'lucide-react'
+import { BrandLogo } from '../../components/ui/BrandLogo'
 import { homePathFor, useAuth } from '../../hooks/useAuth'
 import { supabaseConfigured } from '../../lib/supabase'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
@@ -30,9 +30,7 @@ function friendlyAuthError(raw: string): string {
 function BrandMark() {
   return (
     <div className="flex flex-col items-center gap-3 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand text-brand-fg shadow-soft">
-        <Activity className="h-6 w-6" aria-hidden="true" />
-      </span>
+      <BrandLogo className="h-12 w-12" />
       <div>
         <h1 className="text-2xl font-semibold leading-tight text-fg">Studio Pulse</h1>
         <p className="eyebrow mt-1.5">See how the design team is doing</p>
