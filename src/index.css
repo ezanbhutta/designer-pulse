@@ -3,49 +3,82 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Semantic tokens (§21.1): R G B triplets, consumed as rgb(var(--t) / a).
+/* ── Semantic tokens: R G B triplets, consumed as rgb(var(--t) / a).
+   GRAYSCALE SUBSTRATE (manifesto pillar 1): 95% of the UI is neutral zinc;
+   the only permitted colors are brand (HaseebMadeIt violet — the sole primary
+   action + active nav), success, warning, danger. No other hue exists.
    Light theme — the Designer self-view default (glance-and-check-in). */
 :root {
   /* Native widgets (date pickers, selects, scrollbars) follow the APP theme,
      not the OS — the theme is class-driven, so pin color-scheme per class. */
   color-scheme: light;
-  --color-bg: 250 250 252;
+  --color-bg: 250 250 250; /* zinc-50 */
   --color-surface: 255 255 255;
-  --color-surface-2: 244 242 250;
-  --color-border: 231 228 240;
-  --color-fg: 22 10 51; /* deep ink #160A33 */
-  --color-muted: 83 74 120; /* #534A78 — 7.5:1 on white */
-  --color-brand: 114 41 255; /* #7229FF */
+  --color-surface-2: 244 244 245; /* zinc-100 */
+  --color-border: 228 228 231; /* zinc-200 */
+  --color-fg: 24 24 27; /* zinc-900 */
+  --color-muted: 82 82 91; /* zinc-600 — 7:1 on white */
+  --color-brand: 114 41 255; /* HaseebMadeIt #7229FF — the ONLY brand hue */
   --color-brand-fg: 255 255 255;
   --color-brand-soft: 241 234 255;
-  --color-success: 22 101 52; /* #166534 — 6.4:1 on success-soft (12px pills) */
+  --color-success: 22 101 52; /* 6.4:1 on success-soft (12px pills) */
   --color-success-soft: 230 246 236;
   --color-warning: 180 83 9;
   --color-warning-soft: 253 243 226;
-  --color-danger: 185 28 28; /* #B91C1C — 5.6:1 on danger-soft (12px pills) */
+  --color-danger: 185 28 28; /* 5.6:1 on danger-soft (12px pills) */
   --color-danger-fg: 255 255 255;
   --color-danger-soft: 253 233 233;
+  --shadow-soft: 0 1px 2px rgba(9, 9, 11, 0.04), 0 2px 8px rgba(9, 9, 11, 0.04);
+  --shadow-raised: 0 14px 40px -12px rgba(9, 9, 11, 0.18);
+  /* 5-layer composite (manifesto pillar 14) — simulated light occlusion. */
+  --shadow-edge:
+    0 0 0 1px rgba(9, 9, 11, 0.03),
+    0 1px 1px rgba(9, 9, 11, 0.04),
+    0 2px 4px rgba(9, 9, 11, 0.04),
+    0 8px 16px -4px rgba(9, 9, 11, 0.05),
+    0 24px 48px -12px rgba(9, 9, 11, 0.06);
 }
 
-/* Dark theme — the all-day Ops/CEO cockpit default (§21.9). */
+/* Dark theme — the all-day Ops/CEO cockpit default. The Void substrate:
+   near-black zinc, never tinted; color only where meaning demands it. */
 .dark {
   color-scheme: dark;
-  --color-bg: 11 6 24; /* #0B0618 */
-  --color-surface: 22 10 51; /* #160A33 */
-  --color-surface-2: 31 17 71;
-  --color-border: 44 29 93;
-  --color-fg: 242 239 250;
-  --color-muted: 167 159 199;
-  --color-brand: 159 102 255; /* glow violet #9F66FF */
+  --color-bg: 9 9 11; /* #09090B — the void */
+  --color-surface: 18 18 20; /* #121214 */
+  --color-surface-2: 39 39 42; /* #27272A */
+  --color-border: 39 39 42; /* #27272A */
+  --color-fg: 250 250 250; /* #FAFAFA paper white */
+  --color-muted: 161 161 170; /* #A1A1AA ash */
+  --color-brand: 159 102 255; /* HaseebMadeIt glow #9F66FF (AA on the void) */
   --color-brand-fg: 18 6 43;
-  --color-brand-soft: 34 17 74; /* brand-on-soft 4.7:1 for 14px nav/pill text */
-  --color-success: 74 222 128;
-  --color-success-soft: 16 51 31;
-  --color-warning: 251 191 36;
-  --color-warning-soft: 64 47 10;
-  --color-danger: 248 113 113;
-  --color-danger-fg: 18 6 43;
-  --color-danger-soft: 68 21 21;
+  --color-brand-soft: 39 27 66; /* violet-tinted chip, 4.6:1 under brand text */
+  --color-success: 16 185 129; /* #10B981 emerald */
+  --color-success-soft: 9 44 34;
+  --color-warning: 245 158 11; /* #F59E0B amber */
+  --color-warning-soft: 66 44 8;
+  --color-danger: 239 68 68; /* #EF4444 */
+  --color-danger-fg: 250 250 250;
+  --color-danger-soft: 69 22 22;
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-raised: 0 14px 40px -12px rgba(0, 0, 0, 0.55);
+  --shadow-edge:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 1px 1px rgba(0, 0, 0, 0.32),
+    0 2px 4px rgba(0, 0, 0, 0.22),
+    0 8px 16px -4px rgba(0, 0, 0, 0.3),
+    0 24px 48px -12px rgba(0, 0, 0, 0.38);
+}
+
+/* Tactile grain (manifesto pillar 14): 2% SVG noise over the void prevents
+   gradient banding and gives the dark substrate a physical texture. */
+.dark body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='128' height='128' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 @layer base {

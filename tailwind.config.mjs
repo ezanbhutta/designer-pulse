@@ -35,6 +35,14 @@ export default {
         toast: '60',
         tip: '70',
       },
+      fontSize: {
+        label: ['0.75rem', { lineHeight: '1rem', letterSpacing: '0.04em', fontWeight: '500' }],
+        caption: ['0.875rem', { lineHeight: '1.25rem', letterSpacing: '0.01em', fontWeight: '400' }],
+        body: ['1.125rem', { lineHeight: '1.75rem', letterSpacing: '-0.01em', fontWeight: '400' }],
+        card: ['1.5rem', { lineHeight: '2rem', letterSpacing: '-0.02em', fontWeight: '600' }],
+        section: ['2rem', { lineHeight: '2.5rem', letterSpacing: '-0.03em', fontWeight: '600' }],
+        hero: ['3rem', { lineHeight: '1', letterSpacing: '-0.04em', fontWeight: '600' }],
+      },
       fontFamily: {
         sans: ['"Inter Variable"', 'Inter', 'system-ui', 'sans-serif'],
       },
@@ -43,8 +51,9 @@ export default {
         '2xl': '1.125rem',
       },
       boxShadow: {
-        soft: '0 2px 12px rgba(22, 10, 51, 0.06)',
-        raised: '0 14px 40px -12px rgba(22, 10, 51, 0.22)',
+        soft: 'var(--shadow-soft)',
+        raised: 'var(--shadow-raised)',
+        edge: 'var(--shadow-edge)',
       },
       keyframes: {
         'fade-in': {
