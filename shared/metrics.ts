@@ -129,10 +129,7 @@ export interface TimeInStatusEntry {
 }
 
 export function reconstructBackfillEvents(
-  taskId: string,
-  listId: string,
   statusHistory: TimeInStatusEntry[],
-  currentStatusRaw: string | null,
 ): Array<Omit<TransitionEvent, 'event_type'> & { event_type: 'status_change' }> {
   // Unknown status names are dropped entirely (§6.4) so the reconstructed
   // chain never carries a non-canonical from_status; the chain simply links

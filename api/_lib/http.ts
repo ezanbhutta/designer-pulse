@@ -16,6 +16,29 @@ export function json(res: VercelResponse, status: number, body: unknown): void {
   res.status(status).json(body)
 }
 
+/**
+ * Budget-guarded responder for endpoints driven by external schedulers
+ * (cron-job.org free tier waits ≤30s and auto-disables jobs that keep
+ * "timing out"). Arms a safety timer that flushes `safetyBody()` with a 200
+ * at `safetyMs`, BEFORE the scheduler gives up; the returned respond()
+ * answers exactly once and disarms the timer. Per-endpoint budgets and flush
+ * bodies stay with the handlers — this only owns the answer-once mechanics.
+ */
+export function createSafetyResponder(
+  res: VercelResponse,
+  opts: { safetyMs: number; safetyBody: () => Record<string, unknown> },
+): (status: number, body: Record<string, unknown>) => void {
+  let responded = false
+  const respond = (status: number, body: Record<string, unknown>) => {
+    if (responded) return
+    responded = true
+    clearTimeout(safety)
+    json(res, status, body)
+  }
+  const safety = setTimeout(() => respond(200, opts.safetyBody()), opts.safetyMs)
+  return respond
+}
+
 /** Constant-time string comparison (hash first so lengths never leak). */
 function secretsMatch(a: string, b: string): boolean {
   const ha = createHash('sha256').update(a, 'utf8').digest()

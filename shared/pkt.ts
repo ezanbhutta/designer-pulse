@@ -50,6 +50,11 @@ export function pktToday(now: Date = new Date()): string {
   return pktDateOf(now)
 }
 
+/** Monday of the week containing `date` (work weeks start Monday). */
+export function startOfWeek(date: string): string {
+  return addDays(date, -((dowOf(date) + 6) % 7))
+}
+
 /**
  * Resolve the scheduled shift window for a work_date (the shift-START day).
  * Overnight shifts (shift_end <= shift_start) end on the next calendar day.

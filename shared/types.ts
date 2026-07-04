@@ -194,18 +194,6 @@ export interface AppUser {
   active: boolean
 }
 
-export interface AuditLogEntry {
-  id: number
-  actor_id: string | null
-  actor_email: string | null
-  action: string
-  entity: string
-  entity_id: string | null
-  before: unknown
-  after: unknown
-  at: string
-}
-
 export interface AppConfig {
   key: string
   value: unknown

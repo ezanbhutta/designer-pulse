@@ -6,9 +6,10 @@
  */
 
 import { ACTIVE_LOAD_STATUSES, type CanonicalStatus } from './statuses'
-import { addDays, dateRange, dowOf } from './pkt'
+import { addDays, dateRange, dowOf, pktDateOf } from './pkt'
 import { leaveCovers } from './attendance'
 import type {
+  AttendanceDaily,
   DesignerSchedule,
   Holiday,
   HolidayWorker,
@@ -113,13 +114,8 @@ export interface PeriodInputs {
 
 const inPeriod = (iso: string | null, start: string, end: string) => {
   if (!iso) return false
-  const day = pktDay(iso)
+  const day = pktDateOf(iso)
   return day >= start && day <= end
-}
-
-// PKT day for an ISO timestamp (inline to avoid circular import weight)
-function pktDay(iso: string): string {
-  return new Date(new Date(iso).getTime() + 5 * 3600_000).toISOString().slice(0, 10)
 }
 
 export function summarizeDesigner(designerId: string, p: PeriodInputs): DesignerPeriodSummary {
@@ -175,6 +171,99 @@ export function summarizeDesigner(designerId: string, p: PeriodInputs): Designer
       ? Math.round((revisionRounds / assignedTasks.length) * 10) / 10
       : null,
   }
+}
+
+// ── Burnout composite (Tier 4) ────────────────────────────────────────────────
+
+export interface BurnoutComposite {
+  /** 0–100 composite. */
+  score: number
+  turnaroundRise: number
+  attainmentFall: number
+  warmupShrink: number
+  presentCur: number
+  presentPrev: number
+  /** Mean warm-up gaps behind `warmupShrink` (minutes), for cause wording. */
+  warmupCurMin: number | null
+  warmupPrevMin: number | null
+}
+
+/**
+ * Burnout risk, 0–100 (spec §11 Tier 4) — a leading indicator of "online but
+ * producing less". THE canonical composite: the nightly cron alerts on it and
+ * the CEO Trends board displays it, so both always show the same score.
+ * Weighted, normalized components over two equal adjacent windows:
+ *
+ *   0.40 · rising revision turnaround — median turnaround grew; a 2× rise
+ *          saturates the component ((cur/prev − 1), clamped 0..1).
+ *   0.35 · falling quota attainment — a 50-point attainment drop saturates
+ *          ((prev − cur) / 50, clamped 0..1).
+ *   0.25 · shrinking warm-up gap WITH sustained presence — present at least
+ *          as many days, starting activity sooner after check-in, while the
+ *          other signals degrade ((prevWarm − curWarm) / max(prevWarm, 30),
+ *          clamped 0..1; zero unless presence held steady).
+ *
+ * Components missing their baseline (no prior data) contribute 0 — the score
+ * only rises on evidenced movement, never on absence of data. Attendance rows
+ * must already be filtered to the designer + window.
+ */
+export function burnoutComposite(
+  cur: DesignerPeriodSummary,
+  prev: DesignerPeriodSummary,
+  attCur: AttendanceDaily[],
+  attPrev: AttendanceDaily[],
+): BurnoutComposite {
+  const clamp01 = (x: number) => Math.min(1, Math.max(0, x))
+
+  let turnaroundRise = 0
+  if (
+    prev.revisionTurnaroundMedianMin != null &&
+    prev.revisionTurnaroundMedianMin > 0 &&
+    cur.revisionTurnaroundMedianMin != null
+  ) {
+    turnaroundRise = clamp01(cur.revisionTurnaroundMedianMin / prev.revisionTurnaroundMedianMin - 1)
+  }
+
+  let attainmentFall = 0
+  if (prev.attainmentPct != null && cur.attainmentPct != null) {
+    attainmentFall = clamp01((prev.attainmentPct - cur.attainmentPct) / 50)
+  }
+
+  const isPresent = (a: AttendanceDaily) => a.status === 'Present' || a.status === 'HolidayWorked'
+  const presentCur = attCur.filter(isPresent).length
+  const presentPrev = attPrev.filter(isPresent).length
+  const warmCur = meanWarmup(attCur)
+  const warmPrev = meanWarmup(attPrev)
+  let warmupShrink = 0
+  if (
+    presentCur >= presentPrev &&
+    presentCur > 0 &&
+    warmPrev != null &&
+    warmCur != null &&
+    warmCur < warmPrev
+  ) {
+    warmupShrink = clamp01((warmPrev - warmCur) / Math.max(warmPrev, 30))
+  }
+
+  const score = Math.round(100 * (0.4 * turnaroundRise + 0.35 * attainmentFall + 0.25 * warmupShrink))
+  return {
+    score,
+    turnaroundRise,
+    attainmentFall,
+    warmupShrink,
+    presentCur,
+    presentPrev,
+    warmupCurMin: warmCur,
+    warmupPrevMin: warmPrev,
+  }
+}
+
+function meanWarmup(rows: AttendanceDaily[]): number | null {
+  const vals = rows
+    .map((r) => r.warmup_gap_min)
+    .filter((v): v is number => v != null && Number.isFinite(v))
+  if (!vals.length) return null
+  return vals.reduce((s, v) => s + v, 0) / vals.length
 }
 
 // ── Live capacity (Tier 3) ────────────────────────────────────────────────────
@@ -237,18 +326,18 @@ export function workloadForecast(
   horizonDays: number,
   now: Date = new Date(),
 ): ForecastResult {
-  const today = pktDay(now.toISOString())
+  const today = pktDateOf(now)
   // 7 PKT calendar dates inclusive: today−6 .. today.
   const weekAgo = addDays(today, -6)
   const createdLast7 = tasks.filter(
-    (t) => !t.deleted && t.created_at && pktDay(t.created_at) >= weekAgo,
+    (t) => !t.deleted && t.created_at && pktDateOf(t.created_at) >= weekAgo,
   ).length
   const completedLast7 = tasks.filter(
     (t) =>
       !t.deleted &&
       t.current_status === 'complete' &&
       (t.closed_at ?? t.last_event_at) &&
-      pktDay((t.closed_at ?? t.last_event_at)!) >= weekAgo,
+      pktDateOf((t.closed_at ?? t.last_event_at)!) >= weekAgo,
   ).length
   const openNow = tasks.filter(
     (t) =>
