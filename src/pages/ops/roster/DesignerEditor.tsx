@@ -494,6 +494,7 @@ export function DesignerEditor({
           <Field
             id={id('order')}
             label="Display order"
+            tip="Where they appear on the roster page — lower numbers show first."
             hint="Lower numbers show higher in the list."
           >
             <input

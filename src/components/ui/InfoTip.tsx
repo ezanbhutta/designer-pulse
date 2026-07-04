@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Info } from 'lucide-react'
 
 export interface InfoTipProps {
@@ -65,16 +66,22 @@ export function InfoTip({ text, label }: InfoTipProps) {
       >
         <Info className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
-      {open && pos && (
-        <span
-          id={id}
-          role="tooltip"
-          className="pointer-events-none fixed z-[70] w-max max-w-[17rem] -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-surface px-3 py-2 text-xs font-normal normal-case leading-relaxed tracking-normal text-fg shadow-raised animate-fade-in"
-          style={{ top: pos.top - 6, left: pos.left }}
-        >
-          {text}
-        </span>
-      )}
+      {open &&
+        pos &&
+        // Portal to <body>: a transformed ancestor (e.g. the slide-in drawer
+        // panel) re-anchors position:fixed to itself, which would throw the
+        // note off-screen. From <body> the viewport coords are always true.
+        createPortal(
+          <span
+            id={id}
+            role="tooltip"
+            className="pointer-events-none fixed z-[70] w-max max-w-[17rem] -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-surface px-3 py-2 text-xs font-normal normal-case leading-relaxed tracking-normal text-fg shadow-raised animate-fade-in"
+            style={{ top: pos.top - 6, left: pos.left }}
+          >
+            {text}
+          </span>,
+          document.body,
+        )}
     </>
   )
 }

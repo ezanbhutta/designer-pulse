@@ -356,8 +356,13 @@ export async function deleteQuotaException(id: string) {
 /** ClickUp workspace (team) id — list URLs don't open without it in the path. */
 const CLICKUP_TEAM_ID = '9018453434'
 
+/**
+ * Deep link to the LIST view specifically (`/v/l/6-{id}-1`) — the plain
+ * `/v/li/{id}` form lets ClickUp pick the list's default tab, which can be
+ * the Chat channel instead of the task list.
+ */
 export function clickupListUrl(listId: string | null | undefined): string | null {
-  return listId ? `https://app.clickup.com/${CLICKUP_TEAM_ID}/v/li/${listId}` : null
+  return listId ? `https://app.clickup.com/${CLICKUP_TEAM_ID}/v/l/6-${listId}-1` : null
 }
 
 export function clickupTaskUrl(taskId: string | null | undefined): string | null {
