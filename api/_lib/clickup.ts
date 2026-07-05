@@ -249,6 +249,68 @@ export async function getTask(taskId: string): Promise<ClickUpTask> {
   return request<ClickUpTask>(`/task/${taskId}`)
 }
 
+// ── Rich task detail (read-only, on demand for the task drawer) ───────────────
+
+export interface ClickUpUser {
+  id: number
+  username?: string
+  email?: string
+  initials?: string
+  color?: string
+  profilePicture?: string | null
+}
+export interface ClickUpAttachment {
+  id: string
+  title?: string
+  url?: string
+  extension?: string
+  size?: number
+  date?: string
+}
+export interface ClickUpCustomFieldValue {
+  id: string
+  name: string
+  type: string
+  type_config?: { options?: Array<{ id: string; label: string; color?: string }> }
+  value?: unknown
+}
+export interface ClickUpTaskDetail extends Omit<ClickUpTask, 'assignees'> {
+  markdown_description?: string | null
+  description?: string | null
+  creator?: ClickUpUser | null
+  assignees?: ClickUpUser[] | null
+  watchers?: ClickUpUser[] | null
+  attachments?: ClickUpAttachment[] | null
+  custom_fields?: ClickUpCustomFieldValue[] | null
+}
+export interface ClickUpComment {
+  id: string
+  comment_text?: string
+  user?: ClickUpUser | null
+  date?: string
+  resolved?: boolean
+}
+
+/** Full task payload (brief, custom fields, people, files) — for the drawer. */
+export async function getTaskDetail(taskId: string): Promise<ClickUpTaskDetail> {
+  return request<ClickUpTaskDetail>(`/task/${taskId}?include_markdown_description=true`)
+}
+
+/** Recent comments, newest first (ClickUp returns them reverse-chronological). */
+export async function getTaskComments(taskId: string): Promise<ClickUpComment[]> {
+  const data = await request<{ comments?: ClickUpComment[] }>(`/task/${taskId}/comment`)
+  return data.comments ?? []
+}
+
+/** Resolve a `labels`-type custom field's selected option ids → their labels. */
+export function resolveLabelField(field: ClickUpCustomFieldValue | undefined): string[] {
+  if (!field || !Array.isArray(field.value)) return []
+  const options = field.type_config?.options ?? []
+  return (field.value as string[])
+    .map((id) => options.find((o) => o.id === id)?.label)
+    .filter((l): l is string => !!l)
+}
+
 // ── Time in status (historical backfill, spec §3.4 / §6.3) ────────────────────
 
 export async function getTaskTimeInStatus(taskId: string): Promise<TimeInStatusResponse> {
