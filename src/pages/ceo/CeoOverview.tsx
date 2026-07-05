@@ -28,7 +28,7 @@ import {
 import { STATUS_ORDER, STATUS_LABELS, STATUS_TONES } from '../../../shared/statuses'
 import { pktToday } from '../../../shared/pkt'
 import type { Designer } from '../../../shared/types'
-import { fmtDate, fmtDuration, fmtPct, fmtTime } from '../../lib/format'
+import { fmtClock, fmtDate, fmtDuration, fmtDurationLong, fmtPct } from '../../lib/format'
 import {
   TEAMS,
   activeDesigners,
@@ -138,7 +138,7 @@ export default function CeoOverview() {
 
     // Pipeline + forecast
     const bottleneck = pipelineBottleneck(openQ.data, now)
-    const constraint = constraintRead(bottleneck, fmtDuration)
+    const constraint = constraintRead(bottleneck, fmtDurationLong)
     const forecast = workloadForecast(allTasks, cfg.forecast_horizon_days, now)
 
     // ── Verdicts (§13.2 — 3–5 calls, decisions not data) ────────────────────
@@ -226,7 +226,7 @@ export default function CeoOverview() {
           verdicts.push({
             id: 'constraint',
             severity: 'warning',
-            text: `Work is piling up in the ${team} team — ${share}% of its ${teamAging.length} slow-moving projects are stuck at "${STATUS_LABELS[topStatus[0] as keyof typeof STATUS_LABELS].toLowerCase()}".`,
+            text: `Work is piling up in the ${team} team — ${share}% of its ${teamAging.length} projects moving slowly are sitting at "${STATUS_LABELS[topStatus[0] as keyof typeof STATUS_LABELS].toLowerCase()}".`,
             detail: `${aging.length} project${aging.length === 1 ? ' has' : 's have'} been sitting longer than they should across the studio.${constraint ? ` ${constraint.line}` : ''}`,
             action: { label: 'See teams', onClick: () => navigate('/ceo/teams') },
           })
@@ -239,7 +239,7 @@ export default function CeoOverview() {
       verdicts.push({
         id: 'forecast',
         severity: 'warning',
-        text: `New projects are coming in faster than they get finished — ${forecast.inflowPerDay} in vs ${forecast.completionPerDay} done per day. If this keeps up, about ${forecast.projectedBacklog} projects will be waiting by next week. Consider adding help or moving work around.`,
+        text: `New projects are arriving faster than they get finished — about ${forecast.inflowPerDay} come in each day and ${forecast.completionPerDay} are finished. If this holds, roughly ${forecast.projectedBacklog} projects will be waiting by next week. It may be worth adding help or moving work around.`,
         detail: `${forecast.openNow} projects open right now · looking ${forecast.horizonDays} days ahead · we raise a flag above ${cfg.forecast_threshold}.`,
         action: { label: 'See forecast', onClick: () => navigate('/ceo/trends') },
       })
@@ -252,7 +252,7 @@ export default function CeoOverview() {
           id: 'positive-fpq',
           severity: 'info',
           text: `${fpqNow.pct > fpqPrev.pct ? `More designs are being accepted first time — ${fpqNow.pct}% this week, up from ${fpqPrev.pct}%` : `Designs accepted first time are holding steady at ${fpqNow.pct}%`} (${fpqNow.clean} of ${fpqNow.delivered}). Nothing needs your attention.`,
-          detail: 'No quality dropping, no pile-up coming, no lost orders, no stuck projects.',
+          detail: 'Quality is not slipping, no work is piling up, no orders have been lost, and nothing is stuck.',
           action: { label: 'See trends', onClick: () => navigate('/ceo/trends') },
         })
       } else {
@@ -260,7 +260,7 @@ export default function CeoOverview() {
           id: 'positive-throughput',
           severity: 'info',
           text: `${completionsNow} project${completionsNow === 1 ? '' : 's'} finished so far this week (${completionsPrev} at this point last week), with no lost orders and no quality worries. A calm week.`,
-          detail: 'No quality dropping, no pile-up coming, no stuck projects.',
+          detail: 'Quality is not slipping, no work is piling up, and nothing is stuck.',
           action: { label: 'See teams', onClick: () => navigate('/ceo/teams') },
         })
       }
@@ -344,13 +344,13 @@ export default function CeoOverview() {
         titleAccessory={
           <InfoTip text="A quick look at the whole studio this week — what is going well and what needs your attention." />
         }
-        history={`Week of ${fmtDate(week.start)} so far, compared with the same days last week · all times are Pakistan time · view-only — work is assigned in ClickUp`}
+        history={`Week of ${fmtDate(week.start)} so far, next to the same days last week. All times are Pakistan time. This is a place to see the work, not to change it — the team plans and updates everything in ClickUp.`}
       />
 
       {failed != null && (
         <ErrorBanner
-          message={`Could not load the studio numbers — ${(failed as Error).message}`}
-          asOf={lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null}
+          message={`We could not load the studio numbers just now — ${(failed as Error).message}`}
+          asOf={lastGood > 0 ? fmtClock(new Date(lastGood).toISOString()) : null}
           onRetry={() => {
             void designersQ.refetch()
             void tasksQ.refetch()
@@ -360,7 +360,7 @@ export default function CeoOverview() {
         />
       )}
 
-      <CornerTip tip="Up to five plain-language points about this week, worst first. Each one says what happened and what you can do next.">
+      <CornerTip tip="Up to five clear points about this week, the most pressing first. Each one says what happened and what you might do next.">
         <VerdictBlock
           title="What to know this week"
           items={model?.verdicts ?? []}
@@ -383,7 +383,7 @@ export default function CeoOverview() {
                 model.teamCompletionsLine
                   ? `So far — ${model.teamCompletionsLine} · `
                   : 'Nothing finished yet this week · '
-              }the 8-week average is ${model.weeklyAvg} per week`
+              }the average over the last 8 weeks is ${model.weeklyAvg} a week`
             : null
         }
         sparkline={model?.weeklyCompletions}
@@ -401,7 +401,7 @@ export default function CeoOverview() {
               value={fmtPct(model?.fpqNow.pct ?? null)}
               delta={
                 model
-                  ? metricDelta(model.fpqNow.pct, model.fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v} pts` })
+                  ? metricDelta(model.fpqNow.pct, model.fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v} points` })
                   : null
               }
               cause={
@@ -427,12 +427,12 @@ export default function CeoOverview() {
               eyebrow="Client waiting time"
               tip="How long clients take to reply. This is the client's time, not the team's."
               icon={Clock}
-              value={fmtDuration(model?.clientWaitNow ?? null)}
+              value={fmtDurationLong(model?.clientWaitNow ?? null)}
               delta={
                 model
                   ? metricDelta(model.clientWaitNow, model.clientWaitPrev, {
                       goodWhen: 'down',
-                      format: (v) => fmtDuration(v),
+                      format: (v) => fmtDurationLong(v),
                     })
                   : null
               }
@@ -489,16 +489,16 @@ export default function CeoOverview() {
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-muted" aria-hidden="true" />
               <h2 className="eyebrow inline-flex items-center gap-1">
-                Stand-outs this week{' '}
+                Who stood out this week{' '}
                 <InfoTip text="The strongest and weakest results this week, using fair measures only — never raw project counts." />
               </h2>
             </div>
             <p className="mt-2 max-w-prose text-caption text-muted">
               Compared on &quot;Right first time&quot; and &quot;Target met&quot; only — never raw
-              counts, because a small logo and a 25-page brand guide are not the same amount of work.
+              counts, because a small logo and a long brand guide are not the same amount of work.
             </p>
             {loading ? (
-              <div className="mt-6 space-y-2" role="status" aria-label="Loading stand-outs">
+              <div className="mt-6 space-y-2" role="status" aria-label="Loading who stood out">
                 {[0, 1, 2, 3].map((i) => (
                   <Skeleton key={i} className="h-6 w-full" />
                 ))}

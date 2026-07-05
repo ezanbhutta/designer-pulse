@@ -22,7 +22,7 @@ import { CalmClear, CornerTip, HeroMetric, Reveal, RevealItem } from './ceoKit'
 import { pktDateOf, pktToday } from '../../../shared/pkt'
 import type { Designer, TaskState } from '../../../shared/types'
 import { clickupTaskUrl } from '../../lib/queries'
-import { fmtDate, fmtDateTime, fmtTime } from '../../lib/format'
+import { fmtClock, fmtDate } from '../../lib/format'
 import {
   activeDesigners,
   cancelledInPeriod,
@@ -115,7 +115,7 @@ export default function CeoCancellations() {
         severity: nowCount > 0 ? (nowCount > prevCount ? 'critical' : 'warning') : 'info',
         text:
           nowCount > 0
-            ? `${nowCount} order${nowCount === 1 ? '' : 's'} lost this week vs ${prevCount} at this point last week — ${direction}${top ? `; ${firstName(top[0])} accounts for ${top[1]}` : ''}.`
+            ? `${nowCount} order${nowCount === 1 ? '' : 's'} lost this week, next to ${prevCount} at this point last week — ${direction}${top ? `; ${firstName(top[0])} accounts for ${top[1]}` : ''}.`
             : `No orders lost this week (${prevCount} at this point last week) — the pattern over time is what matters, and it looks clean.`,
         detail:
           '"Cancelled" here always means an order lost because of a design problem. Open the full stories below before acting on anyone.',
@@ -147,9 +147,9 @@ export default function CeoCancellations() {
 
       {failed != null && (
         <ErrorBanner
-          message={`Could not load the cancellations — ${(failed as Error).message}`}
+          message={`We could not load the cancellations just now — ${(failed as Error).message}`}
           asOf={
-            cancelledQ.dataUpdatedAt > 0 ? fmtTime(new Date(cancelledQ.dataUpdatedAt).toISOString()) : null
+            cancelledQ.dataUpdatedAt > 0 ? fmtClock(new Date(cancelledQ.dataUpdatedAt).toISOString()) : null
           }
           onRetry={() => {
             void cancelledQ.refetch()
@@ -176,7 +176,7 @@ export default function CeoCancellations() {
           model
             ? metricDelta(model.nowCount, model.prevCount, {
                 goodWhen: 'down',
-                vs: 'vs the same days last week',
+                vs: 'compared with the same days last week',
               })
             : null
         }
@@ -241,7 +241,8 @@ export default function CeoCancellations() {
                           {t.name ?? t.task_id}
                         </span>
                         <span className="tnum text-label font-normal text-muted">
-                          given {fmtDate(t.created_at)} · cancelled {fmtDateTime(t.closed_at ?? t.last_event_at)}
+                          given {fmtDate(t.created_at)} · cancelled {fmtDate(t.closed_at ?? t.last_event_at)} at{' '}
+                          {fmtClock(t.closed_at ?? t.last_event_at)}
                         </span>
                         <span className="inline-flex items-center gap-0.5 text-label text-muted transition-colors duration-150 group-hover:text-fg">
                           See history
@@ -288,11 +289,16 @@ export default function CeoCancellations() {
             <dl className="tnum grid grid-cols-2 gap-x-4 gap-y-2 text-caption">
               <div>
                 <dt className="text-label font-normal text-muted">Given to the designer</dt>
-                <dd className="text-fg">{fmtDateTime(selected.created_at)}</dd>
+                <dd className="text-fg">
+                  {fmtDate(selected.created_at)} at {fmtClock(selected.created_at)}
+                </dd>
               </div>
               <div>
                 <dt className="text-label font-normal text-muted">Cancelled</dt>
-                <dd className="text-fg">{fmtDateTime(selected.closed_at ?? selected.last_event_at)}</dd>
+                <dd className="text-fg">
+                  {fmtDate(selected.closed_at ?? selected.last_event_at)} at{' '}
+                  {fmtClock(selected.closed_at ?? selected.last_event_at)}
+                </dd>
               </div>
             </dl>
             <p className="flex items-start gap-2 rounded-xl bg-surface-2/70 p-3 text-label font-normal text-muted">

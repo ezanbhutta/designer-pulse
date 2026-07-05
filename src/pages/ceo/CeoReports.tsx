@@ -37,7 +37,7 @@ import {
 } from '../../../shared/aggregate'
 import { pktToday } from '../../../shared/pkt'
 import type { Config, Designer } from '../../../shared/types'
-import { fmtDate, fmtDuration, fmtPct, fmtTime } from '../../lib/format'
+import { fmtClock, fmtDate, fmtDuration, fmtDurationLong, fmtPct } from '../../lib/format'
 import { generateWeeklyReportPdf } from '../../lib/reportPdf'
 import {
   TEAMS,
@@ -164,7 +164,7 @@ export default function CeoReports() {
         breadcrumbs={['CEO', 'Reports']}
         title="Weekly reports"
         titleAccessory={
-          <InfoTip text="Your Monday review, already prepared — one card per designer with their numbers and a one-line summary." />
+          <InfoTip text="Your Monday review, already prepared — one card for each designer, with their numbers and a short summary." />
         }
         history={`${MODE_LABEL[value.mode]} · ${fmtDate(period.start)} – ${fmtDate(period.end)}, compared with the same length of time just before. All times Pakistan time.`}
         actions={
@@ -195,7 +195,7 @@ export default function CeoReports() {
           model
             ? metricDelta(model.heroCompleted, model.heroPrevCompleted, {
                 goodWhen: 'up',
-                vs: 'vs the week before',
+                vs: 'compared with the week before',
               })
             : null
         }
@@ -213,8 +213,8 @@ export default function CeoReports() {
 
       {failed != null && (
         <ErrorBanner
-          message={`Could not load the report numbers — ${(failed as Error).message}`}
-          asOf={tasksQ.dataUpdatedAt > 0 ? fmtTime(new Date(tasksQ.dataUpdatedAt).toISOString()) : null}
+          message={`We could not load the report numbers just now — ${(failed as Error).message}`}
+          asOf={tasksQ.dataUpdatedAt > 0 ? fmtClock(new Date(tasksQ.dataUpdatedAt).toISOString()) : null}
           onRetry={() => {
             void tasksQ.refetch()
             void metricsQ.refetch()
@@ -397,7 +397,7 @@ function trendDirection(cur: DesignerPeriodSummary, prev: DesignerPeriodSummary)
 /** Template sentences only — worst signal wins; every line says what to DO. */
 function interpretWeek(cur: DesignerPeriodSummary, prev: DesignerPeriodSummary, cfg: Config): string {
   if (cur.expectedQuota === 0 && cur.assigned === 0 && cur.delivered === 0) {
-    return 'No work was expected this week — leave, off-days, or no new projects came in.'
+    return 'No work was expected this week — time off, quiet days, or no new projects came in.'
   }
   if (cur.cancelled > 0) {
     return `${cur.cancelled} order${cur.cancelled === 1 ? '' : 's'} lost to design problems — read the full story first, and judge the pattern over weeks, not one bad week.`
@@ -491,13 +491,13 @@ function buildWeeklySummary(
   if (productionMedian != null) {
     const deltaClause =
       priorProductionMedian != null && productionMedian !== priorProductionMedian
-        ? ` — ${fmtDuration(Math.abs(productionMedian - priorProductionMedian))} ${productionMedian < priorProductionMedian ? 'faster' : 'slower'} than the week before`
+        ? ` — ${fmtDurationLong(Math.abs(productionMedian - priorProductionMedian))} ${productionMedian < priorProductionMedian ? 'faster' : 'slower'} than the week before`
         : ''
-    sentences.push(`Usual work time was ${fmtDuration(productionMedian)}${deltaClause}.`)
+    sentences.push(`Usual work time was ${fmtDurationLong(productionMedian)}${deltaClause}.`)
   }
   if (designers.length > rows.length) {
     sentences.push(
-      `${designers.length - rows.length} designer${designers.length - rows.length === 1 ? ' had' : 's had'} no work this week (leave, off-days, or no new projects).`,
+      `${designers.length - rows.length} designer${designers.length - rows.length === 1 ? ' had' : 's had'} no work this week (time off, quiet days, or no new projects).`,
     )
   }
   return sentences.join(' ')

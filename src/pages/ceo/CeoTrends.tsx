@@ -27,7 +27,7 @@ import {
 } from '../../../shared/aggregate'
 import { addDays, pktDateOf, pktToday } from '../../../shared/pkt'
 import type { Team } from '../../../shared/types'
-import { fmtDate, fmtDuration, fmtTime } from '../../lib/format'
+import { fmtClock, fmtDate, fmtDuration, fmtDurationLong } from '../../lib/format'
 import {
   TEAMS,
   activeDesigners,
@@ -130,7 +130,7 @@ export default function CeoTrends() {
         const cur = summarizeDesigner(d.id, { ...cur14, tasks: allTasks, metrics, quota })
         const prev = summarizeDesigner(d.id, { ...prior14, tasks: allTasks, metrics, quota })
         return {
-          ...burnoutRisk(d.id, cur, prev, curAtt, priorAtt, cfg.burnout_score, fmtDuration),
+          ...burnoutRisk(d.id, cur, prev, curAtt, priorAtt, cfg.burnout_score, fmtDurationLong),
           name: d.name,
           team: d.team,
         }
@@ -170,7 +170,7 @@ export default function CeoTrends() {
   })
   const speedRead = readVsBaseline(model?.speedPoints, model?.speedBaseline, {
     goodWhen: 'down',
-    format: (v) => fmtDuration(v),
+    format: (v) => fmtDurationLong(v),
     noun: 'work time',
   })
   const flaggedRisks = model?.risks.filter((r) => r.flagged) ?? []
@@ -189,7 +189,7 @@ export default function CeoTrends() {
         id: 'quality-trend',
         severity: qualityRead.tone === 'worse' ? 'warning' : 'info',
         text: `${scopeLabel} quality: ${qualityRead.text}`,
-        detail: 'This week\'s "right first time" score against its own 12-week average.',
+        detail: 'This week\'s "right first time" score next to its own average over the last 12 weeks.',
         action:
           qualityRead.tone === 'worse'
             ? { label: 'See teams', onClick: () => navigate('/ceo/teams') }
@@ -214,8 +214,8 @@ export default function CeoTrends() {
           flaggedCount > 0
             ? `${flaggedCount} designer${flaggedCount === 1 ? ' is' : 's are'} showing strong overload signs (${flaggedRisks
                 .map((r) => r.name)
-                .join(', ')}) — check in with them before they burn out.`
-            : `${model.risks.length} on the overload watch-list, but nobody past the worry line (${cfg.burnout_score}) — worth a glance, nothing urgent.`,
+                .join(', ')}) — it would be kind to check in with them before they burn out.`
+            : `${model.risks.length} on the list to keep an eye on, but nobody past the worry line (${cfg.burnout_score}) — worth a glance, nothing urgent.`,
         detail: 'An early warning only, not a judgement. Only you can see this.',
         action: { label: 'See the list', onClick: scrollTo('burnout-board') },
       })
@@ -225,7 +225,7 @@ export default function CeoTrends() {
       verdictItems.push({
         id: 'forecast',
         severity: breach ? 'warning' : 'info',
-        text: `New projects are coming in faster than they get finished (${model.forecast.inflowPerDay} in vs ${model.forecast.completionPerDay} done per day) — about ${model.forecast.projectedBacklog} could be waiting within ${model.forecast.horizonDays} days${breach ? '. Move work around or add help before it lands.' : ' — still under the worry line, keep watching.'}`,
+        text: `New projects are arriving faster than they get finished (about ${model.forecast.inflowPerDay} come in each day and ${model.forecast.completionPerDay} are finished) — roughly ${model.forecast.projectedBacklog} could be waiting within ${model.forecast.horizonDays} days${breach ? '. It may be worth moving work around or adding help before it lands.' : ' — still under the worry line, worth keeping an eye on.'}`,
         action: { label: 'See the forecast', onClick: scrollTo('workload-forecast') },
       })
     }
@@ -244,8 +244,8 @@ export default function CeoTrends() {
     latestQuality != null && model?.qualityBaseline != null
       ? metricDelta(latestQuality, Math.round(model.qualityBaseline), {
           goodWhen: 'up',
-          format: (v) => `${v} pts`,
-          vs: 'vs its 12-week average',
+          format: (v) => `${v} points`,
+          vs: 'compared with its own average over the last 12 weeks',
         })
       : null
 
@@ -257,13 +257,13 @@ export default function CeoTrends() {
         titleAccessory={
           <InfoTip text="How quality, speed, overload and workload have been moving over the last 12 weeks." />
         }
-        history="The last 12 weeks, week by week. Each line is compared with its own 12-week average, so problems show up early — before they become a crisis"
+        history="The last 12 weeks, week by week. Each line is measured against its own average over those weeks, so a problem shows up early — before it becomes a crisis"
       />
 
       {failed != null && (
         <ErrorBanner
-          message={`Could not load the trend numbers — ${(failed as Error).message}`}
-          asOf={tasksQ.dataUpdatedAt > 0 ? fmtTime(new Date(tasksQ.dataUpdatedAt).toISOString()) : null}
+          message={`We could not load the trend numbers just now — ${(failed as Error).message}`}
+          asOf={tasksQ.dataUpdatedAt > 0 ? fmtClock(new Date(tasksQ.dataUpdatedAt).toISOString()) : null}
           onRetry={() => {
             void tasksQ.refetch()
             void metricsQ.refetch()
@@ -292,7 +292,7 @@ export default function CeoTrends() {
       {/* ── The headline number: this week's quality vs its own past ───────── */}
       <HeroMetric
         eyebrow={`Right first time this week — ${scope === 'All' ? 'whole studio' : scope}`}
-        tip="How many designs were accepted without anyone asking for changes in the latest week. Higher is better. The chip compares it with its own 12-week average."
+        tip="How many designs were accepted without anyone asking for changes in the latest week. Higher is better. The chip compares it with its own average over the last 12 weeks."
         value={latestQuality}
         format={(n) => `${n}%`}
         delta={qualityDelta}
@@ -307,7 +307,7 @@ export default function CeoTrends() {
           <div id="quality-trend-card" className="card h-full p-8">
             <h2 className="eyebrow inline-flex items-center gap-1">
               Right first time — {scope === 'All' ? 'whole studio' : scope}{' '}
-              <InfoTip text="Each week: how many designs were accepted without anyone asking for changes. Higher is better. The dotted line is the 12-week average." />
+              <InfoTip text="Each week: how many designs were accepted without anyone asking for changes. Higher is better. The dotted line is the average over the last 12 weeks." />
             </h2>
             <p className="mt-3 max-w-prose text-caption font-medium text-fg">
               {loading
@@ -370,7 +370,7 @@ export default function CeoTrends() {
           <div className="flex items-center gap-2">
             <Flame className="h-4 w-4 text-muted" aria-hidden="true" />
             <h2 className="eyebrow inline-flex items-center gap-1">
-              Overload warning — last 2 weeks vs the 2 before{' '}
+              Overload warning — the last 2 weeks next to the 2 before{' '}
               <InfoTip text="Early signs someone may be running out of steam: fixes taking longer, fewer projects finished, but still showing up as usual." />
             </h2>
           </div>
@@ -428,12 +428,12 @@ export default function CeoTrends() {
             two contradictory signals; the comparison lives in the cause line. */}
         <StatTile
           eyebrow="Next week's load"
-          tip="If new projects keep coming in faster than they get finished, this shows the pile-up coming."
+          tip="If new projects keep coming in faster than they get finished, this is how many could be waiting."
           icon={TrendingUp}
           value={String(model?.forecast.projectedBacklog ?? 0)}
           cause={
             model
-              ? `vs ${model.forecast.openNow} open now — ${model.forecast.inflowPerDay} new per day vs ${model.forecast.completionPerDay} finished per day over the last 7 days`
+              ? `next to ${model.forecast.openNow} open now — about ${model.forecast.inflowPerDay} new each day and ${model.forecast.completionPerDay} finished each day over the last 7 days`
               : null
           }
           reference={model ? `Looking ${model.forecast.horizonDays} days ahead · we flag above ${cfg.forecast_threshold}` : null}
@@ -448,8 +448,8 @@ export default function CeoTrends() {
         />
         <div className="card p-8">
           <h2 className="eyebrow inline-flex items-center gap-1">
-            New vs finished — last 7 days{' '}
-            <InfoTip text="Left: how many new projects arrived each day. Right: how many got finished. If new keeps beating finished, work piles up." />
+            New work and finished work — last 7 days{' '}
+            <InfoTip text="On the left, how many new projects arrived each day. On the right, how many were finished. When new work keeps outpacing finished work, it piles up." />
           </h2>
           {loading ? (
             <Skeleton className="mt-6 h-24 w-full" />
@@ -478,7 +478,7 @@ export default function CeoTrends() {
           {model && (
             <p className="mt-4 max-w-prose text-caption text-fg">
               {model.forecast.inflowPerDay > model.forecast.completionPerDay
-                ? `New projects are beating finished ones by ${Math.round((model.forecast.inflowPerDay - model.forecast.completionPerDay) * 10) / 10} a day — about ${model.forecast.projectedBacklog} could be waiting within ${model.forecast.horizonDays} days${model.forecast.projectedBacklog > cfg.forecast_threshold ? '. Move work around or add help before it lands' : ''}.`
+                ? `New projects are arriving faster than they get finished by about ${Math.round((model.forecast.inflowPerDay - model.forecast.completionPerDay) * 10) / 10} a day — roughly ${model.forecast.projectedBacklog} could be waiting within ${model.forecast.horizonDays} days${model.forecast.projectedBacklog > cfg.forecast_threshold ? '. It may be worth moving work around or adding help before it lands' : ''}.`
                 : `Finishing is keeping up with new work — about ${model.forecast.projectedBacklog} open in ${model.forecast.horizonDays} days. Nothing to change.`}
             </p>
           )}
@@ -502,11 +502,11 @@ function readVsBaseline(
   const latest = points[points.length - 1].value
   const diff = latest - baseline
   if (Math.abs(diff) < 0.5) {
-    return { text: `Right on its 12-week average — ${opts.noun} is steady.`, tone: 'steady' }
+    return { text: `Right on its average for the last 12 weeks — ${opts.noun} is steady.`, tone: 'steady' }
   }
   const better = opts.goodWhen === 'up' ? diff > 0 : diff < 0
   return {
-    text: `${opts.format(Math.abs(diff))} ${diff > 0 ? 'above' : 'below'} its own 12-week average — ${opts.noun} is ${better ? 'better than usual' : 'worse than usual; watch the next two weeks'}.`,
+    text: `${opts.format(Math.abs(diff))} ${diff > 0 ? 'above' : 'below'} its own average over the last 12 weeks — ${opts.noun} is ${better ? 'better than usual' : 'worse than usual; worth watching over the next two weeks'}.`,
     tone: better ? 'better' : 'worse',
   }
 }

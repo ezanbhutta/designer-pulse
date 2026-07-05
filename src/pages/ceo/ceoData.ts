@@ -331,7 +331,7 @@ export function metricDelta(
   if (current == null || prior == null) return null
   const diff = current - prior
   const fmt = opts.format ?? ((abs: number) => String(abs))
-  const vs = opts.vs ?? 'vs last week'
+  const vs = opts.vs ?? 'compared with last week'
   if (diff === 0) return { label: `no change ${vs}`, direction: 'flat', good: true }
   return {
     label: `${diff > 0 ? '+' : '−'}${fmt(Math.abs(diff))} ${vs}`,
@@ -379,7 +379,7 @@ export function constraintRead(
   return {
     status: top.status,
     owner,
-    line: `The slowest step right now is ${owner} — ${top.count} open project${top.count === 1 ? ' has' : 's have'} usually been sitting ${fmtDur(top.medianAgeMin)} at "${STATUS_LABELS[top.status].toLowerCase()}".`,
+    line: `Right now, most of the open time sits with ${owner} — ${top.count} open project${top.count === 1 ? ' has' : 's have'} been there about ${fmtDur(top.medianAgeMin)}, at "${STATUS_LABELS[top.status].toLowerCase()}".`,
   }
 }
 
@@ -428,7 +428,7 @@ export function burnoutRisk(
         100,
     )
     causes.push(
-      `fixes are taking ${risePct}% longer (${fmtDur(prior.revisionTurnaroundMedianMin)} → ${fmtDur(cur.revisionTurnaroundMedianMin)})`,
+      `fixes are taking ${risePct}% longer (${fmtDur(prior.revisionTurnaroundMedianMin)} to ${fmtDur(cur.revisionTurnaroundMedianMin)})`,
     )
   }
   if (c.attainmentFall > 0 && cur.attainmentPct != null && prior.attainmentPct != null) {
@@ -436,7 +436,7 @@ export function burnoutRisk(
   }
   if (c.warmupShrink > 0) {
     causes.push(
-      `still showing up as usual (${c.presentCur} days vs ${c.presentPrev}) and starting work sooner (${fmtDur(c.warmupPrevMin)} → ${fmtDur(c.warmupCurMin)}), yet finishing less`,
+      `still showing up as usual (${c.presentCur} days, next to ${c.presentPrev} before) and starting work sooner (${fmtDur(c.warmupPrevMin)} to ${fmtDur(c.warmupCurMin)}), yet finishing less`,
     )
   }
 

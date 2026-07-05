@@ -26,7 +26,7 @@ import {
 } from '../../../shared/aggregate'
 import { pktToday } from '../../../shared/pkt'
 import type { Designer, Team } from '../../../shared/types'
-import { fmtDate, fmtDuration, fmtPct, fmtTime } from '../../lib/format'
+import { fmtClock, fmtDate, fmtDuration, fmtDurationLong, fmtPct } from '../../lib/format'
 import {
   TEAMS,
   activeDesigners,
@@ -129,7 +129,7 @@ export default function CeoTeams() {
             cur.delivered >= 2
           ) {
             flags.push({
-              label: `Quality dropping −${prev.firstPassQualityPct - cur.firstPassQualityPct} pts`,
+              label: `Quality dropping −${prev.firstPassQualityPct - cur.firstPassQualityPct} points`,
               tone: 'warning',
             })
           }
@@ -161,7 +161,7 @@ export default function CeoTeams() {
         trend,
         trendBaseline,
         fpqPct: fpqNow.pct,
-        fpqDelta: metricDelta(fpqNow.pct, fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v} pts` }),
+        fpqDelta: metricDelta(fpqNow.pct, fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v} points` }),
         fpqCause:
           fpqNow.delivered > 0
             ? `${fpqNow.clean} of ${fpqNow.delivered} accepted with no changes — ${fpqNow.csrCaughtRounds} change requests from our checkers, ${fpqNow.clientCaughtRounds} from clients`
@@ -170,13 +170,13 @@ export default function CeoTeams() {
         clientWaitDelta: metricDelta(
           clientWaitMedianInPeriod(metrics, ids, week),
           clientWaitMedianInPeriod(metrics, ids, prior),
-          { goodWhen: 'down', format: (v) => fmtDuration(v) },
+          { goodWhen: 'down', format: (v) => fmtDurationLong(v) },
         ),
         revisionTurnaround: revisionTurnaroundMedianInPeriod(metrics, ids, week),
         revisionTurnaroundDelta: metricDelta(
           revisionTurnaroundMedianInPeriod(metrics, ids, week),
           revisionTurnaroundMedianInPeriod(metrics, ids, prior),
-          { goodWhen: 'down', format: (v) => fmtDuration(v) },
+          { goodWhen: 'down', format: (v) => fmtDurationLong(v) },
         ),
         loadNow,
         quotaToday,
@@ -221,8 +221,8 @@ export default function CeoTeams() {
 
       {failed != null && (
         <ErrorBanner
-          message={`Could not load the team numbers — ${(failed as Error).message}`}
-          asOf={tasksQ.dataUpdatedAt > 0 ? fmtTime(new Date(tasksQ.dataUpdatedAt).toISOString()) : null}
+          message={`We could not load the team numbers just now — ${(failed as Error).message}`}
+          asOf={tasksQ.dataUpdatedAt > 0 ? fmtClock(new Date(tasksQ.dataUpdatedAt).toISOString()) : null}
           onRetry={() => {
             void designersQ.refetch()
             void tasksQ.refetch()
@@ -321,14 +321,14 @@ function TeamCard({ model: t }: { model: TeamModel }) {
           <MiniStat
             label="Client waiting time"
             tip="How long clients take to reply. This is the client's time, not the team's."
-            value={fmtDuration(t.clientWait)}
+            value={fmtDurationLong(t.clientWait)}
             delta={t.clientWaitDelta}
             cause="Waiting on clients — never counted against the team"
           />
           <MiniStat
             label="Fix time"
-            tip="How long changes usually take once someone asks for them. Also called revision turnaround."
-            value={fmtDuration(t.revisionTurnaround)}
+            tip="Once someone asks for changes, how long those changes usually take to turn around."
+            value={fmtDurationLong(t.revisionTurnaround)}
             delta={t.revisionTurnaroundDelta}
             cause="Usual time spent on changes this week"
           />
@@ -336,7 +336,7 @@ function TeamCard({ model: t }: { model: TeamModel }) {
         <div>
           <p className="eyebrow inline-flex items-center gap-1">
             Finished per week — last 8 weeks{' '}
-            <InfoTip text="How many projects the team closes each week. The dotted line is the 8-week average." />
+            <InfoTip text="How many projects the team closes each week. The dotted line is the average over the last 8 weeks." />
           </p>
           <div className="mt-2">
             <TrendLine
