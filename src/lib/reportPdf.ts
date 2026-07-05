@@ -18,6 +18,10 @@ export interface WeeklyReportArgs {
   teamName?: string
   rows: DesignerPeriodSummary[]
   designers: Designer[]
+  /** Optional free-text context typed on the Reports page — printed as a Notes
+   *  section so the reason behind the numbers (e.g. a workload agreement with a
+   *  designer) travels with the report to whoever reads it. */
+  notes?: string
 }
 
 // ── Layout constants (A4 portrait, mm) ────────────────────────────────────────
@@ -78,7 +82,7 @@ const pct = (v: number | null): string => (v == null ? '—' : `${v}%`)
  * cancellations), and the cross-team caveat in the footer of every page.
  */
 export async function generateWeeklyReportPdf(args: WeeklyReportArgs): Promise<void> {
-  const { period, teamName, rows, designers } = args
+  const { period, teamName, rows, designers, notes } = args
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
 
   const byId = new Map(designers.map((d) => [d.id, d]))
@@ -95,6 +99,8 @@ export async function generateWeeklyReportPdf(args: WeeklyReportArgs): Promise<v
   }
 
   let y = drawHeader(doc, period, teamName, logoPng)
+
+  if (notes && notes.trim()) y = drawNotes(doc, notes.trim(), y)
 
   for (const team of teams) {
     const teamRows = rows
@@ -198,6 +204,35 @@ function drawHeader(
     40,
   )
   return 47
+}
+
+/** A soft violet panel of free-text context, printed under the header. */
+function drawNotes(doc: jsPDF, notes: string, y: number): number {
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8)
+  doc.setTextColor(...MUTED)
+  doc.text('NOTES', MARGIN_X, y)
+  y += 3
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  const innerW = CONTENT_RIGHT - MARGIN_X - 6
+  const lines = doc.splitTextToSize(notes, innerW) as string[]
+  const lineH = 4.8
+  const boxH = lines.length * lineH + 5
+
+  doc.setFillColor(245, 241, 253) // faint brand tint
+  doc.setDrawColor(...HAIRLINE)
+  doc.setLineWidth(0.2)
+  doc.roundedRect(MARGIN_X, y, CONTENT_RIGHT - MARGIN_X, boxH, 1.5, 1.5, 'FD')
+
+  doc.setTextColor(...INK)
+  let ty = y + 5
+  for (const line of lines) {
+    doc.text(line, MARGIN_X + 3, ty)
+    ty += lineH
+  }
+  return y + boxH + 7
 }
 
 function drawTeamHeader(doc: jsPDF, team: Team, teamRows: DesignerPeriodSummary[], y: number): number {

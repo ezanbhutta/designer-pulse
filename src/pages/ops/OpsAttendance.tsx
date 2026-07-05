@@ -21,6 +21,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { DesignerFilter } from '../../components/ui/DesignerFilter'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { StatTile } from '../../components/ui/StatTile'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
@@ -107,7 +108,16 @@ export default function OpsAttendance() {
   const { ctx } = useQuotaCtx()
   const attendanceQ = useAttendanceRange(weekStart, date)
 
-  const designers = useActiveDesigners()
+  // Focus the whole page on a few people (empty = everyone), remembered here.
+  const [selectedIds, setSelectedIds] = useLocalStorage<string[]>(
+    'pulse.ops.attendance.designers',
+    [],
+  )
+  const allActive = useActiveDesigners()
+  const designers = useMemo(
+    () => (selectedIds.length ? allActive.filter((d) => selectedIds.includes(d.id)) : allActive),
+    [allActive, selectedIds],
+  )
   const rowsByKey = useMemo(() => {
     const map = new Map<string, AttendanceDaily>()
     for (const r of attendanceQ.data ?? []) map.set(`${r.designer_id}|${r.work_date}`, r)
@@ -483,6 +493,10 @@ export default function OpsAttendance() {
                   Today
                 </button>
               )}
+            </span>
+            <span className="flex items-center gap-1">
+              <DesignerFilter designers={allActive} selected={selectedIds} onChange={setSelectedIds} />
+              <InfoTip text="Focus on one or more people. Leave it on everyone to see the whole team." />
             </span>
           </>
         }

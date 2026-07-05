@@ -19,6 +19,7 @@ import {
   type DateRangeValue,
   type RangeMode,
 } from '../../components/ui/DateRangePicker'
+import { DesignerFilter } from '../../components/ui/DesignerFilter'
 import { StatTile } from '../../components/ui/StatTile'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
@@ -76,12 +77,31 @@ export default function OpsReports() {
   const range = { start: value.start, end: value.end }
   const prior = priorPeriod(range.start, range.end)
 
+  // Who to include (empty = everyone) and the free-text note printed on the PDF,
+  // both remembered on this machine; the note is kept per period so last week's
+  // context never bleeds into this week's report.
+  const [selectedIds, setSelectedIds] = useLocalStorage<string[]>('pulse.ops.reports.designers', [])
+  const [notesByPeriod, setNotesByPeriod] = useLocalStorage<Record<string, string>>(
+    'pulse.ops.reports.notes',
+    {},
+  )
+  const periodKey = `${range.start}_${range.end}`
+  const notes = notesByPeriod[periodKey] ?? ''
+  const setNotes = (v: string) => setNotesByPeriod({ ...notesByPeriod, [periodKey]: v })
+
   const designersQ = useDesigners()
   const { ctx } = useQuotaCtx()
   const tasksQ = useTasksSince(prior.start)
   const metricsQ = useMetricsSince(prior.start, range.end)
 
-  const designers = useActiveDesigners()
+  const activeDesigners = useActiveDesigners()
+  const designers = useMemo(
+    () =>
+      selectedIds.length
+        ? activeDesigners.filter((d) => selectedIds.includes(d.id))
+        : activeDesigners,
+    [activeDesigners, selectedIds],
+  )
   const loading = designersQ.isLoading || tasksQ.isLoading || metricsQ.isLoading
 
   const rows: ReportRow[] = useMemo(() => {
@@ -186,6 +206,7 @@ export default function OpsReports() {
         period: { start: range.start, end: range.end },
         rows: rows.map((r) => r.cur),
         designers: designersQ.data ?? [],
+        notes,
       })
       toast({ message: `PDF for ${rangeLabel} downloaded` })
     } catch (e) {
@@ -208,6 +229,14 @@ export default function OpsReports() {
             <span className="flex items-center gap-1">
               <DateRangePicker value={value} onChange={setStored} />
               <InfoTip text="Pick the time period. Every number is compared with the same length of time just before it." />
+            </span>
+            <span className="flex items-center gap-1">
+              <DesignerFilter
+                designers={activeDesigners}
+                selected={selectedIds}
+                onChange={setSelectedIds}
+              />
+              <InfoTip text="Narrow the report to one or more people. Leave it on everyone to see the whole studio." />
             </span>
             {/* The one brand action on the page — stateful: dots while the PDF
                 builds, a crisp ✓ when it lands (manifesto pillar 8). */}
@@ -237,6 +266,24 @@ export default function OpsReports() {
           }}
         />
       )}
+
+      <section aria-label="Notes for this report" className="card p-5">
+        <label htmlFor="report-notes" className="eyebrow inline-flex items-center gap-1">
+          Notes for this report
+          <InfoTip text="Add any context you want to sit alongside the numbers — for example, if you agreed with a designer to take on fewer or more projects this period because of workload. Whatever you write here is printed on the downloaded PDF." />
+        </label>
+        <textarea
+          id="report-notes"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+          placeholder="For example: Nimeazad took on fewer projects this week by agreement, to focus on the Aldercrest brand."
+          className="mt-3 w-full resize-y rounded-xl border border-border bg-surface px-3 py-2 text-caption text-fg transition-colors placeholder:text-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+        />
+        <p className="mt-2 text-label text-muted">
+          Saved for this period on this computer, and printed at the top of the PDF.
+        </p>
+      </section>
 
       <VerdictBlock
         title={`What stands out · ${MODE_LABEL[value.mode].toLowerCase()}`}

@@ -26,6 +26,7 @@ import {
   type DateRangeValue,
   type RangeMode,
 } from '../../components/ui/DateRangePicker'
+import { DesignerFilter } from '../../components/ui/DesignerFilter'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/ToastProvider'
@@ -87,6 +88,17 @@ export default function CeoReports() {
   const period: PeriodRange = { start: value.start, end: value.end }
   const prior = priorPeriod(period.start, period.end)
 
+  // Who to include (empty = everyone) and the free-text note printed on the PDF,
+  // remembered on this machine; the note is kept per period.
+  const [selectedIds, setSelectedIds] = useLocalStorage<string[]>('pulse.ceo.reports.designers', [])
+  const [notesByPeriod, setNotesByPeriod] = useLocalStorage<Record<string, string>>(
+    'pulse.ceo.reports.notes',
+    {},
+  )
+  const periodKey = `${period.start}_${period.end}`
+  const notes = notesByPeriod[periodKey] ?? ''
+  const setNotes = (v: string) => setNotesByPeriod({ ...notesByPeriod, [periodKey]: v })
+
   const designersQ = useDesigners()
   const cfg = useConfigValues()
   const { ctx: quota, isLoading: quotaLoading } = useQuotaCtx()
@@ -97,9 +109,19 @@ export default function CeoReports() {
   const loading = designersQ.isLoading || tasksQ.isLoading || metricsQ.isLoading || quotaLoading
   const failed = designersQ.error ?? tasksQ.error ?? metricsQ.error
 
+  // The full active list feeds the people filter; the report itself is built
+  // from just the chosen designers (or everyone when none are chosen).
+  const allActive = useMemo(
+    () => (designersQ.data ? activeDesigners(designersQ.data) : []),
+    [designersQ.data],
+  )
+
   const model = useMemo(() => {
     if (loading || !designersQ.data || !tasksQ.data || !metricsQ.data) return null
-    const active = activeDesigners(designersQ.data)
+    const everyone = activeDesigners(designersQ.data)
+    const active = selectedIds.length
+      ? everyone.filter((d) => selectedIds.includes(d.id))
+      : everyone
     const allTasks = mergeTasks(tasksQ.data, openQ.data ?? [])
     const metrics = metricsQ.data
 
@@ -135,7 +157,7 @@ export default function CeoReports() {
     const heroExpected = rows.reduce((s, r) => s + r.cur.expectedQuota, 0)
     return { rows, summary, active, heroCompleted, heroPrevCompleted, heroExpected }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, designersQ.data, tasksQ.data, metricsQ.data, openQ.data, quota, cfg, period.start, period.end])
+  }, [loading, designersQ.data, tasksQ.data, metricsQ.data, openQ.data, quota, cfg, period.start, period.end, selectedIds])
 
   // Landing here via /ceo/reports#<designerId> (the Overview stand-outs drill)
   // scrolls to that designer's card once it exists.
@@ -154,6 +176,7 @@ export default function CeoReports() {
       period,
       rows: model.rows.map((r) => r.cur),
       designers: model.active,
+      notes,
     })
     toast({ message: `Weekly PDF for ${fmtDate(period.start)} – ${fmtDate(period.end)} downloaded.` })
   }
@@ -172,6 +195,10 @@ export default function CeoReports() {
             <span className="flex items-center gap-1">
               <DateRangePicker value={value} onChange={setStored} />
               <InfoTip text="Pick the time period. Every number is compared with the same length of time just before it." />
+            </span>
+            <span className="flex items-center gap-1">
+              <DesignerFilter designers={allActive} selected={selectedIds} onChange={setSelectedIds} />
+              <InfoTip text="Narrow the report to one or more people. Leave it on everyone to see the whole studio." />
             </span>
             <ActionButton
               onAction={() => download()}
@@ -221,6 +248,24 @@ export default function CeoReports() {
           }}
         />
       )}
+
+      <section aria-label="Notes for this report" className="card p-5">
+        <label htmlFor="ceo-report-notes" className="eyebrow inline-flex items-center gap-1">
+          Notes for this report
+          <InfoTip text="Add any context you want to sit alongside the numbers — for example, if fewer or more projects were assigned this period by agreement because of workload. Whatever you write here is printed on the downloaded PDF." />
+        </label>
+        <textarea
+          id="ceo-report-notes"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+          placeholder="For example: Nimeazad took on fewer projects this week by agreement, to focus on the Aldercrest brand."
+          className="mt-3 w-full resize-y rounded-xl border border-border bg-surface px-3 py-2 text-caption text-fg transition-colors placeholder:text-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+        />
+        <p className="mt-2 text-label text-muted">
+          Saved for this period on this computer, and printed at the top of the PDF.
+        </p>
+      </section>
 
       {/* Weekly summary paragraph — assembled deterministically from the computed
           metrics with template sentences. §22.11 permits an LLM-generated
