@@ -20,7 +20,7 @@ import {
   type RangeMode,
 } from '../../components/ui/DateRangePicker'
 import { DesignerFilter } from '../../components/ui/DesignerFilter'
-import { ReportNotes, useDayNotes, dayNotesToText } from '../../components/shared/ReportNotes'
+import { ReportNotes, useDayNotes } from '../../components/shared/ReportNotes'
 import { StatTile } from '../../components/ui/StatTile'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
@@ -28,14 +28,19 @@ import { useToast } from '../../components/ui/ToastProvider'
 import { fmtClock, fmtDate, fmtDuration, fmtPct } from '../../lib/format'
 import { pktToday } from '../../../shared/pkt'
 import {
+  designerProjectLines,
   priorPeriod,
   summarizeDesigner,
+  summarizeTimekeeping,
   type DesignerPeriodSummary,
+  type DesignerTimekeeping,
+  type ProjectLine,
 } from '../../../shared/aggregate'
 import type { Designer } from '../../../shared/types'
 import {
   metricDelta,
   useActiveDesigners,
+  useAttendanceRange,
   useDesigners,
   useDesignerDrawer,
   useMetricsSince,
@@ -89,6 +94,7 @@ export default function OpsReports() {
   const tasksQ = useTasksSince(prior.start)
   const openTasksQ = useOpenTasks()
   const metricsQ = useMetricsSince(prior.start, range.end)
+  const attendanceQ = useAttendanceRange(range.start, range.end)
 
   const activeDesigners = useActiveDesigners()
   const designers = useMemo(
@@ -201,11 +207,31 @@ export default function OpsReports() {
   const exportPdf = async () => {
     try {
       const { generateWeeklyReportPdf } = await import('../../lib/reportPdf')
-      generateWeeklyReportPdf({
+      const tasks = [...(openTasksQ.data ?? []), ...(tasksQ.data ?? [])]
+      const metrics = metricsQ.data ?? []
+      const attendance = attendanceQ.data ?? []
+      const projectsByDesigner: Record<string, ProjectLine[]> = {}
+      const timekeepingByDesigner: Record<string, DesignerTimekeeping> = {}
+      for (const d of designers) {
+        projectsByDesigner[d.id] = designerProjectLines(d.id, {
+          start: range.start,
+          end: range.end,
+          tasks,
+          metrics,
+          quota: ctx,
+        })
+        timekeepingByDesigner[d.id] = summarizeTimekeeping(
+          attendance.filter((a) => a.designer_id === d.id),
+        )
+      }
+      await generateWeeklyReportPdf({
         period: { start: range.start, end: range.end },
+        generatedAt: new Date().toISOString(),
         rows: rows.map((r) => r.cur),
         designers: designersQ.data ?? [],
-        notes: dayNotesToText(notesQ.data ?? [], designersQ.data ?? []),
+        projectsByDesigner,
+        timekeepingByDesigner,
+        notes: notesQ.data ?? [],
       })
       toast({ message: `PDF for ${rangeLabel} downloaded` })
     } catch (e) {

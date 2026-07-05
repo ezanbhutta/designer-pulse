@@ -186,6 +186,132 @@ export function summarizeDesigner(designerId: string, p: PeriodInputs): Designer
   }
 }
 
+// ── Per-project report lines (§13.2 detailed export) ──────────────────────────
+
+export type DeliveryTiming = 'early' | 'on time' | 'late'
+
+/** One project's story for the detailed report: the fields spec §13.2 lists. */
+export interface ProjectLine {
+  taskId: string
+  name: string
+  priority: string | null
+  dueDate: string | null
+  status: CanonicalStatus | null
+  firstDeliveredAt: string | null
+  productionMin: number | null // time to the first design
+  revisionRounds: number
+  csrCaughtRounds: number
+  clientCaughtRounds: number
+  revisionTurnaroundMin: number | null // usual fix time for this project
+  delivered: boolean
+  timing: DeliveryTiming | null // first delivery vs the due date
+}
+
+/** Was the first design sent early, on the due date, or late? Null until sent. */
+export function deliveryTiming(
+  firstDeliveredAt: string | null,
+  dueDate: string | null,
+): DeliveryTiming | null {
+  if (!firstDeliveredAt || !dueDate) return null
+  const day = pktDateOf(firstDeliveredAt)
+  if (day < dueDate) return 'early'
+  if (day === dueDate) return 'on time'
+  return 'late'
+}
+
+/**
+ * Every project on a designer's plate for the period (owner's rule: DUE-date
+ * decides the plate, §slot), each joined to its metrics, sorted by due date.
+ * Same plate as summarizeDesigner so the table and the summary can never
+ * disagree.
+ */
+export function designerProjectLines(designerId: string, p: PeriodInputs): ProjectLine[] {
+  const tasks = [
+    ...new Map(
+      p.tasks.filter((t) => t.designer_id === designerId && !t.deleted).map((t) => [t.task_id, t]),
+    ).values(),
+  ]
+  const plate = tasks.filter((t) => inPeriod(t.due_date, p.start, p.end))
+  const metricsById = new Map(
+    p.metrics.filter((m) => m.designer_id === designerId).map((m) => [m.task_id, m]),
+  )
+  return plate
+    .map((t): ProjectLine => {
+      const m = metricsById.get(t.task_id)
+      return {
+        taskId: t.task_id,
+        name: t.name ?? 'Untitled project',
+        priority: t.priority,
+        dueDate: t.due_date,
+        status: t.current_status,
+        firstDeliveredAt: m?.first_delivered_at ?? null,
+        productionMin: m?.production_min ?? null,
+        revisionRounds: m?.revision_rounds ?? 0,
+        csrCaughtRounds: m?.csr_caught_rounds ?? 0,
+        clientCaughtRounds: m?.client_caught_rounds ?? 0,
+        revisionTurnaroundMin: m?.revision_turnaround_min ?? null,
+        delivered: t.current_status != null && DELIVERED_STATUSES.includes(t.current_status),
+        timing: deliveryTiming(m?.first_delivered_at ?? null, t.due_date),
+      }
+    })
+    .sort((a, b) => {
+      const ad = a.dueDate ?? '9999-99-99'
+      const bd = b.dueDate ?? '9999-99-99'
+      return ad !== bd ? ad.localeCompare(bd) : a.name.localeCompare(b.name)
+    })
+}
+
+// ── Per-designer timekeeping roll-up (for the report's payroll-basis block) ────
+
+export interface DesignerTimekeeping {
+  scheduledDays: number
+  presentDays: number
+  absentDays: number
+  leaveDays: number
+  lateDays: number
+  lateMinutes: number
+  earlyDays: number
+  earlyMinutes: number
+  workedMinutes: number
+}
+
+/**
+ * Sums a designer's attendance rows over the period into the plain numbers the
+ * report prints for HR: days present of scheduled, late and early tallies (with
+ * minutes), leave days, and total time worked. Reports the time only — pay is
+ * never calculated here (§22.10).
+ */
+export function summarizeTimekeeping(rows: AttendanceDaily[]): DesignerTimekeeping {
+  const tk: DesignerTimekeeping = {
+    scheduledDays: 0,
+    presentDays: 0,
+    absentDays: 0,
+    leaveDays: 0,
+    lateDays: 0,
+    lateMinutes: 0,
+    earlyDays: 0,
+    earlyMinutes: 0,
+    workedMinutes: 0,
+  }
+  for (const r of rows) {
+    const present = r.status === 'Present' || r.status === 'HolidayWorked' || r.status === 'Incomplete'
+    if (present) tk.presentDays++
+    if (r.status === 'Absent') tk.absentDays++
+    if (r.status === 'Leave') tk.leaveDays++
+    if (present || r.status === 'Absent') tk.scheduledDays++
+    if (r.late_minutes > 0) {
+      tk.lateDays++
+      tk.lateMinutes += r.late_minutes
+    }
+    if (r.early_leave_minutes > 0) {
+      tk.earlyDays++
+      tk.earlyMinutes += r.early_leave_minutes
+    }
+    tk.workedMinutes += r.worked_minutes
+  }
+  return tk
+}
+
 // ── Burnout composite (Tier 4) ────────────────────────────────────────────────
 
 export interface BurnoutComposite {

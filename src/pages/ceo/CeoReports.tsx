@@ -27,15 +27,19 @@ import {
   type RangeMode,
 } from '../../components/ui/DateRangePicker'
 import { DesignerFilter } from '../../components/ui/DesignerFilter'
-import { ReportNotes, useDayNotes, dayNotesToText } from '../../components/shared/ReportNotes'
+import { ReportNotes, useDayNotes } from '../../components/shared/ReportNotes'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/ToastProvider'
 import { HeroMetric, Reveal, RevealItem } from './ceoKit'
 import {
+  designerProjectLines,
   priorPeriod,
   summarizeDesigner,
+  summarizeTimekeeping,
   type DesignerPeriodSummary,
+  type DesignerTimekeeping,
+  type ProjectLine,
 } from '../../../shared/aggregate'
 import { pktToday } from '../../../shared/pkt'
 import type { Config, Designer } from '../../../shared/types'
@@ -48,6 +52,7 @@ import {
   mergeTasks,
   metricDelta,
   productionMedianInPeriod,
+  useAttendanceWindow,
   useConfigValues,
   useDesigners,
   useMetricsWindow,
@@ -100,6 +105,7 @@ export default function CeoReports() {
   const tasksQ = useTasksWindow(prior.start)
   const metricsQ = useMetricsWindow(prior.start, period.end)
   const openQ = useOpenTasksLive()
+  const attendanceQ = useAttendanceWindow(period.start, period.end)
 
   const loading = designersQ.isLoading || tasksQ.isLoading || metricsQ.isLoading || quotaLoading
   const failed = designersQ.error ?? tasksQ.error ?? metricsQ.error
@@ -165,13 +171,27 @@ export default function CeoReports() {
     el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
   }, [loading, model, hash])
 
-  const download = () => {
+  const download = async () => {
     if (!model) return
-    generateWeeklyReportPdf({
+    const tasks = mergeTasks(tasksQ.data ?? [], openQ.data ?? [])
+    const metrics = metricsQ.data ?? []
+    const attendance = attendanceQ.data ?? []
+    const projectsByDesigner: Record<string, ProjectLine[]> = {}
+    const timekeepingByDesigner: Record<string, DesignerTimekeeping> = {}
+    for (const d of model.active) {
+      projectsByDesigner[d.id] = designerProjectLines(d.id, { ...period, tasks, metrics, quota })
+      timekeepingByDesigner[d.id] = summarizeTimekeeping(
+        attendance.filter((a) => a.designer_id === d.id),
+      )
+    }
+    await generateWeeklyReportPdf({
       period,
+      generatedAt: new Date().toISOString(),
       rows: model.rows.map((r) => r.cur),
       designers: model.active,
-      notes: dayNotesToText(notesQ.data ?? [], allActive),
+      projectsByDesigner,
+      timekeepingByDesigner,
+      notes: notesQ.data ?? [],
     })
     toast({ message: `Weekly PDF for ${fmtDate(period.start)} – ${fmtDate(period.end)} downloaded.` })
   }
