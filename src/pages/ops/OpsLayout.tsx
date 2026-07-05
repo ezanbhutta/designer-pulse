@@ -14,6 +14,8 @@ import type { Command } from '../../components/ui/CommandPalette'
 import { Drawer } from '../../components/ui/Drawer'
 import { ToastProvider } from '../../components/ui/ToastProvider'
 import { DesignerDetail } from '../../components/shared/DesignerDetail'
+import { SyncStatus } from '../../components/shared/SyncStatus'
+import { useKeepFresh } from '../../hooks/useKeepFresh'
 import { clickupListUrl } from '../../lib/queries'
 import { useActiveDesigners, useOpenAlerts } from './opsData'
 
@@ -27,6 +29,8 @@ export default function OpsLayout() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const alertsQ = useOpenAlerts()
+  // Keep the board in step with ClickUp while the cockpit is open (spec §5.2).
+  const fresh = useKeepFresh()
 
   const openAlertCount = (alertsQ.data ?? []).filter((a) => a.status === 'open').length
   const active = useActiveDesigners()
@@ -107,6 +111,9 @@ export default function OpsLayout() {
   return (
     <ToastProvider>
       <AppShell title="Studio Pulse Ops" nav={nav} commands={commands}>
+        <div className="mb-6 flex justify-end">
+          <SyncStatus syncing={fresh.syncing} lastSyncIso={fresh.lastSyncIso} onRefresh={fresh.syncNow} />
+        </div>
         <Outlet />
       </AppShell>
       {/* Generic chrome title — DesignerDetail's own header carries the

@@ -65,6 +65,36 @@ export async function fetchMyProfile(): Promise<AppUser | null> {
   return (rows[0] as AppUser | undefined) ?? null
 }
 
+/**
+ * Ask the server to pull the latest from ClickUp now (spec §5.2). The reconcile
+ * cron runs only once a day on the hosting plan, so the open dashboard triggers
+ * it on demand. The server debounces against a shared cursor, so calling this
+ * often is cheap and safe. Returns `skipped` when the data is already fresh.
+ */
+export interface SyncResult {
+  ok: boolean
+  skipped?: boolean
+  triggered?: boolean
+  lastSync?: string | null
+  reason?: string
+}
+
+export async function requestSync(): Promise<SyncResult> {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) return { ok: false }
+  try {
+    const res = await fetch('/api/sync/refresh', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return { ok: false }
+    return (await res.json()) as SyncResult
+  } catch {
+    return { ok: false }
+  }
+}
+
 // ── Reference data ────────────────────────────────────────────────────────────
 
 export async function fetchDesigners(): Promise<Designer[]> {

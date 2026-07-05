@@ -7,10 +7,12 @@
  */
 
 import { useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Outlet, useNavigate } from 'react-router-dom'
 import { FileText, Gauge, OctagonX, TrendingUp, Users } from 'lucide-react'
 import { AppShell, type NavItem } from '../../components/layout/AppShell'
 import type { Command } from '../../components/ui/CommandPalette'
+import { SyncStatus } from '../../components/shared/SyncStatus'
+import { useKeepFresh } from '../../hooks/useKeepFresh'
 
 const NAV: NavItem[] = [
   { to: '/ceo', label: 'Overview', icon: Gauge },
@@ -22,6 +24,8 @@ const NAV: NavItem[] = [
 
 export default function CeoLayout() {
   const navigate = useNavigate()
+  // Keep the read-only cockpit in step with ClickUp while it is open (spec §5.2).
+  const fresh = useKeepFresh()
 
   const commands = useMemo<Command[]>(
     () => [
@@ -64,5 +68,12 @@ export default function CeoLayout() {
     [navigate],
   )
 
-  return <AppShell title="Studio Pulse CEO" nav={NAV} commands={commands} />
+  return (
+    <AppShell title="Studio Pulse CEO" nav={NAV} commands={commands}>
+      <div className="mb-6 flex justify-end">
+        <SyncStatus syncing={fresh.syncing} lastSyncIso={fresh.lastSyncIso} onRefresh={fresh.syncNow} />
+      </div>
+      <Outlet />
+    </AppShell>
+  )
 }
