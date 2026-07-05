@@ -249,15 +249,12 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
               <button
                 type="button"
                 onClick={openPalette}
-                aria-label="Open command palette"
-                title="Command palette (Ctrl+K)"
+                aria-label="Open search"
+                title="Search"
                 className={DENSE_ROW}
               >
                 <Search className="h-4 w-4 shrink-0 opacity-80" aria-hidden="true" />
                 <span className="flex-1 truncate text-left">Search</span>
-                <kbd className="rounded border border-border bg-surface-2 px-1 py-px text-[10px] font-medium text-muted">
-                  ⌘K
-                </kbd>
               </button>
             )}
             <ThemeToggle dense />
@@ -319,14 +316,12 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
               <button
                 type="button"
                 onClick={openPalette}
-                aria-label="Open command palette"
+                aria-label="Open search"
+                title="Search"
                 className="flex h-8 shrink-0 items-center gap-2 rounded-md border border-border bg-surface/60 px-2.5 text-[13px] font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg"
               >
                 <Search className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>Search</span>
-                <kbd className="rounded border border-border bg-surface-2 px-1 py-px text-[10px] font-medium text-muted">
-                  ⌘K
-                </kbd>
               </button>
             )}
           </header>

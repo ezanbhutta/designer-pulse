@@ -3,7 +3,7 @@
  * Trends · Reports · Cancellations. Read-only on operations — a decision
  * cockpit, not a control panel (§22.1). Desktop-primary, dark-first (§21.9).
  * AppShell provides the ToastProvider, left rail, theme toggle and renders
- * the <Outlet/>; the ⌘K palette here carries page navigation (§20.6).
+ * the <Outlet/>; the the search palette palette here carries page navigation (§20.6).
  */
 
 import { useMemo } from 'react'

@@ -44,9 +44,9 @@ function score(cmd: Command, query: string): number {
 }
 
 /**
- * The spotlight (manifesto pillar 14 — the ⌘K nervous system): dims the whole
+ * The spotlight (manifesto pillar 14 — the the search palette nervous system): dims the whole
  * app behind a blurred backdrop and drops a surface-2 depth layer in with
- * spring physics. Global ⌘K / Ctrl-K listener, instant fuzzy filter over
+ * spring physics. Global Ctrl-K listener, instant fuzzy filter over
  * label + keywords, arrow-key navigation, Enter runs, Esc closes. Result
  * count is announced politely; selection uses the brand token (§21.1 — brand
  * marks the active selection). Render once in AppShell.
@@ -72,7 +72,7 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
     lastActive.current?.focus()
   }, [])
 
-  // Global ⌘K / Ctrl-K listener + programmatic open event.
+  // Global Ctrl-K listener + programmatic open event.
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {

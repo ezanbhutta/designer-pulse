@@ -19,7 +19,7 @@ import { useActiveDesigners, useOpenAlerts } from './opsData'
 
 /**
  * The Ops cockpit shell (spec §22.3): persistent nav with the attention surface
- * as home, a global ⌘K palette (navigate + jump-to-designer, §20.6), and the
+ * as home, a global the search palette palette (navigate + jump-to-designer, §20.6), and the
  * layout-level designer drawer driven by the `d` search param so any page can
  * drill into a designer without losing its place.
  */

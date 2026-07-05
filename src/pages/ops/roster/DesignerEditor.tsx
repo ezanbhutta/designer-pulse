@@ -888,12 +888,6 @@ export function DesignerEditor({
             className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-brand px-4 text-caption font-semibold text-brand-fg transition-opacity duration-150 ease-out hover:opacity-90 disabled:opacity-50 motion-safe:active:scale-[0.98]"
           >
             Save
-            <kbd
-              aria-hidden="true"
-              className="rounded-md border border-brand-fg/40 bg-transparent px-1.5 py-0.5 text-label opacity-90"
-            >
-              ⌘↵
-            </kbd>
           </button>
           <button
             type="button"
