@@ -182,7 +182,7 @@ function drawHeader(
   doc.setFontSize(10)
   doc.setTextColor(...MUTED)
   const periodLabel = `Week of ${pdfDate(period.start)} to ${pdfDate(period.end, true)}, Pakistan time`
-  doc.text(teamName ? `${periodLabel} · ${teamName} team` : periodLabel, MARGIN_X, 27)
+  doc.text(teamName ? `${periodLabel}, for the ${teamName} team` : periodLabel, MARGIN_X, 27)
   doc.text(`Generated ${pdfGeneratedAt(new Date())}`, CONTENT_RIGHT, 27, { align: 'right' })
 
   doc.setDrawColor(...HAIRLINE)
@@ -250,7 +250,7 @@ function drawTeamHeader(doc: jsPDF, team: Team, teamRows: DesignerPeriodSummary[
   doc.setFontSize(9)
   doc.setTextColor(...MUTED)
   doc.text(
-    `${teamRows.length} designer${teamRows.length === 1 ? '' : 's'} · ${completed} finished · right first time ${pct(teamFpq)}`,
+    `${teamRows.length} designer${teamRows.length === 1 ? '' : 's'}, ${completed} finished, right first time ${pct(teamFpq)}`,
     CONTENT_RIGHT,
     y,
     { align: 'right' },

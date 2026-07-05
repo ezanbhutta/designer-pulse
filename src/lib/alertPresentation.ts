@@ -103,7 +103,7 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
             : `${name} has room for more work today`,
         suggestion: `Open ${name}'s list in ClickUp and give them ${
           gap != null && gap > 1 ? 'the next projects' : 'the next project'
-        }. This gap is about assigning work — it's not on ${name}.`,
+        }. This gap is about assigning work, and it is not on ${name}.`,
         href: listHref,
         hrefLabel: listHref ? 'Open list in ClickUp' : null,
         icon,
@@ -129,10 +129,10 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
           ? `${what} has been waiting for the client ${aged}`
           : `${what} has been stuck in ${statusLabel} ${aged}`,
         suggestion: isClientResponse
-          ? `Worth a nudge — the client hasn't replied${
+          ? `It may be worth a gentle nudge, since the client has not replied${
               days != null ? ` in ${plural(days, 'day')}` : ''
-            }. This waiting is on the client, not on ${name}.`
-          : `Check in with ${name} — this one seems stuck and may need help to move.`,
+            } yet. This waiting is on the client, not on ${name}.`
+          : `It may be worth checking in with ${name}, since this one seems stuck and could need help to move.`,
         href: taskHref,
         hrefLabel: taskHref ? 'Open task in ClickUp' : null,
         icon,
@@ -147,7 +147,7 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
           ? `"${taskName}" was cancelled`
           : `One of ${name}'s projects was cancelled`,
         suggestion:
-          'Open it and check what happened — read the whole history before judging anyone. One cancellation is a reason to look, not a verdict.',
+          'Please open it and check what happened, reading the whole history before judging anyone. One cancellation is a reason to look, not a verdict.',
         href: taskHref,
         hrefLabel: taskHref ? 'Open task in ClickUp' : null,
         icon,
@@ -160,9 +160,9 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
       return {
         title:
           drop != null
-            ? `More of ${name}'s designs are being sent back lately — down ${Math.abs(Math.round(drop))} points from before`
+            ? `More of ${name}'s designs are being sent back lately, down ${Math.abs(Math.round(drop))} points from before`
             : `More of ${name}'s designs are being sent back lately`,
-        suggestion: `Might be time for a friendly coaching chat — look at ${name}'s recent change requests and who asked for them, before it grows into a bigger problem.`,
+        suggestion: `It might be time for a friendly coaching chat, looking at ${name}'s recent change requests and who asked for them, before it grows into a bigger problem.`,
         href: null,
         hrefLabel: null,
         icon,
@@ -175,9 +175,9 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
       return {
         title:
           score != null
-            ? `${name} may be overloaded — warning level ${Math.round(score)} of 100`
+            ? `${name} may be overloaded, at a warning level of ${Math.round(score)} out of 100`
             : `${name} may be overloaded`,
-        suggestion: `${name}'s fixes are taking longer and they're finishing less, while being online as much as ever. Check in with them — this is an early warning, not a verdict.`,
+        suggestion: `${name}'s fixes are taking longer and they are finishing less, while being online as much as ever. It may be worth checking in with them, since this is an early warning, not a verdict.`,
         href: null,
         hrefLabel: null,
         icon,
@@ -192,7 +192,7 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
           ? `${name} forgot to check out on ${fmtDate(workDate)}`
           : `${name} forgot to check out`,
         suggestion:
-          'The system closed their day automatically from their last activity — please double-check it and fix the time if it looks wrong.',
+          'The system closed their day on its own, going by their last activity, so please take a look and fix the time if it looks wrong.',
         href: null,
         hrefLabel: null,
         icon,
@@ -207,10 +207,10 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
       return {
         title:
           backlog != null
-            ? `Work is piling up — ${who.toLowerCase()} is heading for ${plural(Math.round(backlog), 'open project')} within a week`
+            ? `Work is piling up, and ${who.toLowerCase()} is heading for ${plural(Math.round(backlog), 'open project')} within a week`
             : `${who} is getting new projects faster than it can finish them`,
         suggestion:
-          'A pile-up is forming for next week — move work to whoever has room, or bring in help before it lands.',
+          'A pile-up is forming for next week, so it may help to move work to whoever has room, or bring in help before it lands.',
         href: null,
         hrefLabel: null,
         icon,

@@ -60,6 +60,13 @@ interface OutlierRow {
   delta: ReturnType<typeof metricDelta>
 }
 
+/** Joins strings into a natural spoken list: "a", "a and b", "a, b, and c". */
+function joinNatural(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? ''
+  if (items.length === 2) return `${items[0]} and ${items[1]}`
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`
+}
+
 export default function CeoOverview() {
   const navigate = useNavigate()
   const today = pktToday()
@@ -120,16 +127,16 @@ export default function CeoOverview() {
 
     const teamOf = new Map(active.map((d) => [d.id, d.team]))
     const teamIds = new Map(TEAMS.map((t) => [t, new Set(active.filter((d) => d.team === t).map((d) => d.id))]))
-    const teamFpqLine = TEAMS.map((t) => ({ team: t, fpq: fpqInPeriod(metrics, teamIds.get(t)!, week) }))
-      .filter((x) => x.fpq.pct != null)
-      .map((x) => `${x.team} ${x.fpq.pct}%`)
-      .join(' · ')
-    const teamCompletionsLine = TEAMS.map(
-      (t) => ({ team: t, n: completionsInPeriod(allTasks, teamIds.get(t)!, week) }),
+    const teamFpqLine = joinNatural(
+      TEAMS.map((t) => ({ team: t, fpq: fpqInPeriod(metrics, teamIds.get(t)!, week) }))
+        .filter((x) => x.fpq.pct != null)
+        .map((x) => `${x.team} ${x.fpq.pct}%`),
     )
-      .filter((x) => x.n > 0)
-      .map((x) => `${x.team} ${x.n}`)
-      .join(' · ')
+    const teamCompletionsLine = joinNatural(
+      TEAMS.map((t) => ({ team: t, n: completionsInPeriod(allTasks, teamIds.get(t)!, week) }))
+        .filter((x) => x.n > 0)
+        .map((x) => `${x.team} ${x.n}`),
+    )
 
     const weeklyCompletions = buckets.map((b) => completionsInPeriod(allTasks, activeIds, b))
     const weeklyAvg = weeklyCompletions.length
@@ -153,15 +160,14 @@ export default function CeoOverview() {
         const name = active.find((d) => d.id === t.designer_id)?.name
         if (name) perDesigner.set(firstName(name), (perDesigner.get(firstName(name)) ?? 0) + 1)
       }
-      const names = [...perDesigner.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([n, c]) => `${n} ${c}`)
-        .join(' · ')
+      const names = joinNatural(
+        [...perDesigner.entries()].sort((a, b) => b[1] - a[1]).map(([n, c]) => `${n} ${c}`),
+      )
       verdicts.push({
         id: 'cancellations',
         severity: 'critical',
         text: `${cancelledNow.length} order${cancelledNow.length === 1 ? '' : 's'} lost this week because of design problems (${names}).`,
-        detail: `${cancelledPrev.length} at this point last week. Open each one and read its full story before judging anyone — look for a pattern, not one bad week.`,
+        detail: `${cancelledPrev.length} at this point last week. Open each one and read its full story before judging anyone, looking for a pattern rather than one bad week.`,
         action: { label: 'Review them', onClick: () => navigate('/ceo/cancellations') },
       })
     }
@@ -184,11 +190,11 @@ export default function CeoOverview() {
       const revised = c.delivered - c.firstPassClean
       const sourceClause =
         c.clientCaughtRounds === 0 && c.csrCaughtRounds > 0
-          ? ' — all caught by our own checkers'
+          ? ', all caught by our own checkers'
           : c.csrCaughtRounds === 0 && c.clientCaughtRounds > 0
-            ? ' — all caught by clients'
+            ? ', all caught by clients'
             : c.csrCaughtRounds + c.clientCaughtRounds > 0
-              ? ` — ${c.csrCaughtRounds} caught by our checkers, ${c.clientCaughtRounds} by clients`
+              ? `, with ${c.csrCaughtRounds} caught by our checkers and ${c.clientCaughtRounds} by clients`
               : ''
       const call =
         c.clientCaughtRounds > c.csrCaughtRounds
@@ -197,8 +203,8 @@ export default function CeoOverview() {
       verdicts.push({
         id: `decay-${d.id}`,
         severity: 'warning',
-        text: `${firstName(d.name)}'s designs are getting sent back more often this week — ${revised} of ${c.delivered} needed changes${sourceClause}. ${call}`,
-        detail: `"Right first time" fell from ${p.firstPassQualityPct}% to ${c.firstPassQualityPct}% — a bigger drop than we normally allow (${d.team} team).`,
+        text: `${firstName(d.name)}'s designs are getting sent back more often this week, with ${revised} of ${c.delivered} needing changes${sourceClause}. ${call}`,
+        detail: `"Right first time" fell from ${p.firstPassQualityPct}% to ${c.firstPassQualityPct}%, a bigger drop than we normally allow on the ${d.team} team.`,
         action: { label: 'See trends', onClick: () => navigate('/ceo/trends') },
       })
     }
@@ -226,7 +232,7 @@ export default function CeoOverview() {
           verdicts.push({
             id: 'constraint',
             severity: 'warning',
-            text: `Work is piling up in the ${team} team — ${share}% of its ${teamAging.length} projects moving slowly are sitting at "${STATUS_LABELS[topStatus[0] as keyof typeof STATUS_LABELS].toLowerCase()}".`,
+            text: `Work is piling up in the ${team} team, where ${share}% of its ${teamAging.length} projects moving slowly are sitting at "${STATUS_LABELS[topStatus[0] as keyof typeof STATUS_LABELS].toLowerCase()}".`,
             detail: `${aging.length} project${aging.length === 1 ? ' has' : 's have'} been sitting longer than they should across the studio.${constraint ? ` ${constraint.line}` : ''}`,
             action: { label: 'See teams', onClick: () => navigate('/ceo/teams') },
           })
@@ -239,8 +245,8 @@ export default function CeoOverview() {
       verdicts.push({
         id: 'forecast',
         severity: 'warning',
-        text: `New projects are arriving faster than they get finished — about ${forecast.inflowPerDay} come in each day and ${forecast.completionPerDay} are finished. If this holds, roughly ${forecast.projectedBacklog} projects will be waiting by next week. It may be worth adding help or moving work around.`,
-        detail: `${forecast.openNow} projects open right now · looking ${forecast.horizonDays} days ahead · we raise a flag above ${cfg.forecast_threshold}.`,
+        text: `New projects are arriving faster than they get finished, with about ${forecast.inflowPerDay} coming in each day against ${forecast.completionPerDay} finished. If this holds, roughly ${forecast.projectedBacklog} projects will be waiting by next week. It may be worth adding help or moving work around.`,
+        detail: `There are ${forecast.openNow} projects open right now, and looking ${forecast.horizonDays} days ahead, we raise a flag above ${cfg.forecast_threshold}.`,
         action: { label: 'See forecast', onClick: () => navigate('/ceo/trends') },
       })
     }
@@ -251,7 +257,7 @@ export default function CeoOverview() {
         verdicts.push({
           id: 'positive-fpq',
           severity: 'info',
-          text: `${fpqNow.pct > fpqPrev.pct ? `More designs are being accepted first time — ${fpqNow.pct}% this week, up from ${fpqPrev.pct}%` : `Designs accepted first time are holding steady at ${fpqNow.pct}%`} (${fpqNow.clean} of ${fpqNow.delivered}). Nothing needs your attention.`,
+          text: `${fpqNow.pct > fpqPrev.pct ? `More designs are being accepted first time, reaching ${fpqNow.pct}% this week and up from ${fpqPrev.pct}%` : `Designs accepted first time are holding steady at ${fpqNow.pct}%`} (${fpqNow.clean} of ${fpqNow.delivered}). Nothing needs your attention.`,
           detail: 'Quality is not slipping, no work is piling up, no orders have been lost, and nothing is stuck.',
           action: { label: 'See trends', onClick: () => navigate('/ceo/trends') },
         })
@@ -342,14 +348,14 @@ export default function CeoOverview() {
         breadcrumbs={['CEO', 'Overview']}
         title="Overview"
         titleAccessory={
-          <InfoTip text="A quick look at the whole studio this week — what is going well and what needs your attention." />
+          <InfoTip text="A quick look at the whole studio this week, showing what is going well and what needs your attention." />
         }
-        history={`Week of ${fmtDate(week.start)} so far, next to the same days last week. All times are Pakistan time. This is a place to see the work, not to change it — the team plans and updates everything in ClickUp.`}
+        history={`Week of ${fmtDate(week.start)} so far, next to the same days last week. All times are Pakistan time. This is a place to see the work, not to change it, since the team plans and updates everything in ClickUp.`}
       />
 
       {failed != null && (
         <ErrorBanner
-          message={`We could not load the studio numbers just now — ${(failed as Error).message}`}
+          message={`We could not load the studio numbers just now, because ${(failed as Error).message}`}
           asOf={lastGood > 0 ? fmtClock(new Date(lastGood).toISOString()) : null}
           onRetry={() => {
             void designersQ.refetch()
@@ -364,7 +370,7 @@ export default function CeoOverview() {
         <VerdictBlock
           title="What to know this week"
           items={model?.verdicts ?? []}
-          emptyMessage="Nothing needs your attention this week — quality, speed and workload all look steady."
+          emptyMessage="Nothing needs your attention this week, because quality, speed and workload all look steady."
           loading={loading}
         />
       </CornerTip>
@@ -379,11 +385,9 @@ export default function CeoOverview() {
         }
         caption={
           model
-            ? `${
-                model.teamCompletionsLine
-                  ? `So far — ${model.teamCompletionsLine} · `
-                  : 'Nothing finished yet this week · '
-              }the average over the last 8 weeks is ${model.weeklyAvg} a week`
+            ? model.teamCompletionsLine
+              ? `So far, ${model.teamCompletionsLine}, and the average over the last 8 weeks is ${model.weeklyAvg} a week`
+              : `Nothing finished yet this week, and the average over the last 8 weeks is ${model.weeklyAvg} a week`
             : null
         }
         sparkline={model?.weeklyCompletions}
@@ -406,7 +410,7 @@ export default function CeoOverview() {
               }
               cause={
                 model && model.fpqNow.delivered > 0
-                  ? `${model.fpqNow.clean} of ${model.fpqNow.delivered} designs accepted with no changes — ${model.fpqNow.csrCaughtRounds} change requests from our checkers, ${model.fpqNow.clientCaughtRounds} from clients`
+                  ? `${model.fpqNow.clean} of ${model.fpqNow.delivered} designs accepted with no changes, with ${model.fpqNow.csrCaughtRounds} change requests from our checkers and ${model.fpqNow.clientCaughtRounds} from clients`
                   : 'No designs sent yet this week'
               }
               reference={model?.teamFpqLine ? `By team: ${model.teamFpqLine}` : null}
@@ -436,7 +440,7 @@ export default function CeoOverview() {
                     })
                   : null
               }
-              cause="Time spent waiting for clients to reply — it never counts against the team"
+              cause="Time spent waiting for clients to reply, which never counts against the team"
               reference={
                 model
                   ? `${model.clientWaitSample} project${model.clientWaitSample === 1 ? '' : 's'} waited on a client reply in this window`
@@ -456,11 +460,11 @@ export default function CeoOverview() {
               <GitBranch className="h-4 w-4 text-muted" aria-hidden="true" />
               <h2 className="eyebrow inline-flex items-center gap-1">
                 Where work waits{' '}
-                <InfoTip text="Shows which step projects sit in the longest — making, checking, or waiting for clients." />
+                <InfoTip text="Shows which step projects sit in the longest, whether that's making, checking, or waiting for clients." />
               </h2>
             </div>
             <p className="mt-4 max-w-prose text-body text-fg">
-              {model?.constraint?.line ?? (loading ? '' : 'No open projects right now — nothing is waiting.')}
+              {model?.constraint?.line ?? (loading ? '' : 'No open projects right now, so nothing is waiting.')}
             </p>
             <p className="mt-2 text-caption text-muted">
               For each step, the bar shows how long open projects have usually been sitting there.
@@ -490,12 +494,12 @@ export default function CeoOverview() {
               <Sparkles className="h-4 w-4 text-muted" aria-hidden="true" />
               <h2 className="eyebrow inline-flex items-center gap-1">
                 Who stood out this week{' '}
-                <InfoTip text="The strongest and weakest results this week, using fair measures only — never raw project counts." />
+                <InfoTip text="The strongest and weakest results this week, using fair measures only and never raw project counts." />
               </h2>
             </div>
             <p className="mt-2 max-w-prose text-caption text-muted">
-              Compared on &quot;Right first time&quot; and &quot;Target met&quot; only — never raw
-              counts, because a small logo and a long brand guide are not the same amount of work.
+              Compared on &quot;Right first time&quot; and &quot;Target met&quot; only, and never on
+              raw counts, because a small logo and a long brand guide are not the same amount of work.
             </p>
             {loading ? (
               <div className="mt-6 space-y-2" role="status" aria-label="Loading who stood out">
@@ -518,8 +522,8 @@ export default function CeoOverview() {
               </div>
             )}
             <p className="mt-6 border-t border-border pt-4 text-caption text-muted">
-              Only you can see this list — designers are never shown rankings. Use it for coaching,
-              not shaming.
+              Only you can see this list, since designers are never shown rankings. Use it for
+              coaching, not shaming.
             </p>
           </div>
         </RevealItem>
@@ -576,13 +580,13 @@ function OutlierItem({ row }: { row: OutlierRow }) {
       <button
         type="button"
         onClick={() => navigate(`/ceo/reports#${row.designer.id}`)}
-        aria-label={`${row.designer.name} — open their weekly report`}
+        aria-label={`Open ${row.designer.name}'s weekly report`}
         className="flex min-h-[2.75rem] w-full items-center gap-2 rounded-xl px-1 py-1.5 text-left transition-colors duration-150 hover:bg-surface-2"
       >
         <span className="min-w-0 flex-1">
           <span
             className="block truncate text-caption text-fg"
-            title={`${row.designer.name} — ${row.designer.team}`}
+            title={`${row.designer.name} on the ${row.designer.team} team`}
           >
             {row.designer.name} <span className="text-label text-muted">{row.designer.team}</span>
           </span>

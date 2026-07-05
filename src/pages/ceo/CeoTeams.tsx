@@ -164,7 +164,7 @@ export default function CeoTeams() {
         fpqDelta: metricDelta(fpqNow.pct, fpqPrev.pct, { goodWhen: 'up', format: (v) => `${v} points` }),
         fpqCause:
           fpqNow.delivered > 0
-            ? `${fpqNow.clean} of ${fpqNow.delivered} accepted with no changes — ${fpqNow.csrCaughtRounds} change requests from our checkers, ${fpqNow.clientCaughtRounds} from clients`
+            ? `${fpqNow.clean} of ${fpqNow.delivered} accepted with no changes, with ${fpqNow.csrCaughtRounds} change requests from our checkers and ${fpqNow.clientCaughtRounds} from clients`
             : 'No designs sent yet this week',
         clientWait: clientWaitMedianInPeriod(metrics, ids, week),
         clientWaitDelta: metricDelta(
@@ -192,12 +192,12 @@ export default function CeoTeams() {
     if (!teams || teams.length === 0) return null
     const withFpq = teams.filter((t) => t.fpqPct != null)
     if (withFpq.length === 0)
-      return 'No designs sent yet this week — team quality will show up here as work gets delivered.'
+      return 'No designs sent yet this week, so team quality will show up here as work gets delivered.'
     const best = [...withFpq].sort((a, b) => (b.fpqPct ?? 0) - (a.fpqPct ?? 0))[0]
     const worst = [...withFpq].sort((a, b) => (a.fpqPct ?? 0) - (b.fpqPct ?? 0))[0]
     if (best.team === worst.team)
-      return `${best.team} is the only team that sent designs this week — ${best.fpqPct}% were right first time.`
-    return `${best.team} has the best "right first time" score this week (${best.fpqPct}%); ${worst.team} has the lowest (${worst.fpqPct}%). Coach within each team — never compare raw output across teams.`
+      return `${best.team} is the only team that sent designs this week, and ${best.fpqPct}% were right first time.`
+    return `${best.team} has the best "right first time" score this week (${best.fpqPct}%), while ${worst.team} has the lowest (${worst.fpqPct}%). Coach within each team, and never compare raw output across teams.`
   }, [teams])
 
   const plate = teams
