@@ -12,7 +12,7 @@ import { SPRING_GENTLE } from './motion'
  */
 export function InboxZeroReward({
   title = 'All clear',
-  message = 'Nothing needs you right now — everyone has work and nothing is stuck.',
+  message = 'Nothing needs you right now. Everyone has work in hand, and nothing is stuck.',
 }: {
   title?: string
   message?: string

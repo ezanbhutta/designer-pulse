@@ -25,7 +25,7 @@ const SEVERITY_META: Record<
 > = {
   // Info wears a calm ⓘ — an exclamation glyph would make "steady, nothing
   // needs you" items look like alarms (§20.7: calm verdicts are a feature).
-  info: { icon: Info, className: 'text-brand', label: 'Info' },
+  info: { icon: Info, className: 'text-brand', label: 'Information' },
   warning: { icon: TriangleAlert, className: 'text-warning', label: 'Warning' },
   critical: { icon: OctagonAlert, className: 'text-danger', label: 'Critical' },
 }

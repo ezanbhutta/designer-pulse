@@ -22,8 +22,8 @@ export function DeltaChip({ direction, good, label }: DeltaChipProps) {
         : 'bg-danger-soft text-danger'
   const srText =
     direction === 'flat'
-      ? 'unchanged vs prior period'
-      : `${direction === 'up' ? 'up' : 'down'} vs prior period, ${good ? 'improving' : 'worsening'}`
+      ? 'unchanged compared with the period before'
+      : `${direction === 'up' ? 'up' : 'down'} compared with the period before, ${good ? 'improving' : 'getting worse'}`
 
   return (
     <span

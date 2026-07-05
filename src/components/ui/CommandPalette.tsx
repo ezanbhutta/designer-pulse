@@ -225,7 +225,7 @@ export function CommandPalette({ commands }: CommandPaletteProps) {
             >
               {filtered.length === 0 ? (
                 <li className="px-3 py-6 text-center text-caption text-muted">
-                  No matching commands — try a different search.
+                  Nothing matched that. Try a different search.
                 </li>
               ) : (
                 filtered.map((cmd, i) => (

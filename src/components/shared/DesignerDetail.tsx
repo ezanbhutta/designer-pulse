@@ -246,21 +246,21 @@ export function DesignerMetricsPanel({
   const s = summaries.cur
   const p = summaries.prev
   const vs = period.vs
-  const pts = (abs: number) => `${abs} pts`
+  const pts = (abs: number) => `${abs} points`
   const metricsLoading =
     (!tasksProp && tasksQ.isLoading) || (!metricsProp && metricsQ.isLoading)
 
   const defectTotal = s.csrCaughtRounds + s.clientCaughtRounds
   const defectDiagnosis =
     defectTotal === 0
-      ? 'No change requests in this period — nothing to look at.'
+      ? 'No changes were asked for in this period, so there is nothing to look into here.'
       : s.csrCaughtRounds >= s.clientCaughtRounds
         ? scope === 'ops'
-          ? 'Most problems were caught by our own checkers before the client saw them. Some coaching may help.'
-          : 'Most problems were caught and fixed by our checkers before the client ever saw them.'
+          ? 'Most of the changes were caught by our own checkers before the client ever saw the work. A little coaching could help lift this even further.'
+          : 'Most of the changes were spotted and put right by our checkers before the client ever saw the work.'
         : scope === 'ops'
-          ? 'Most problems were spotted by clients, not our checkers. The checking step or the brief may need tightening.'
-          : 'Most problems were spotted by clients — worth an extra check before sending next time.'
+          ? 'Most of the changes came from clients rather than our own checkers, which suggests the checking step or the brief could use a closer look.'
+          : 'Most of the changes came from clients, so it is worth taking one more look before sending next time.'
 
   const lastGood = Math.max(tasksQ.dataUpdatedAt, metricsQ.dataUpdatedAt)
 
@@ -268,7 +268,7 @@ export function DesignerMetricsPanel({
     <div className="space-y-6">
       {((!tasksProp && tasksQ.error) || (!metricsProp && metricsQ.error)) && (
         <ErrorBanner
-          message="Could not load the latest numbers — you are seeing the last saved view."
+          message="We could not load the latest numbers, so you are looking at the last saved view for now."
           asOf={lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null}
           onRetry={() => {
             void tasksQ.refetch()
@@ -281,12 +281,12 @@ export function DesignerMetricsPanel({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <StatTile
           eyebrow="Target met"
-          tip="Out of the projects this person was supposed to take, how many they finished."
+          tip="Of the projects this designer was expected to take on, how many they finished."
           icon={Gauge}
           value={fmtPct(s.attainmentPct)}
           delta={metricDelta(s.attainmentPct, p.attainmentPct, 'up', pts, vs)}
-          cause={`finished ${s.completed} of ${s.expectedQuota} expected`}
-          reference={teamRef?.attainment != null ? `typical for the team: ${teamRef.attainment}%` : null}
+          cause={`finished ${s.completed} of the ${s.expectedQuota} expected`}
+          reference={teamRef?.attainment != null ? `usual for the team: ${teamRef.attainment}%` : null}
           state={
             s.attainmentPct == null
               ? null
@@ -300,16 +300,16 @@ export function DesignerMetricsPanel({
         />
         <StatTile
           eyebrow="Right first time"
-          tip="How many designs were accepted without anyone asking for changes. Higher is better."
+          tip="How many designs the client accepted without asking for a single change. The higher, the better."
           icon={ShieldCheck}
           value={fmtPct(s.firstPassQualityPct)}
           delta={metricDelta(s.firstPassQualityPct, p.firstPassQualityPct, 'up', pts, vs)}
           cause={
             s.delivered > 0
-              ? `${s.firstPassClean} of ${s.delivered} designs needed no changes`
-              : 'Nothing sent to a client in this period yet'
+              ? `${s.firstPassClean} of ${s.delivered} designs needed no changes at all`
+              : 'Nothing has gone to a client in this period yet'
           }
-          reference={teamRef?.fpq != null ? `typical for the team: ${teamRef.fpq}%` : null}
+          reference={teamRef?.fpq != null ? `usual for the team: ${teamRef.fpq}%` : null}
           state={
             s.firstPassQualityPct == null
               ? null
@@ -323,21 +323,21 @@ export function DesignerMetricsPanel({
         />
         <StatTile
           eyebrow="Work time"
-          tip="The usual time from getting a project to sending the first design. Waiting for the client is not counted."
+          tip="The usual time from picking up a project to sending the first design. Time spent waiting for the client is never counted."
           icon={Timer}
           value={fmtDuration(s.productionMedianMin)}
           delta={metricDelta(s.productionMedianMin, p.productionMedianMin, 'down', fmtDuration, vs)}
           cause={
             scope === 'ops'
-              ? `usual time across ${s.delivered} first designs — client waiting time not counted`
-              : 'your usual time to the first design — waiting for the client never counts against you'
+              ? `the usual time across ${s.delivered} first designs, with any client waiting time left out`
+              : 'your usual time to the first design, and waiting for the client never counts against you'
           }
-          reference={teamRef?.production != null ? `typical for the team: ${fmtDuration(teamRef.production)}` : null}
+          reference={teamRef?.production != null ? `usual for the team: ${fmtDuration(teamRef.production)}` : null}
           loading={metricsLoading}
         />
         <StatTile
           eyebrow="Fix time"
-          tip="The usual time to finish changes after someone asks for them."
+          tip="The usual time to finish a set of changes once someone has asked for them."
           icon={RotateCcw}
           value={fmtDuration(s.revisionTurnaroundMedianMin)}
           delta={metricDelta(
@@ -348,32 +348,32 @@ export function DesignerMetricsPanel({
             vs,
           )}
           cause={`${s.revisionRounds} round${s.revisionRounds === 1 ? '' : 's'} of changes in this period`}
-          reference={teamRef?.revision != null ? `typical for the team: ${fmtDuration(teamRef.revision)}` : null}
+          reference={teamRef?.revision != null ? `usual for the team: ${fmtDuration(teamRef.revision)}` : null}
           loading={metricsLoading}
         />
         <StatTile
           eyebrow="Cancelled orders"
-          tip="Orders lost because of a design problem. Check the project history before judging."
+          tip="Orders that did not go ahead. Please read the project history before forming a view, as the reason is not always what it first seems."
           icon={XCircle}
           value={String(s.cancelled)}
           delta={metricDelta(s.cancelled, p.cancelled, 'down', String, vs)}
           cause={
             s.cancelled > 0
               ? scope === 'ops'
-                ? `${fmtPct(s.cancellationRatePct)} of ${s.assigned} projects — check the history before judging`
+                ? `${fmtPct(s.cancellationRatePct)} of ${s.assigned} projects, so do read the history before forming a view`
                 : `${fmtPct(s.cancellationRatePct)} of ${s.assigned} projects in this period`
-              : `0 of ${s.assigned} projects — none lost`
+              : `none of the ${s.assigned} projects were lost`
           }
           state={s.cancelled > 0 ? 'flag' : 'ok'}
           loading={metricsLoading}
         />
         <StatTile
-          eyebrow="Start delay"
-          tip="The time between pressing Check in and doing the first real work in ClickUp."
+          eyebrow="Time to get going"
+          tip="The gap between the start of the day and the first real piece of work in ClickUp."
           icon={LogIn}
           value={fmtDuration(warmup.cur)}
           delta={metricDelta(warmup.cur, warmup.prev, 'down', fmtDuration, vs)}
-          cause="usual gap between checking in and the first real work"
+          cause="the usual gap between the start of the day and the first real piece of work"
           state={warmup.cur == null ? null : warmup.cur > 60 ? 'flag' : warmup.cur > 30 ? 'watch' : 'ok'}
           loading={!attendanceProp && attendanceQ.isLoading}
         />
@@ -382,8 +382,8 @@ export function DesignerMetricsPanel({
       {/* ── Defect source split (§4.2) ── */}
       <section className="card p-5">
         <h4 className="eyebrow inline-flex items-center gap-1">
-          Who asked for changes — {period.label}
-          <InfoTip text="Who spotted the problems: our own checkers or the client. Problems the client sees matter more." />
+          Who asked for the changes, {period.label}
+          <InfoTip text="Who noticed the changes that were needed: our own checkers or the client. The ones a client sees matter most." />
         </h4>
         <div className="mt-3">
           <HBar
@@ -437,7 +437,7 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
       priorStart: prior.start,
       priorEnd: prior.end,
       label: periodLabel,
-      vs: 'vs last period',
+      vs: 'compared with the period before',
     }),
     [range, prior, periodLabel],
   )
@@ -475,12 +475,13 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
       void queryClient.invalidateQueries({ queryKey: ['attendance'] })
       void queryClient.invalidateQueries({ queryKey: ['shift-marks'] })
       toast({
-        message: `${mark_type === 'check_in' ? 'Check-in' : 'Check-out'} saved for ${
-          designer?.name ?? 'this designer'
-        }`,
+        message:
+          mark_type === 'check_in'
+            ? `Saved the start of the day for ${designer?.name ?? 'this designer'}.`
+            : `Saved the end of the day for ${designer?.name ?? 'this designer'}.`,
       })
     },
-    onError: (e: Error) => toast({ message: `Could not save it — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `That did not save. ${e.message}` }),
   })
 
   if (designersQ.isLoading) {
@@ -501,8 +502,8 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
     return (
       <EmptyState
         icon={Inbox}
-        title="Designer not found"
-        hint="They may have been removed, or you may not have access to their page."
+        title="We could not find this designer"
+        hint="They may have been removed, or their page may not be one you are able to see."
       />
     )
   }
@@ -528,12 +529,12 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
           <CalendarDays className="h-4 w-4" aria-hidden="true" />
           {schedule ? (
             <span>
-              {schedule.daily_quota} projects a day · {fmtShiftTime(schedule.shift_start)}–
-              {fmtShiftTime(schedule.shift_end)} PKT
+              {schedule.daily_quota} projects a day · {fmtShiftTime(schedule.shift_start)} to{' '}
+              {fmtShiftTime(schedule.shift_end)} Pakistan time
               {schedule.weekly_off != null && ` · day off ${DOW_LABELS[schedule.weekly_off]}`}
             </span>
           ) : (
-            <span>No work hours set — "Target met" cannot be worked out</span>
+            <span>No working hours are set yet, so "Target met" cannot be worked out.</span>
           )}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -552,7 +553,7 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
                 disabled={markMutation.isPending}
               >
                 <LogIn className="h-4 w-4" aria-hidden="true" />
-                Check in for them
+                Start their day for them
               </Button>
               <Button
                 variant="secondary"
@@ -560,7 +561,7 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
                 disabled={markMutation.isPending}
               >
                 <LogOut className="h-4 w-4" aria-hidden="true" />
-                Check out for them
+                End their day for them
               </Button>
               <Link
                 to="/ops/roster"
@@ -577,8 +578,8 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
       {/* ── Period ── */}
       <div className="flex items-center justify-between gap-3">
         <h4 className="eyebrow inline-flex items-center gap-1">
-          How they did — {periodLabel}
-          <InfoTip text="Their numbers for the chosen period, each compared with the period before it." />
+          How they have been doing over the {periodLabel}
+          <InfoTip text="Their numbers for the period you have chosen, each one compared with the period before it." />
         </h4>
         <SegmentedControl<Period>
           options={[
@@ -587,7 +588,7 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
           ]}
           value={period}
           onChange={setPeriod}
-          ariaLabel="Metric period"
+          ariaLabel="Which period to show"
         />
       </div>
 
@@ -597,8 +598,8 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
       {/* ── Open tasks ── */}
       <section>
         <h4 className="eyebrow inline-flex items-center gap-1">
-          Open projects ({myOpenTasks.length}) — oldest first
-          <InfoTip text="Everything on their plate right now. The oldest sits at the top." />
+          Open projects ({myOpenTasks.length}), oldest first
+          <InfoTip text="Everything on their plate right now, with the one that has waited longest at the top." />
         </h4>
         <div className="mt-3 space-y-2">
           {openTasksQ.isLoading ? (
@@ -606,11 +607,11 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
           ) : myOpenTasks.length === 0 ? (
             <EmptyState
               icon={Inbox}
-              title="No open projects"
+              title="Nothing open right now"
               hint={
                 scope === 'ops'
-                  ? 'They have room for more — anything given in ClickUp shows up here right away.'
-                  : 'Nothing right now — new projects show up here the moment they land.'
+                  ? 'They have room for more. Anything new in their ClickUp list will appear here right away.'
+                  : 'Nothing right now. New projects will appear here the moment they land in ClickUp.'
               }
             />
           ) : (
@@ -626,8 +627,8 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
       {/* ── Recent attendance ── */}
       <section>
         <h4 className="eyebrow inline-flex items-center gap-1">
-          Attendance — last 7 days
-          <InfoTip text="One box per day: worked, on leave, day off, absent, and so on." />
+          Attendance over the last 7 days
+          <InfoTip text="One small box for each day, showing whether they worked, took leave, had a day off, and so on." />
         </h4>
         <div className="mt-3 flex flex-wrap gap-2" aria-label="Attendance, last 7 days">
           {stripDates.map((d) => {
@@ -639,8 +640,8 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
                   className={`tnum flex h-9 w-9 items-center justify-center rounded-lg text-label font-semibold ${
                     chip ? chip.className : 'bg-surface-2 text-muted/60'
                   }`}
-                  title={`${fmtDate(d)}: ${row?.status ?? 'no record'}${
-                    row?.warmup_gap_min != null ? ` · start delay ${fmtDuration(row.warmup_gap_min)}` : ''
+                  title={`${fmtDate(d)}: ${row?.status ?? 'nothing recorded'}${
+                    row?.warmup_gap_min != null ? ` · ${fmtDuration(row.warmup_gap_min)} to get going` : ''
                   }`}
                 >
                   {chip ? chip.letter : '·'}
@@ -653,8 +654,8 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
           })}
         </div>
         <p className="mt-2 text-label normal-case tracking-normal text-muted">
-          P present · HW worked on a holiday · L leave · H holiday · W weekly day off · A absent ·
-          I incomplete
+          P present · HW worked on a holiday · L on leave · H company holiday · W day off · A not
+          marked in · I day not finished
         </p>
       </section>
 

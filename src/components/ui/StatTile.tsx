@@ -30,8 +30,8 @@ const STATE_META: Record<
   { icon: LucideIcon; tone: BadgeProps['tone']; label: string }
 > = {
   ok: { icon: CircleCheck, tone: 'success', label: 'On track' },
-  watch: { icon: Eye, tone: 'warning', label: 'Watch' },
-  flag: { icon: TriangleAlert, tone: 'danger', label: 'Flag' },
+  watch: { icon: Eye, tone: 'warning', label: 'Worth watching' },
+  flag: { icon: TriangleAlert, tone: 'danger', label: 'Needs a look' },
 }
 
 /**
@@ -75,7 +75,7 @@ export function StatTile({
   if (loading) {
     // Mirrors the loaded layout exactly — nothing shifts when data lands.
     return (
-      <div className="card h-full p-5" role="status" aria-label={`${eyebrow} — loading`}>
+      <div className="card h-full p-5" role="status" aria-label={`${eyebrow}, loading`}>
         <div className="mb-4 flex items-center justify-between">
           <div className="skeleton h-3 w-24" />
           <div className="skeleton h-5 w-14 rounded-full" />
@@ -132,7 +132,7 @@ export function StatTile({
       <button
         type="button"
         onClick={onClick}
-        aria-label={`${eyebrow}: ${value} — open details`}
+        aria-label={`${eyebrow}: ${value}. Open for the details.`}
         // hover:bg is the theme-safe cue — the ink shadow is invisible on the
         // dark cockpit background. active:scale gives the tactile press.
         className="card block h-full min-h-11 w-full cursor-pointer p-5 text-left transition-[box-shadow,background-color,border-color,transform] duration-200 ease-out hover:border-muted/30 hover:bg-surface-2/40 hover:shadow-raised motion-safe:active:scale-[0.99]"

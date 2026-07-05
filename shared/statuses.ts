@@ -68,9 +68,9 @@ export const STATUS_LABELS: Record<CanonicalStatus, string> = {
   'pickup your projects': 'Waiting to start',
   'in progress': 'Working',
   'deliver to client': 'First design sent',
-  revision: 'Changes asked',
+  revision: 'Changes requested',
   'revision complete': 'Changes done',
-  'client response': 'Waiting for client',
+  'client response': 'With the client',
   'final files': 'Final files',
   cancelled: 'Cancelled',
   complete: 'Done',
@@ -78,15 +78,20 @@ export const STATUS_LABELS: Record<CanonicalStatus, string> = {
 
 /** One-line plain-language meaning per status — for ⓘ info tips. */
 export const STATUS_EXPLAINERS: Record<CanonicalStatus, string> = {
-  'pickup your projects': 'A new project the designer has not started yet.',
-  'in progress': 'The designer is working on it right now.',
-  'deliver to client': 'The first design is ready and was sent for checking.',
-  revision: 'Someone asked for changes. The designer needs to fix it.',
-  'revision complete': 'The changes are done and sent back for checking.',
-  'client response': 'We are waiting for the client to reply. This waiting never counts against the designer.',
-  'final files': 'The client said yes — the designer is preparing the final files.',
-  cancelled: 'The order was lost because of a design problem. Check the task history before judging.',
-  complete: 'The project is closed.',
+  'pickup your projects':
+    'This project has just come in and is waiting for the designer to begin. Nothing is late here; it simply has not been picked up yet.',
+  'in progress': 'The designer is working on this one right now.',
+  'deliver to client': 'The first design is ready and has gone to the client to look over.',
+  revision:
+    'The client or one of our checkers asked for a few changes, and the designer is taking care of them.',
+  'revision complete': 'The changes are finished, and the work has gone back for another look.',
+  'client response':
+    'The work is now with the client while they take their time to look it over. Clients reply on their own schedule, so this is a normal and healthy part of the job, and it never counts against the designer.',
+  'final files':
+    'The client is happy with the design, and the designer is putting together the final files to hand over.',
+  cancelled:
+    'This order did not go ahead, and it is counted here as a lost order. Numbers rarely tell the whole story, so please read through the project history before forming any judgement.',
+  complete: 'This project is finished and closed. Nothing more is needed.',
 }
 
 /**

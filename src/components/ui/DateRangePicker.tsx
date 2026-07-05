@@ -58,8 +58,8 @@ const fmtChip = (s: string) => {
 const PRESETS: { v: RangeMode; l: string }[] = [
   { v: 'today', l: 'Today' },
   { v: 'yesterday', l: 'Yesterday' },
-  { v: '7d', l: '7d' },
-  { v: '30d', l: '30d' },
+  { v: '7d', l: '7 days' },
+  { v: '30d', l: '30 days' },
 ]
 
 export function DateRangePicker({
