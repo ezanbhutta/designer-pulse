@@ -47,6 +47,39 @@ export function fmtDuration(minutes: number | null | undefined): string {
   return h ? `${d}d ${h}h` : `${d}d`
 }
 
+/**
+ * The same duration spelled out in full words — for prose the designer reads,
+ * where "6h 12m" feels like a machine and "6 hours and 12 minutes" feels like
+ * a person. The compact `fmtDuration` stays for dense Ops tables.
+ */
+export function fmtDurationLong(minutes: number | null | undefined): string {
+  if (minutes == null) return '—'
+  const m = Math.round(minutes)
+  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+  if (m < 60) return unit(m, 'minute')
+  if (m < 60 * 24) {
+    const h = Math.floor(m / 60)
+    const rem = m % 60
+    return rem ? `${unit(h, 'hour')} and ${unit(rem, 'minute')}` : unit(h, 'hour')
+  }
+  const d = Math.floor(m / (60 * 24))
+  const h = Math.round((m % (60 * 24)) / 60)
+  return h ? `${unit(d, 'day')} and ${unit(h, 'hour')}` : unit(d, 'day')
+}
+
+/** Friendly 12-hour clock — "9:04 am", "5:00 pm" — for the phone-facing view. */
+export function fmtClock(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const parts = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: PKT,
+  }).formatToParts(new Date(iso))
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ''
+  return `${get('hour')}:${get('minute')} ${get('dayPeriod').toLowerCase()}`
+}
+
 export function fmtPct(pct: number | null | undefined): string {
   return pct == null ? '—' : `${pct}%`
 }

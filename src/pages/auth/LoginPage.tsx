@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BrandLogo } from '../../components/ui/BrandLogo'
+import { Aurora } from '../../components/ui/Aurora'
 import { homePathFor, useAuth } from '../../hooks/useAuth'
 import { supabaseConfigured } from '../../lib/supabase'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
@@ -88,7 +89,9 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-bg px-6 py-12">
+    <>
+      <Aurora />
+      <main className="relative z-10 flex min-h-screen items-center justify-center px-6 py-12">
       <div className="w-full max-w-sm">
         <div className="card animate-fade-in flex flex-col gap-8 p-8 sm:p-10">
           <BrandMark />
@@ -161,9 +164,10 @@ export default function LoginPage() {
         </div>
 
         <p className="mx-auto mt-6 max-w-prose text-center text-caption text-muted">
-          Everyone sees only their own part — designers see just their own numbers.
+          Everyone sees only their own part. Designers see just their own numbers.
         </p>
       </div>
-    </main>
+      </main>
+    </>
   )
 }

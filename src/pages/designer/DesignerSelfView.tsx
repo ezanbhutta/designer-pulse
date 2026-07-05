@@ -38,7 +38,6 @@ import { ToastProvider, useToast } from '../../components/ui/ToastProvider'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { Button } from '../../components/ui/Button'
 import { ActionButton } from '../../components/ui/ActionButton'
-import { AnimatedCounter } from '../../components/ui/AnimatedCounter'
 import { InboxZeroReward } from '../../components/ui/InboxZeroReward'
 import { SPRING_GENTLE, staggerContainer, staggerItem } from '../../components/ui/motion'
 import { InfoTip } from '../../components/ui/InfoTip'
@@ -52,7 +51,9 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { BrandLogo } from '../../components/ui/BrandLogo'
 import { Skeleton } from '../../components/ui/Skeleton'
-import { fmtDate, fmtDuration, fmtShiftTime, fmtTime } from '../../lib/format'
+import { Aurora } from '../../components/ui/Aurora'
+import { ProgressRing } from '../../components/ui/ProgressRing'
+import { fmtClock, fmtDate, fmtDurationLong, fmtShiftTime } from '../../lib/format'
 import { syncThemeColorMeta } from '../../lib/themeColor'
 import {
   addDays,
@@ -118,6 +119,17 @@ const ATT_TONE: Record<AttendanceStatus, BadgeProps['tone']> = {
   WeeklyOff: 'neutral',
   Absent: 'warning',
   Incomplete: 'warning',
+}
+
+/** Human words for each attendance state — never a bare code or an abbreviation. */
+const ATT_LABEL: Record<AttendanceStatus, string> = {
+  Present: 'Here today',
+  HolidayWorked: 'Worked on a holiday',
+  Leave: 'On leave',
+  Holiday: 'Company holiday',
+  WeeklyOff: 'Day off',
+  Absent: 'Not marked in',
+  Incomplete: 'Day not finished',
 }
 
 // ── Theme toggle (light-default self-view, §21.9 — override persists) ─────────
@@ -397,8 +409,8 @@ function SelfViewBody() {
           toast({
             message:
               mark_type === 'check_in'
-                ? `Checked in at ${fmtTime(markedAt)}`
-                : 'Checked out — see you tomorrow',
+                ? `Your day started at ${fmtClock(markedAt)}. Have a good one.`
+                : 'That is your day wrapped up. See you tomorrow.',
           })
           // Once the refetch lands the server copy of this mark, drop the
           // local one — otherwise duplicates accumulate for the session.
@@ -414,7 +426,7 @@ function SelfViewBody() {
           // Roll back visibly (§20.6) — the button returns to its prior state.
           setLocalMarks((prev) => prev.filter((m) => m.id !== local.id))
           toast({
-            message: `Couldn't save your ${mark_type === 'check_in' ? 'check-in' : 'check-out'} — check your internet and tap again`,
+            message: 'That did not save. Please check your connection and tap again.',
           })
         })
     },
@@ -534,7 +546,7 @@ function SelfViewBody() {
       priorStart: dates.prior.start,
       priorEnd: dates.prior.end,
       label: 'this week',
-      vs: 'vs same point last week',
+      vs: 'compared with last week at this point',
     }),
     [dates],
   )
@@ -610,45 +622,50 @@ function SelfViewBody() {
   // ── Unlinked account: teach, don't dead-end (§20.7) ────────────────────────
   if (!designerId) {
     return (
-      <main className="mx-auto min-h-screen w-full max-w-screen-sm px-5 py-8">
-        <PageHeader
-          greeting={`${greetingFor(now)}`}
-          name={profile?.email?.split('@')[0] ?? 'there'}
-          dateline={`Here's your pulse for ${PKT_DATELINE.format(now)} · all times PKT`}
-          onSignOut={() => void signOut()}
-        />
-        <div className="mt-10">
-          <EmptyState
-            icon={UserRound}
-            title="Your login isn't connected to your name yet"
-            hint="Ask your team lead to connect your login — your check-in button and your numbers will show up here as soon as that's done."
-            action={
-              <Button variant="secondary" onClick={() => void signOut()}>
-                Sign out
-              </Button>
-            }
+      <>
+        <Aurora />
+        <main className="relative z-10 mx-auto min-h-screen w-full max-w-screen-sm px-5 py-8">
+          <PageHeader
+            greeting={greetingFor(now)}
+            name={profile?.email?.split('@')[0] ?? 'there'}
+            dateline={`${PKT_DATELINE.format(now)}. Everything you see here is on Pakistan time.`}
+            onSignOut={() => void signOut()}
           />
-        </div>
-      </main>
+          <div className="mt-10">
+            <EmptyState
+              icon={UserRound}
+              title="Your account isn't linked to your name yet"
+              hint="Ask your team lead to connect your account. The moment they do, the button to start your day and all of your numbers will appear right here."
+              action={
+                <Button variant="secondary" onClick={() => void signOut()}>
+                  Sign out
+                </Button>
+              }
+            />
+          </div>
+        </main>
+      </>
     )
   }
 
   const firstName = designer?.name.split(' ')[0] ?? profile?.email?.split('@')[0] ?? 'there'
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-screen-sm px-5 pb-24 pt-8">
+    <>
+      <Aurora />
+      <main className="relative z-10 mx-auto min-h-screen w-full max-w-screen-sm px-5 pb-24 pt-8">
       <PageHeader
         greeting={greetingFor(now)}
         name={firstName}
-        dateline={`Here's your pulse for ${PKT_DATELINE.format(now)} · all times PKT`}
+        dateline={`${PKT_DATELINE.format(now)}. Everything you see here is on Pakistan time.`}
         onSignOut={() => void signOut()}
       />
 
       {errored.length > 0 && (
         <div className="mt-6">
           <ErrorBanner
-            message="Couldn't load some of your info — check your internet."
-            asOf={lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null}
+            message="Some of your information did not load. Please check your connection."
+            asOf={lastGood > 0 ? fmtClock(new Date(lastGood).toISOString()) : null}
             onRetry={() => errored.forEach((q) => void q.refetch())}
           />
         </div>
@@ -674,8 +691,8 @@ function SelfViewBody() {
                (manifesto pillar 11) — confetti, then a calm, definitive close. */}
         {celebrated ? (
           <InboxZeroReward
-            title="That's your day done"
-            message={`Everything due today is finished — ${expectedToday} of ${expectedToday}. Great work. Anything new lands here as soon as it's assigned in ClickUp.`}
+            title="That is your day, done."
+            message={`Everything due today is finished, all ${expectedToday} of them. Really lovely work. Anything new will appear here the moment it is assigned to you in ClickUp.`}
           />
         ) : (
           <HonestLine
@@ -730,7 +747,8 @@ function SelfViewBody() {
           designerId={designerId}
         />
       </div>
-    </main>
+      </main>
+    </>
   )
 }
 
@@ -780,21 +798,27 @@ function PageHeader({
 function shiftContextLine(active: ActiveShift, today: string): { text: string; overnight: boolean } {
   const s = active.schedule
   if (!s) {
-    return { text: 'No work schedule saved for you yet — your check-in still counts.', overnight: false }
+    return {
+      text: 'There is no schedule saved for you yet, but the moment you begin, your day still counts.',
+      overnight: false,
+    }
   }
-  const span = `${fmtShiftTime(s.shift_start)}–${fmtShiftTime(s.shift_end)}`
+  const span = `${fmtShiftTime(s.shift_start)} to ${fmtShiftTime(s.shift_end)}`
   if (active.carry) {
     // Overnight shift that started yesterday: name the SHIFT day, never the
     // calendar day (§22.11).
-    return { text: `Still on ${WEEKDAY[dowOf(active.workDate)]}'s shift (${span})`, overnight: true }
-  }
-  if (s.shift_end <= s.shift_start) {
     return {
-      text: `Tonight's shift ${span} — ends ${WEEKDAY[dowOf(addDays(today, 1))]} morning`,
+      text: `You are still on ${WEEKDAY[dowOf(active.workDate)]}’s shift, which carries on through the night.`,
       overnight: true,
     }
   }
-  return { text: `Today's shift ${span}`, overnight: false }
+  if (s.shift_end <= s.shift_start) {
+    return {
+      text: `Tonight you are working ${span}, finishing on ${WEEKDAY[dowOf(addDays(today, 1))]} morning.`,
+      overnight: true,
+    }
+  }
+  return { text: `Today you are working ${span}.`, overnight: false }
 }
 
 function CheckInCard({
@@ -824,7 +848,7 @@ function CheckInCard({
 
   if (loading) {
     return (
-      <section aria-label="Attendance — loading" className="card p-8">
+      <section aria-label="Your day, loading" className="glass-card p-8">
         <Skeleton className="h-3 w-24" />
         <Skeleton className="mt-4 h-4 w-48" />
         <Skeleton className="mt-6 h-14 w-full" />
@@ -837,31 +861,36 @@ function CheckInCard({
 
   return (
     <section
-      aria-label="Attendance"
-      className={`card p-8 ${prominent ? 'shadow-raised ring-1 ring-brand/20' : ''}`}
+      aria-label="Your day"
+      className={`glass-card p-8 ${prominent ? 'ring-1 ring-brand/25' : ''}`}
     >
       <div className="flex items-center justify-between gap-2">
         <p className="eyebrow inline-flex items-center gap-1">
-          Check-in
-          <InfoTip text="Press Check in when you start your work day, and Check out when you finish. If you forget to check out, the system closes your day from your ClickUp activity." />
+          Your day
+          <InfoTip text="Tap the button when you begin work, and again when you finish for the day. If you forget to finish, we quietly close your day from your activity in ClickUp, so you are never marked absent for a day you worked." />
         </p>
         {phase === 'in' && (
-          <Badge tone="success" icon={CircleCheck}>
-            Checked in
-          </Badge>
+          <span className="inline-flex items-center gap-2">
+            <span className="pulse-dot" aria-hidden="true" />
+            <Badge tone="success" icon={CircleCheck}>
+              You’re here
+            </Badge>
+          </span>
         )}
         {phase === 'out' && (
           <Badge tone="neutral" icon={CircleCheck}>
-            Day done
+            Day finished
           </Badge>
         )}
       </div>
       <p className="mt-3 inline-flex max-w-prose flex-wrap items-center gap-1 text-caption text-muted">
         {context.text}
         {context.overnight && (
-          <InfoTip text="Your shift runs past midnight — this whole night counts as one work day." />
+          <InfoTip text="Your shift runs past midnight, so the whole night counts as one working day." />
         )}
-        {dayOff && phase === 'unmarked' ? ' · your day off — checking in still counts if you work' : ''}
+        {dayOff && phase === 'unmarked'
+          ? ' It is your day off, so starting is entirely up to you. If you do work, it still counts.'
+          : ''}
       </p>
 
       {/* aria-live: the swap between "Check in", "Checked in at …" and
@@ -870,10 +899,10 @@ function CheckInCard({
         {phase === 'unmarked' && (
           <ActionButton
             onAction={() => onMark('check_in')}
-            className="mt-6 min-h-14 w-full rounded-xl text-body font-semibold"
+            className="mt-6 min-h-14 w-full rounded-2xl text-body font-semibold"
           >
             <LogIn className="h-5 w-5" aria-hidden="true" />
-            Check in
+            Start my day
           </ActionButton>
         )}
 
@@ -885,19 +914,19 @@ function CheckInCard({
               transition={SPRING_GENTLE}
               className="mt-4 text-body font-medium text-fg"
             >
-              Checked in at {fmtTime(lastCheckIn)} —{' '}
+              You started at {fmtClock(lastCheckIn)}, about{' '}
               <span className="tnum">
-                {fmtDuration(Math.max(0, minutesBetween(lastCheckIn, now)))}
+                {fmtDurationLong(Math.max(0, minutesBetween(lastCheckIn, now)))}
               </span>{' '}
-              so far
+              ago.
             </motion.p>
             <ActionButton
               onAction={() => onMark('check_out')}
               variant="neutral"
-              className="mt-6 min-h-12 w-full rounded-xl text-body font-semibold"
+              className="mt-6 min-h-12 w-full rounded-2xl text-body font-semibold"
             >
               <LogOut className="h-5 w-5" aria-hidden="true" />
-              Check out
+              End my day
             </ActionButton>
           </>
         )}
@@ -910,24 +939,24 @@ function CheckInCard({
               transition={SPRING_GENTLE}
               className="mt-4 text-body font-medium text-fg"
             >
-              Checked out at {fmtTime(lastMarkAt)}
+              You finished at {fmtClock(lastMarkAt)}
               {firstCheckIn && (
                 <span className="text-muted">
-                  {' '}
-                  · <span className="tnum">
-                    {fmtDuration(Math.max(0, minutesBetween(firstCheckIn, lastMarkAt)))}
-                  </span>{' '}
-                  session
+                  , a day of{' '}
+                  <span className="tnum">
+                    {fmtDurationLong(Math.max(0, minutesBetween(firstCheckIn, lastMarkAt)))}
+                  </span>
+                  .
                 </span>
               )}
             </motion.p>
             <ActionButton
               onAction={() => onMark('check_in')}
               variant="neutral"
-              className="mt-4 min-h-11 rounded-xl"
+              className="mt-4 min-h-11 rounded-2xl"
             >
               <LogIn className="h-4 w-4" aria-hidden="true" />
-              Check back in
+              Start again
             </ActionButton>
           </>
         )}
@@ -961,55 +990,78 @@ function HonestLine({
 }) {
   if (loading || !daySum) {
     return (
-      <section aria-label="Today — loading" className="card p-8">
-        <Skeleton className="h-3 w-28" />
-        <Skeleton className="mt-5 h-12 w-36" />
-        <Skeleton className="mt-4 h-4 w-3/5" />
+      <section aria-label="Today, loading" className="glass-card p-8">
+        <Skeleton className="h-3 w-24" />
+        <div className="mt-5 flex items-center gap-6">
+          <Skeleton className="h-28 w-28 rounded-full" />
+          <div className="flex-1">
+            <Skeleton className="h-6 w-44" />
+            <Skeleton className="mt-3 h-4 w-3/5" />
+          </div>
+        </div>
       </section>
     )
   }
 
-  const dayLabel = active.carry ? `for ${WEEKDAY[dowOf(active.workDate)]}'s shift` : 'today'
+  // "Due today" honours the shift, not the calendar day, for overnight carries.
+  const dueLabel = active.carry ? `on ${WEEKDAY[dowOf(active.workDate)]}’s shift` : 'today'
 
-  // Day-off / no-target states keep a single sentence headline; a working day
-  // gets the hero read: the number IS the reason this card exists.
-  let headline: string | null = null
-  if (dayOffReason === 'holiday') headline = "It's a company holiday — nothing expected today."
-  else if (dayOffReason === 'leave') headline = "You're on leave — nothing expected today."
-  else if (dayOffReason === 'weekly_off') headline = "It's your day off — nothing expected."
-  else if (dayOffReason === 'none') {
-    headline = 'No target is set for you today — ask your team lead if that looks wrong.'
+  // Day-off and no-target days deserve one calm, whole sentence — no ring, and
+  // nothing to chase.
+  let restMessage: string | null = null
+  if (dayOffReason === 'holiday') {
+    restMessage = 'It is a company holiday. Nothing is expected of you today, so enjoy it.'
+  } else if (dayOffReason === 'leave') {
+    restMessage = 'You are on leave today. Rest well — nothing is expected of you.'
+  } else if (dayOffReason === 'weekly_off') {
+    restMessage = 'It is your day off. Nothing is expected of you today.'
+  } else if (dayOffReason === 'none') {
+    restMessage =
+      'There is no target set for you today. If that does not look right, your team lead can put one in place.'
   }
 
-  let dayLine: string
-  if (daySum.completed >= expectedToday) {
-    const clean =
-      daySum.delivered > 0 && daySum.firstPassClean === daySum.delivered
-        ? ' Every design accepted first time — nice.'
-        : ''
-    dayLine = `Target met ${dayLabel} — nothing more is due.${clean}`
+  // The working-day read: a warm, specific summary beside the ring.
+  const done = daySum.completed
+  const remaining = Math.max(0, expectedToday - done)
+  const allDone = done >= expectedToday
+  const clientWaiting = openTasks.filter((t) => t.current_status === 'client response').length
+
+  let heroTitle = ''
+  let heroBody = ''
+  if (allDone) {
+    heroTitle = 'All done for today.'
+    const everyoneHappy = daySum.delivered > 0 && daySum.firstPassClean === daySum.delivered
+    heroBody = everyoneHappy
+      ? `Every project due ${dueLabel} is finished, and each one was accepted the first time. A lovely day of work.`
+      : `Every project due ${dueLabel} is finished. There is nothing left to pick up.`
+  } else if (done === 0) {
+    heroTitle = 'A fresh start.'
+    heroBody = `None of the ${expectedToday} projects due ${dueLabel} are finished yet — there is plenty of time ahead of you.`
   } else {
-    const slots = expectedToday - daySum.completed
-    dayLine = `finished ${dayLabel} — ${slots === 1 ? 'one slot' : `${slots} slots`} still open.`
+    heroTitle = 'Coming along nicely.'
+    heroBody = `${done} of the ${expectedToday} projects due ${dueLabel} are finished, with ${remaining} still to go.`
+  }
+  if (!allDone && clientWaiting > 0) {
+    heroBody +=
+      clientWaiting === 1
+        ? ' One of them is with the client, which is completely normal.'
+        : ` ${clientWaiting} of them are with the client, which is completely normal.`
   }
 
-  // Weekly quality line — only once there's enough signal to be honest about.
+  // Weekly quality line — only once there is enough finished work to speak to it honestly.
   let qualityLine: string | null = null
   if (weekSum && weekSum.delivered >= 3 && weekSum.firstPassQualityPct != null) {
-    const base = `${weekSum.firstPassClean} of ${weekSum.delivered} designs accepted with no changes`
+    const base = `${weekSum.firstPassClean} of your ${weekSum.delivered} designs this week were accepted without a single change asked`
     const prev = prevSum?.firstPassQualityPct ?? null
-    if (prev == null) qualityLine = `Right first time this week — ${base}.`
-    else if (weekSum.firstPassQualityPct > prev) {
-      qualityLine = `Right first time is up — ${base} this week (was ${prev}% last week).`
-    } else if (weekSum.firstPassQualityPct < prev) {
-      qualityLine = `Right first time dipped — ${base} this week (was ${prev}% last week).`
-    } else {
-      qualityLine = `Right first time is steady — ${base} this week.`
-    }
+    if (prev == null) qualityLine = `${base}.`
+    else if (weekSum.firstPassQualityPct > prev) qualityLine = `${base}, up from ${prev}% the week before.`
+    else if (weekSum.firstPassQualityPct < prev) {
+      qualityLine = `${base}, a little below the ${prev}% you reached the week before.`
+    } else qualityLine = `${base}, right in step with the week before.`
   }
 
-  // Proposed next action (§20.11): pick up the next task. A deep link into
-  // ClickUp — the tool observes assignment, it never performs it (§22.1).
+  // A gentle next step: open the next project waiting to be picked up. This is a
+  // deep link into ClickUp — the tool watches the work, it never assigns it (§22.1).
   const pickupTask = openTasks
     .filter((t) => t.current_status === 'pickup your projects')
     .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))[0]
@@ -1018,34 +1070,31 @@ function HonestLine({
   const showPickup = slotsOpen && pickupTask != null && nextHref != null
 
   return (
-    <section aria-label="Today at a glance" className="card p-8">
-      {headline ? (
-        <h2 className="max-w-prose text-card text-fg">
-          {headline}{' '}
-          <InfoTip text="Your day at a glance: out of the projects you were supposed to take, how many you finished." />
-        </h2>
+    <section aria-label="Today at a glance" className="glass-card p-8">
+      {restMessage ? (
+        <p className="inline-flex max-w-prose items-start gap-1.5 text-card text-fg">
+          {restMessage}
+          <InfoTip text="Your day at a glance: of the projects due today, how many you have finished." />
+        </p>
       ) : (
         <>
-          <h2 className="eyebrow inline-flex items-center gap-1">
-            Today&apos;s plate
-            <InfoTip text="Your day at a glance: out of the projects you were supposed to take, how many you finished." />
-          </h2>
-          {/* The hero read: "You're at N of M today" — the number ticks with
-              spring momentum (pillar 10), never snaps. */}
-          <p className="mt-5 flex flex-wrap items-baseline gap-x-2">
-            <span className="sr-only">You&apos;re at </span>
-            <span className="tnum text-hero text-fg">
-              <AnimatedCounter value={daySum.completed} />
-            </span>
-            <span className="tnum text-card font-medium text-muted">of {expectedToday}</span>
-          </p>
-          <p className="mt-3 max-w-prose text-body text-muted">{dayLine}</p>
+          <div className="flex items-center gap-5">
+            <ProgressRing value={done} total={expectedToday} size={112} caption={`of ${expectedToday}`} />
+            <div className="min-w-0">
+              <p className="eyebrow inline-flex items-center gap-1">
+                Today
+                <InfoTip text="Your day at a glance: of the projects due today, how many you have finished. A project only counts toward today if it is due today." />
+              </p>
+              <h2 className="mt-2 text-section text-fg">{heroTitle}</h2>
+            </div>
+          </div>
+          <p className="mt-5 max-w-prose text-body text-muted">{heroBody}</p>
         </>
       )}
       {qualityLine && (
-        <p className="mt-4 max-w-prose text-caption leading-relaxed text-muted">
+        <p className="mt-5 max-w-prose text-caption leading-relaxed text-muted">
           {qualityLine}{' '}
-          <InfoTip text="Right first time = designs accepted without anyone asking for changes." />
+          <InfoTip text="Accepted without a change asked means the client approved the design as it was, with nothing sent back." />
         </p>
       )}
       {showPickup && (
@@ -1053,9 +1102,9 @@ function HonestLine({
           href={nextHref}
           target="_blank"
           rel="noreferrer"
-          className="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-xl px-1 text-caption font-medium text-brand hover:underline"
+          className="mt-5 inline-flex min-h-11 items-center gap-1.5 rounded-xl px-1 text-caption font-medium text-brand hover:underline"
         >
-          Pick up your next project in ClickUp
+          Open your next project in ClickUp
           <ExternalLink className="h-4 w-4" aria-hidden="true" />
         </a>
       )}
@@ -1075,14 +1124,17 @@ function agingNote(
   const days = Math.floor(ageMinutes(task, now) / (60 * 24))
   if (task.current_status === 'client response') {
     if (days < agingDaysClientResponse) return null
-    return { text: `waiting for the client ${days} days — not counted against you`, mine: false }
+    return {
+      text: `The client has had this for ${days} days now. That is completely normal, and it never counts against you.`,
+      mine: false,
+    }
   }
   const designerOwned = ['pickup your projects', 'in progress', 'revision', 'final files']
   if (!designerOwned.includes(task.current_status)) return null
   if (days < agingDaysDefault) return null
   const label = STATUS_LABELS[task.current_status]
   return {
-    text: `${days} day${days === 1 ? '' : 's'} in "${label}" — worth a look`,
+    text: `This has been at the “${label}” stage for ${days} day${days === 1 ? '' : 's'} now, so it might be worth another look.`,
     mine: true,
   }
 }
@@ -1119,10 +1171,10 @@ function TodayTasks({
   return (
     <section aria-labelledby="today-tasks-h">
       <h2 id="today-tasks-h" className="eyebrow inline-flex items-center gap-1 px-1">
-        On your plate
-        <InfoTip text="Your open projects, with the ones that need attention first at the top. Tap a name to open it in ClickUp." />
+        What you are working on
+        <InfoTip text="Everything you have open right now, with anything that could use a look nearest the top. Tap a project to open it in ClickUp." />
       </h2>
-      <div className="card mt-3 px-6 py-2">
+      <div className="glass-card mt-3 px-6 py-2">
         {loading ? (
           <div className="flex flex-col gap-4 py-5">
             <Skeleton className="h-5 w-full" />
@@ -1133,8 +1185,8 @@ function TodayTasks({
           <div className="py-5">
             <EmptyState
               icon={Inbox}
-              title="No open projects right now"
-              hint="New projects show up here as soon as they're added to your ClickUp list."
+              title="Nothing open right now"
+              hint="A new project will appear here the moment it lands in your ClickUp list."
             />
           </div>
         ) : (
@@ -1185,7 +1237,7 @@ function TodayTasks({
                       </span>
                     )}
                     <span className="tnum text-label text-muted">
-                      {fmtDuration(age)} in this step
+                      {fmtDurationLong(age)} at this stage
                     </span>
                   </div>
                   {note && (
@@ -1198,7 +1250,7 @@ function TodayTasks({
             })}
             {rows.length > 20 && (
               <motion.li variants={staggerItem} className="py-4 text-caption text-muted">
-                +{rows.length - 20} more in your ClickUp list
+                and {rows.length - 20} more in your ClickUp list
               </motion.li>
             )}
           </motion.ul>
@@ -1233,9 +1285,9 @@ function WeekSection({
     <section aria-labelledby="my-week-h">
       <div className="flex items-baseline justify-between gap-2 px-1">
         <h2 id="my-week-h" className="eyebrow">
-          My week
+          Your week so far
         </h2>
-        <p className="text-label text-muted">vs same point last week</p>
+        <p className="text-label text-muted">compared with last week at this point</p>
       </div>
       {/* Shared metrics panel (§22.3) — scope='self' omits every team-median
           reference and all peer data; deltas are vs the designer's own past
@@ -1253,8 +1305,8 @@ function WeekSection({
         />
       </div>
 
-      <div className="card mt-4 p-6">
-        <p className="eyebrow">Right first time — last 8 weeks</p>
+      <div className="glass-card mt-4 p-6">
+        <p className="eyebrow">Accepted without changes, over the last eight weeks</p>
         {trendLoading ? (
           <Skeleton className="mt-4 h-24 w-full" />
         ) : trendPoints.length >= 2 ? (
@@ -1265,16 +1317,18 @@ function WeekSection({
                 baseline={trendBaseline}
                 tone="brand"
                 formatValue={(v) => `${Math.round(v)}%`}
-                ariaLabel={`Your right-first-time rate over the last 8 weeks, from ${trendPoints[0].value}% to ${trendPoints[trendPoints.length - 1].value}%, against your own average of ${trendBaseline ?? 0}%`}
+                ariaLabel={`The share of your designs accepted without changes over the last eight weeks, from ${trendPoints[0].value}% to ${trendPoints[trendPoints.length - 1].value}%, against your own average of ${trendBaseline ?? 0}%`}
               />
             </div>
             <p className="mt-3 max-w-prose text-caption text-muted">
-              Dashed line is your own 8-week average — your only benchmark here is your past self.
+              The dashed line is your own average across these eight weeks. The only person you are
+              measured against here is your past self.
             </p>
           </>
         ) : (
           <p className="mt-4 max-w-prose text-caption text-muted">
-            Not enough history yet — your trend appears after a couple of weeks of deliveries.
+            There is not enough history yet. Your trend will appear after a couple of weeks of
+            finished work.
           </p>
         )}
       </div>
@@ -1301,13 +1355,12 @@ function AttendanceSection({
 }) {
   let warmupLine: string | null = null
   if (activeAtt?.declared_in && activeAtt.first_activity) {
-    warmupLine = `Checked in at ${fmtTime(activeAtt.declared_in)}, first ClickUp action ${fmtTime(
-      activeAtt.first_activity,
-    )} — ${fmtDuration(activeAtt.warmup_gap_min ?? minutesBetween(activeAtt.declared_in, activeAtt.first_activity))} warm-up`
+    const gap = activeAtt.warmup_gap_min ?? minutesBetween(activeAtt.declared_in, activeAtt.first_activity)
+    warmupLine = `You started at ${fmtClock(activeAtt.declared_in)}, and your first move in ClickUp came through at ${fmtClock(activeAtt.first_activity)} — about ${fmtDurationLong(gap)} to get going.`
   } else if (activeAtt?.declared_in) {
-    warmupLine = `Checked in at ${fmtTime(activeAtt.declared_in)} — no ClickUp action yet`
+    warmupLine = `You started at ${fmtClock(activeAtt.declared_in)}. Your first move in ClickUp has not come through yet.`
   } else if (phase !== 'unmarked' && liveCheckIn) {
-    warmupLine = `Checked in at ${fmtTime(liveCheckIn)} — warm-up shows once ClickUp activity lands`
+    warmupLine = `You started at ${fmtClock(liveCheckIn)}. We will show how long you took to get going once your first action in ClickUp lands.`
   }
 
   const status: AttendanceStatus | null =
@@ -1316,9 +1369,9 @@ function AttendanceSection({
   return (
     <section aria-labelledby="my-attendance-h">
       <h2 id="my-attendance-h" className="eyebrow px-1">
-        My attendance
+        Your attendance
       </h2>
-      <div className="card mt-3 p-6">
+      <div className="glass-card mt-3 p-6">
         {loading ? (
           <div className="flex flex-col gap-3">
             <Skeleton className="h-5 w-32" />
@@ -1331,9 +1384,9 @@ function AttendanceSection({
               <Clock className="h-4 w-4 text-muted" aria-hidden="true" />
               <span className="text-caption font-semibold text-fg">Today</span>
               {status ? (
-                <Badge tone={ATT_TONE[status]}>{status === 'HolidayWorked' ? 'Holiday · worked' : status === 'WeeklyOff' ? 'Weekly off' : status}</Badge>
+                <Badge tone={ATT_TONE[status]}>{ATT_LABEL[status]}</Badge>
               ) : (
-                <Badge tone="neutral">Not marked yet</Badge>
+                <Badge tone="neutral">Not started yet</Badge>
               )}
             </div>
             {warmupLine && (
@@ -1344,18 +1397,18 @@ function AttendanceSection({
 
             <dl className="mt-6 grid grid-cols-2 gap-4 border-t border-border/60 pt-5">
               <div>
-                <dt className="text-label text-muted">Worked this week</dt>
-                <dd className="tnum mt-1.5 text-card text-fg">
-                  {fmtDuration(workedWeekMin)}
-                </dd>
+                <dt className="text-label text-muted">Time worked this week</dt>
+                <dd className="tnum mt-1.5 text-card text-fg">{fmtDurationLong(workedWeekMin)}</dd>
               </div>
               <div>
-                <dt className="text-label text-muted">Late minutes this week</dt>
+                <dt className="text-label text-muted">Time late this week</dt>
                 <dd className="tnum mt-1.5 text-card text-fg">
-                  {lateWeekMin > 0 ? fmtDuration(lateWeekMin) : 'None'}
+                  {lateWeekMin > 0 ? fmtDurationLong(lateWeekMin) : 'None'}
                 </dd>
                 <dd className="mt-1 text-label text-muted">
-                  {lateWeekMin > 0 ? 'after your grace window' : 'on time all week'}
+                  {lateWeekMin > 0
+                    ? 'beyond the few minutes of grace you are given'
+                    : 'you have been on time all week'}
                 </dd>
               </div>
             </dl>
@@ -1417,13 +1470,13 @@ function TimeOffSection({
         reason: reason.trim() || null,
       })
       await queryClient.invalidateQueries({ queryKey: qk.leaves })
-      toast({ message: 'Leave request sent — pending your PM’s approval' })
+      toast({ message: 'Your request has gone to your manager to approve.' })
       setRequesting(false)
       setEndDate('')
       setReason('')
     } catch (err) {
       toast({
-        message: `Couldn’t send the request — ${err instanceof Error ? err.message : 'try again'}`,
+        message: `That did not send. ${err instanceof Error ? err.message : 'Please try again.'}`,
       })
     } finally {
       setSubmitting(false)
@@ -1449,9 +1502,9 @@ function TimeOffSection({
   return (
     <section aria-labelledby="time-off-h">
       <h2 id="time-off-h" className="eyebrow px-1">
-        Time off
+        Your time off
       </h2>
-      <div className="card mt-3 p-6">
+      <div className="glass-card mt-3 p-6">
         {loading ? (
           <div className="flex flex-col gap-3">
             <Skeleton className="h-5 w-40" />
@@ -1461,15 +1514,16 @@ function TimeOffSection({
           <>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-caption font-semibold text-fg">My leave</h3>
+                <h3 className="text-caption font-semibold text-fg">Leave you have taken</h3>
                 <p className="tnum mt-1 text-caption text-muted">
-                  {leaveDaysThisYear} leave day{leaveDaysThisYear === 1 ? '' : 's'} recorded this
-                  year
+                  {leaveDaysThisYear === 0
+                    ? 'None so far this year.'
+                    : `${leaveDaysThisYear} day${leaveDaysThisYear === 1 ? '' : 's'} off so far this year.`}
                 </p>
               </div>
               {designerId && !requesting && (
                 <Button variant="secondary" onClick={() => setRequesting(true)}>
-                  Request leave
+                  Ask for time off
                 </Button>
               )}
             </div>
@@ -1484,21 +1538,21 @@ function TimeOffSection({
               >
                 <div className="grid grid-cols-2 gap-4">
                   <label className="flex flex-col gap-1.5 text-label font-medium text-muted">
-                    Type
+                    What kind
                     <select
                       value={leaveType}
                       onChange={(e) => setLeaveType(e.target.value)}
                       className="min-h-11 rounded-xl border border-border bg-surface px-3 text-caption text-fg"
                     >
-                      <option value="annual">Annual</option>
-                      <option value="sick">Sick</option>
-                      <option value="casual">Casual</option>
-                      <option value="unpaid">Unpaid</option>
-                      <option value="other">Other</option>
+                      <option value="annual">Annual leave</option>
+                      <option value="sick">Sick leave</option>
+                      <option value="casual">Casual leave</option>
+                      <option value="unpaid">Unpaid leave</option>
+                      <option value="other">Something else</option>
                     </select>
                   </label>
                   <label className="flex flex-col gap-1.5 text-label font-medium text-muted">
-                    From
+                    First day
                     <input
                       type="date"
                       required
@@ -1509,7 +1563,7 @@ function TimeOffSection({
                     />
                   </label>
                   <label className="flex flex-col gap-1.5 text-label font-medium text-muted">
-                    To (optional)
+                    Last day, if it is more than one
                     <input
                       type="date"
                       min={startDate}
@@ -1519,12 +1573,12 @@ function TimeOffSection({
                     />
                   </label>
                   <label className="flex flex-col gap-1.5 text-label font-medium text-muted">
-                    Reason (optional)
+                    A note for your manager, if you like
                     <input
                       type="text"
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
-                      placeholder="e.g. family event"
+                      placeholder="for example, a family event"
                       className="min-h-11 rounded-xl border border-border bg-surface px-3 text-caption text-fg"
                     />
                   </label>
@@ -1539,24 +1593,24 @@ function TimeOffSection({
                     aria-busy={submitting}
                     className="whitespace-nowrap"
                   >
-                    {submitting ? 'Sending…' : 'Send request'}
+                    {submitting ? 'Sending…' : 'Send to my manager'}
                   </Button>
                   <Button
                     variant="ghost"
                     onClick={() => setRequesting(false)}
                     className="whitespace-nowrap"
                   >
-                    Cancel
+                    Never mind
                   </Button>
                   <span className="min-w-0 flex-1 basis-full text-caption text-muted sm:basis-auto">
-                    Goes to your PM as pending.
+                    Your manager sees this and decides.
                   </span>
                 </div>
               </form>
             )}
             {history.length === 0 ? (
               <p className="mt-3 max-w-prose text-caption text-muted">
-                No leave on record — anything your PM logs for you shows up here.
+                Nothing on record yet. Anything your manager logs for you will appear here.
               </p>
             ) : (
               <ul className="mt-2 divide-y divide-border/60">
@@ -1589,10 +1643,12 @@ function TimeOffSection({
 
             <h3 className="mt-6 flex items-center gap-1.5 border-t border-border/60 pt-5 text-caption font-semibold text-fg">
               <CalendarDays className="h-4 w-4 text-muted" aria-hidden="true" />
-              Upcoming holidays
+              Holidays coming up
             </h3>
             {upcoming.length === 0 ? (
-              <p className="mt-3 text-caption text-muted">No company holidays coming up.</p>
+              <p className="mt-3 text-caption text-muted">
+                No company holidays are coming up just yet.
+              </p>
             ) : (
               <ul className="mt-2">
                 {upcoming.map((h) => (

@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
 import { LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react'
 import { BrandLogo } from '../ui/BrandLogo'
+import { Aurora } from '../ui/Aurora'
 import { useAuth } from '../../hooks/useAuth'
 import { syncThemeColorMeta } from '../../lib/themeColor'
 import { CommandPalette, OPEN_PALETTE_EVENT, type Command } from '../ui/CommandPalette'
@@ -218,6 +219,7 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
 
   return (
     <ToastProvider>
+      <Aurora />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-tip focus:rounded-xl focus:bg-surface focus:px-4 focus:py-2.5 focus:text-caption focus:font-medium focus:text-fg focus:shadow-raised"
@@ -225,9 +227,10 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
         Skip to content
       </a>
 
-      <div className="flex min-h-screen bg-bg selection:bg-brand-soft">
-        {/* ── Sidebar: exactly 240px, dense 4px/8px rhythm (pillar 4) ────── */}
-        <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col border-r border-border bg-surface px-3 py-4 md:flex">
+      <div className="relative z-10 flex min-h-screen selection:bg-brand-soft">
+        {/* ── Sidebar: exactly 240px, dense 4px/8px rhythm (pillar 4).
+            Translucent so the Aurora glows behind the navigation. ────── */}
+        <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col border-r border-border bg-surface/70 px-3 py-4 backdrop-blur-xl md:flex">
           {/* Logo area: tight alignment */}
           <div className="flex items-center gap-2.5 px-2 pb-6">
             <BrandLogo className="h-6 w-6" />
