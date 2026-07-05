@@ -446,7 +446,7 @@ export default function OpsHome() {
         {inboxLoading ? (
           // Skeleton mirrors the final list — same card, same row anatomy.
           <div
-            className="divide-y divide-border/60 rounded-2xl border border-border bg-surface shadow-edge"
+            className="card divide-y divide-border/60"
             role="status"
             aria-label="Loading the inbox"
           >
@@ -471,7 +471,7 @@ export default function OpsHome() {
             variants={staggerContainer}
             initial={reduced ? false : 'hidden'}
             animate="show"
-            className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border bg-surface shadow-edge"
+            className="card divide-y divide-border/60 overflow-hidden"
           >
             {verdictItems.map((item) => {
               // The expandable "N orders lost" cluster — one calm header, the

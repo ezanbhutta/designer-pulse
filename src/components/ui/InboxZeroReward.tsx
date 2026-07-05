@@ -36,7 +36,7 @@ export function InboxZeroReward({
       animate={{ scale: 1, opacity: 1 }}
       transition={SPRING_GENTLE}
       aria-live="polite"
-      className="flex flex-col items-center justify-center rounded-2xl border border-border bg-surface py-24 text-center shadow-edge"
+      className="card flex flex-col items-center justify-center py-24 text-center"
     >
       <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-success-soft text-success shadow-[0_0_40px_rgb(var(--color-success)/0.18)]">
         <Sparkles className="h-8 w-8" aria-hidden="true" />
