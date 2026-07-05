@@ -184,6 +184,14 @@ export default function OpsAttendance() {
   const extraCheckIns = dayRows.filter((r) => r.expected === 0 && r.row?.declared_in != null).length
   const needsReview = dayRows.filter((r) => r.row?.needs_review).length
   const lateCount = dayRows.filter((r) => (r.row?.late_minutes ?? 0) > 0).length
+  // "Arrived late" can be worked out from ClickUp activity alone, with no
+  // Check-in press at all — so it is never a subset of `checkedIn` above.
+  // The header line needs a population "late" IS always inside, or "0 have
+  // checked in, 4 arrived late" reads as a straight contradiction. Presence —
+  // pressed Check in OR made their first move in ClickUp — is that population.
+  const presentCount = dayRows.filter(
+    (r) => r.expected > 0 && (r.row?.declared_in != null || r.row?.first_activity != null),
+  ).length
 
   // Prior-day values for the tile deltas — same week-range query, no extra fetch.
   const prevStats = useMemo(() => {
@@ -435,10 +443,10 @@ export default function OpsAttendance() {
         history={
           attendanceQ.isLoading
             ? `Matching check in times against real work in ClickUp for ${fmtDate(date)}…`
-            : `On ${fmtDate(date)}, ${checkedIn} of ${scheduledCount} scheduled ${
+            : `On ${fmtDate(date)}, ${presentCount} of ${scheduledCount} scheduled ${
                 scheduledCount === 1 ? 'person has' : 'people have'
-              } checked in${needsReview > 0 ? `, ${needsReview} day${needsReview === 1 ? '' : 's'} to look over` : ''}${
-                lateCount > 0 ? `, ${lateCount} arrived late` : ''
+              } shown up${needsReview > 0 ? `, ${needsReview} day${needsReview === 1 ? '' : 's'} to look over` : ''}${
+                lateCount > 0 ? `, ${lateCount} arriving late` : ''
               }.`
         }
         actions={
