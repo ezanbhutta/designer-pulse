@@ -349,6 +349,7 @@ export default function OpsBoard() {
                         <TaskCard
                           key={t.task_id}
                           task={t}
+                          showStatus={false}
                           designerName={
                             t.designer_id ? designerById.get(t.designer_id)?.name : undefined
                           }

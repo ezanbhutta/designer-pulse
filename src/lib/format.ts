@@ -67,6 +67,20 @@ export function fmtDurationLong(minutes: number | null | undefined): string {
   return h ? `${unit(d, 'day')} and ${unit(h, 'hour')}` : unit(d, 'day')
 }
 
+/**
+ * The largest unit of an age, spelled out — "2 days", "18 hours", "11 minutes".
+ * For at-a-glance chips on cards where the full "2 days and 8 hours" is too long
+ * but the machine-like "2d 8h" is not allowed. Rounds down to the leading unit.
+ */
+export function fmtAgeShort(minutes: number | null | undefined): string {
+  if (minutes == null) return '—'
+  const m = Math.round(minutes)
+  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+  if (m < 60) return unit(Math.max(1, m), 'minute')
+  if (m < 60 * 24) return unit(Math.floor(m / 60), 'hour')
+  return unit(Math.floor(m / (60 * 24)), 'day')
+}
+
 /** Friendly 12-hour clock — "9:04 am", "5:00 pm" — for the phone-facing view. */
 export function fmtClock(iso: string | null | undefined): string {
   if (!iso) return '—'

@@ -1,10 +1,9 @@
 import { memo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Clock, Flag, Layers } from 'lucide-react'
-import { Badge } from '../ui/Badge'
 import { StatusBadge } from '../ui/StatusBadge'
 import { STALE_ANALYTICS, fetchConfig, qk } from '../../lib/queries'
-import { fmtDuration } from '../../lib/format'
+import { fmtAgeShort } from '../../lib/format'
 import { ageMinutes } from '../../../shared/aggregate'
 import { STATUS_LABELS, TERMINAL_STATUSES } from '../../../shared/statuses'
 import { CONFIG_DEFAULTS } from '../../../shared/types'
@@ -14,6 +13,10 @@ export interface TaskCardProps {
   task: TaskState
   onOpen?: (taskId: string) => void
   designerName?: string
+  /** Hide the status chip when the surrounding column already names the stage
+   *  (the by-stage board) — keeps it in the by-person view where tasks span
+   *  many stages. Defaults to showing it. */
+  showStatus?: boolean
   /** Aging threshold in days — pass it when the caller already has config
    *  (boards render hundreds of cards; one shared value beats per-card
    *  query observers). Falls back to its own config read when absent. */
@@ -21,15 +24,17 @@ export interface TaskCardProps {
 }
 
 /**
- * Compact task card for the live board and drill-down lists. Status wears its
- * one semantic tone (§21.2); the age chip escalates warning→danger past the
- * aging threshold — with an icon, never color alone (§20.10). Memoized: board
- * re-renders skip cards whose props are unchanged (pass a stable onOpen).
+ * Compact task card for the live board and drill-down lists. One calm meta row:
+ * only genuine signals carry colour — an urgent flag, or an age that has grown
+ * past the point of being stuck (with an icon, never colour alone, §20.10).
+ * Everything else is quiet. Memoized: board re-renders skip cards whose props
+ * are unchanged (pass a stable onOpen).
  */
 export const TaskCard = memo(function TaskCard({
   task,
   onOpen,
   designerName,
+  showStatus = true,
   agingDaysDefault,
 }: TaskCardProps) {
   const { data: config } = useQuery({
@@ -53,7 +58,7 @@ export const TaskCard = memo(function TaskCard({
 
   const body = (
     <>
-      <p className="truncate text-caption font-medium text-fg" title={task.name ?? task.task_id}>
+      <p className="truncate text-caption font-semibold text-fg" title={task.name ?? task.task_id}>
         {task.name ?? 'Untitled project'}
       </p>
       {designerName && (
@@ -61,41 +66,52 @@ export const TaskCard = memo(function TaskCard({
           {designerName}
         </p>
       )}
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-        {status && <StatusBadge status={status} />}
-        {isOpen &&
-          (aging ? (
-            <Badge tone={severe ? 'danger' : 'warning'} icon={Clock}>
-              <span className="tnum">{fmtDuration(age)}</span>
-              <span className="sr-only">
-                {' '}
-                in {STATUS_LABELS[status]} — stuck too long
-              </span>
-            </Badge>
-          ) : (
-            <span className="inline-flex h-5 items-center gap-1 text-label normal-case tracking-normal text-muted">
-              <Clock className="h-3 w-3" aria-hidden="true" />
-              <span className="tnum">{fmtDuration(age)}</span>
-              <span className="sr-only"> in {STATUS_LABELS[status]}</span>
+      {showStatus && status && (
+        <div className="mt-2.5">
+          <StatusBadge status={status} />
+        </div>
+      )}
+      {/* One quiet meta line: only an urgent flag or a genuinely stuck age
+          carries colour; everything else stays muted so the eye can rest. */}
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-label normal-case tracking-normal">
+        {isOpen && (
+          <span
+            className={`inline-flex items-center gap-1 ${
+              aging ? (severe ? 'font-medium text-danger' : 'font-medium text-warning') : 'text-muted'
+            }`}
+          >
+            <Clock className="h-3 w-3" aria-hidden="true" />
+            <span className="tnum">{fmtAgeShort(age)}</span>
+            <span className="sr-only">
+              {' '}
+              at this stage{aging ? ', stuck too long' : ''}
             </span>
-          ))}
-        {(priority === 'urgent' || priority === 'high') && (
-          <Badge tone={priority === 'urgent' ? 'danger' : 'warning'} icon={Flag}>
-            {priority === 'urgent' ? 'Urgent' : 'High'}
-          </Badge>
+          </span>
+        )}
+        {priority === 'urgent' && (
+          <span className="inline-flex items-center gap-1 font-medium text-danger">
+            <Flag className="h-3 w-3" aria-hidden="true" />
+            Urgent
+          </span>
+        )}
+        {priority === 'high' && (
+          <span className="inline-flex items-center gap-1 text-warning">
+            <Flag className="h-3 w-3" aria-hidden="true" />
+            High
+          </span>
         )}
         {task.concept_count != null && (
-          <span className="tnum inline-flex h-5 items-center gap-1 rounded-full bg-surface-2 px-2 text-label text-muted">
+          <span className="inline-flex items-center gap-1 text-muted">
             <Layers className="h-3 w-3" aria-hidden="true" />
-            {task.concept_count} concepts
+            <span className="tnum">{task.concept_count}</span> concepts
           </span>
         )}
       </div>
     </>
   )
 
-  const frame = `w-full rounded-xl border bg-surface p-3.5 text-left shadow-soft ${
-    severe ? 'border-danger/50' : aging ? 'border-warning/50' : 'border-border/60'
+  const frame = `w-full rounded-xl border bg-surface p-4 text-left shadow-soft ${
+    severe ? 'border-danger/50' : aging ? 'border-warning/50' : 'border-border/70'
   }`
 
   if (onOpen) {
