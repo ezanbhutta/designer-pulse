@@ -249,7 +249,7 @@ export default function OpsHome() {
         text: `"${task.name ?? task.task_id}" has been stuck in ${
           task.current_status ? STATUS_LABELS[task.current_status] : 'one stage'
         } for ${fmtDurationLong(age)}`,
-        detail: `${d?.name ?? 'No one yet'} · flagged after ${Math.round(threshold / (24 * 60))} days without moving`,
+        detail: `${d?.name ?? 'No one yet'}, flagged after ${Math.round(threshold / (24 * 60))} days without moving`,
         action: href ? { label: 'Open in ClickUp', href } : undefined,
       })
     }
@@ -271,7 +271,7 @@ export default function OpsHome() {
         id: `cancel-${t.task_id}`,
         kind: 'cancelled',
         severity: 'critical',
-        text: `Order lost: "${t.name ?? t.task_id}"${d ? ` · ${d.name}` : ''}`,
+        text: `Order lost: "${t.name ?? t.task_id}"${d ? `, handled by ${d.name}` : ''}`,
         detail: 'This order was lost because of a design problem. Please open its history before judging anyone.',
         action: { label: 'See what happened', onClick: () => setTrailTask(t) },
       })
@@ -288,7 +288,7 @@ export default function OpsHome() {
             id: `cancel-${t.task_id}`,
             kind: 'cancelled' as const,
             severity: 'critical' as const,
-            text: `"${t.name ?? t.task_id}"${d ? ` · ${d.name}` : ''}`,
+            text: `"${t.name ?? t.task_id}"${d ? `, handled by ${d.name}` : ''}`,
             action: { label: 'See what happened', onClick: () => setTrailTask(t) },
           }
         }),
@@ -323,7 +323,7 @@ export default function OpsHome() {
         kind: 'capacity',
         severity: 'info',
         text: `${r.designer.name} has room for ${slots} more project${slots === 1 ? '' : 's'} today`,
-        detail: `They have ${r.filled} of ${r.expected} projects due today · their day started at ${
+        detail: `They have ${r.filled} of ${r.expected} projects due today, and their day started at ${
           r.schedule ? fmtShiftTime(r.schedule.shift_start) : '—'
         } Pakistan time`,
         action: href ? { label: 'Open their list', href } : undefined,
@@ -394,14 +394,14 @@ export default function OpsHome() {
         }
         history={
           inboxLoading
-            ? `${fmtDate(today)} · all times in Pakistan time · checking the board…`
+            ? `${fmtDate(today)}. All times are shown in Pakistan time, and we are checking the board…`
             : verdictItems.length === 0
-              ? `${fmtDate(today)} · all times in Pakistan time · nothing needs a human, ${openTasks.length} project${
+              ? `${fmtDate(today)}. All times are shown in Pakistan time, and nothing needs a human, with ${openTasks.length} project${
                   openTasks.length === 1 ? '' : 's'
                 } moving along on their own.`
-              : `${fmtDate(today)} · all times in Pakistan time · ${verdictItems.length} thing${
+              : `${fmtDate(today)}. All times are shown in Pakistan time, and ${verdictItems.length} thing${
                   verdictItems.length === 1 ? '' : 's'
-                } need${verdictItems.length === 1 ? 's' : ''} a human, ${openTasks.length} project${
+                } need${verdictItems.length === 1 ? 's' : ''} a human, with ${openTasks.length} project${
                   openTasks.length === 1 ? '' : 's'
                 } in motion.`
         }
@@ -628,7 +628,7 @@ export default function OpsHome() {
             })}
             cause={
               openRevisions.length > 0
-                ? `${csrRounds} caught by our checkers · ${clientRounds} caught by clients`
+                ? `${csrRounds} caught by our checkers and ${clientRounds} caught by clients`
                 : 'no fixes in progress right now'
             }
             state={openRevisions.length > 0 ? 'watch' : 'ok'}

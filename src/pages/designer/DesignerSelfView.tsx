@@ -1016,7 +1016,7 @@ function HonestLine({
   if (dayOffReason === 'holiday') {
     restMessage = 'It is a company holiday. Nothing is expected of you today, so enjoy it.'
   } else if (dayOffReason === 'leave') {
-    restMessage = 'You are on leave today. Rest well — nothing is expected of you.'
+    restMessage = 'You are on leave today, so rest well. Nothing is expected of you.'
   } else if (dayOffReason === 'weekly_off') {
     restMessage = 'It is your day off. Nothing is expected of you today.'
   } else if (dayOffReason === 'none') {
@@ -1040,7 +1040,7 @@ function HonestLine({
       : `Every project due ${dueLabel} is finished. There is nothing left to pick up.`
   } else if (done === 0) {
     heroTitle = 'A fresh start.'
-    heroBody = `None of the ${expectedToday} projects due ${dueLabel} are finished yet — there is plenty of time ahead of you.`
+    heroBody = `None of the ${expectedToday} projects due ${dueLabel} are finished yet, and there is plenty of time ahead of you.`
   } else {
     heroTitle = 'Coming along nicely.'
     heroBody = `${done} of the ${expectedToday} projects due ${dueLabel} are finished, with ${remaining} still to go.`
@@ -1360,7 +1360,7 @@ function AttendanceSection({
   let warmupLine: string | null = null
   if (activeAtt?.declared_in && activeAtt.first_activity) {
     const gap = activeAtt.warmup_gap_min ?? minutesBetween(activeAtt.declared_in, activeAtt.first_activity)
-    warmupLine = `You started at ${fmtClock(activeAtt.declared_in)}, and your first move in ClickUp came through at ${fmtClock(activeAtt.first_activity)} — about ${fmtDurationLong(gap)} to get going.`
+    warmupLine = `You started at ${fmtClock(activeAtt.declared_in)}, and your first move in ClickUp came through at ${fmtClock(activeAtt.first_activity)}, which took about ${fmtDurationLong(gap)} to get going.`
   } else if (activeAtt?.declared_in) {
     warmupLine = `You started at ${fmtClock(activeAtt.declared_in)}. Your first move in ClickUp has not come through yet.`
   } else if (phase !== 'unmarked' && liveCheckIn) {

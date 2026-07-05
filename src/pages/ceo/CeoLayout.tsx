@@ -42,7 +42,7 @@ export default function CeoLayout() {
       {
         id: 'ceo-nav-trends',
         label: 'Go to Trends',
-        hint: 'Quality · speed · overload · next week’s load',
+        hint: 'Quality, speed, overload, and next week’s load',
         keywords: 'quality speed burnout risk forecast backlog trend',
         run: () => navigate('/ceo/trends'),
       },
@@ -64,5 +64,5 @@ export default function CeoLayout() {
     [navigate],
   )
 
-  return <AppShell title="Studio Pulse — CEO" nav={NAV} commands={commands} />
+  return <AppShell title="Studio Pulse CEO" nav={NAV} commands={commands} />
 }

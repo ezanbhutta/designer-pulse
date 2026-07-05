@@ -214,14 +214,14 @@ export default function CeoTeams() {
         breadcrumbs={['CEO', 'Teams']}
         title="Teams"
         titleAccessory={
-          <InfoTip text="How each team is doing this week — quality, waiting times, and every designer's numbers." />
+          <InfoTip text="How each team is doing this week, covering quality, waiting times, and every designer's numbers." />
         }
-        history={`Week of ${fmtDate(week.start)} so far, compared with the same days last week · shown team by team — a logo, a brand guide and an animation are different amounts of work, so only "Target met" is fair to compare across teams`}
+        history={`Week of ${fmtDate(week.start)} so far, compared with the same days last week and shown team by team. A logo, a brand guide, and an animation are different amounts of work, so only "Target met" is fair to compare across teams.`}
       />
 
       {failed != null && (
         <ErrorBanner
-          message={`We could not load the team numbers just now — ${(failed as Error).message}`}
+          message={`We could not load the team numbers just now, because ${(failed as Error).message}`}
           asOf={tasksQ.dataUpdatedAt > 0 ? fmtClock(new Date(tasksQ.dataUpdatedAt).toISOString()) : null}
           onRetry={() => {
             void designersQ.refetch()
@@ -240,8 +240,8 @@ export default function CeoTeams() {
         caption={
           plate
             ? `for ${plate.slots} planned slot${plate.slots === 1 ? '' : 's'} across ${plate.teamCount} team${plate.teamCount === 1 ? '' : 's'}${
-                plate.slots > 0 ? ` · busy level ${Math.round((plate.due / plate.slots) * 100)}%` : ''
-              } — only projects due today count, so future work never inflates the picture`
+                plate.slots > 0 ? `, running at a busy level of ${Math.round((plate.due / plate.slots) * 100)}%` : ''
+              }. Only projects due today count, so future work never inflates the picture.`
             : null
         }
         loading={loading}
@@ -251,7 +251,7 @@ export default function CeoTeams() {
         <div className="card animate-fade-in p-8">
           <h2 className="eyebrow inline-flex items-center gap-1">
             The call this week{' '}
-            <InfoTip text="One line that sums up team quality this week. Coach within each team — never compare raw output across teams." />
+            <InfoTip text="One line that sums up team quality this week. Coach within each team, and never compare raw output across teams." />
           </h2>
           <p className="mt-3 max-w-prose text-body text-fg">{lead}</p>
         </div>
@@ -302,8 +302,8 @@ function TeamCard({ model: t }: { model: TeamModel }) {
             tone={utilizationPctNow == null ? 'neutral' : utilizationPctNow > 120 ? 'danger' : utilizationPctNow >= 60 ? 'success' : 'neutral'}
           >
             {utilizationPctNow == null
-              ? `${t.loadNow} project${t.loadNow === 1 ? '' : 's'} in hand · no planned slots today`
-              : `Busy level ${utilizationPctNow}% — ${t.loadNow} projects due today for ${t.quotaToday} planned slots${utilizationPctNow > 120 ? ' · too much on their plate' : utilizationPctNow < 60 ? ' · room for more' : ''}`}
+              ? `${t.loadNow} project${t.loadNow === 1 ? '' : 's'} in hand, with no planned slots today`
+              : `Busy at ${utilizationPctNow}%, with ${t.loadNow} projects due today against ${t.quotaToday} planned slots${utilizationPctNow > 120 ? ', which is too much on their plate' : utilizationPctNow < 60 ? ', which leaves room for more' : ''}`}
           </Badge>
           <InfoTip text="How full the team's plate is right now: projects being worked on, compared with the slots planned for today." />
         </span>
@@ -323,7 +323,7 @@ function TeamCard({ model: t }: { model: TeamModel }) {
             tip="How long clients take to reply. This is the client's time, not the team's."
             value={fmtDurationLong(t.clientWait)}
             delta={t.clientWaitDelta}
-            cause="Waiting on clients — never counted against the team"
+            cause="Waiting on clients, which is never counted against the team"
           />
           <MiniStat
             label="Fix time"
@@ -335,7 +335,7 @@ function TeamCard({ model: t }: { model: TeamModel }) {
         </div>
         <div>
           <p className="eyebrow inline-flex items-center gap-1">
-            Finished per week — last 8 weeks{' '}
+            Finished per week over the last 8 weeks{' '}
             <InfoTip text="How many projects the team closes each week. The dotted line is the average over the last 8 weeks." />
           </p>
           <div className="mt-2">
@@ -352,7 +352,7 @@ function TeamCard({ model: t }: { model: TeamModel }) {
       {/* §19 — first delivery merges CSR send + client review; CSR speed is only measurable on revision cycles. */}
       <p className="mt-6 max-w-prose text-label text-muted">
         We cannot time our own checkers on first deliveries, so &quot;Client waiting time&quot; and
-        &quot;Fix time&quot; stand in at team level — no individual checker is tracked.
+        &quot;Fix time&quot; stand in at team level, since no individual checker is tracked.
       </p>
 
       <div className="mt-6 border-t border-border pt-5">
@@ -375,7 +375,7 @@ function TeamCard({ model: t }: { model: TeamModel }) {
           </span>
           <span className="eyebrow inline-flex items-center justify-end gap-1 text-right">
             Notes{' '}
-            <InfoTip text="Quick signs from this week — good or worrying. The person who most needs attention is listed first." />
+            <InfoTip text="Quick signs from this week, good or worrying, with the person who most needs attention listed first." />
           </span>
         </div>
         <ul>

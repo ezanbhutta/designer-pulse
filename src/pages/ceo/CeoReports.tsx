@@ -182,9 +182,9 @@ export default function CeoReports() {
         breadcrumbs={['CEO', 'Reports']}
         title="Weekly reports"
         titleAccessory={
-          <InfoTip text="Your Monday review, already prepared — one card for each designer, with their numbers and a short summary." />
+          <InfoTip text="Your Monday review, already prepared, with one card for each designer, their numbers, and a short summary." />
         }
-        history={`${MODE_LABEL[value.mode]} · ${fmtDate(period.start)} – ${fmtDate(period.end)}, compared with the same length of time just before. All times Pakistan time.`}
+        history={`${MODE_LABEL[value.mode]}, from ${fmtDate(period.start)} to ${fmtDate(period.end)}, compared with the same length of time just before. All times Pakistan time.`}
         actions={
           <>
             <span className="flex items-center gap-1">
@@ -225,9 +225,9 @@ export default function CeoReports() {
           model
             ? `${
                 model.heroExpected > 0
-                  ? `of ${model.heroExpected} planned (${Math.round((model.heroCompleted / model.heroExpected) * 100)}% of target) · `
+                  ? `of ${model.heroExpected} planned (${Math.round((model.heroCompleted / model.heroExpected) * 100)}% of target), and `
                   : ''
-              }${model.rows.length} designer card${model.rows.length === 1 ? '' : 's'} below — the person who most needs a chat comes first in each team`
+              }${model.rows.length} designer card${model.rows.length === 1 ? '' : 's'} below, where the person who most needs a chat comes first in each team`
             : null
         }
         loading={loading}
@@ -235,7 +235,7 @@ export default function CeoReports() {
 
       {failed != null && (
         <ErrorBanner
-          message={`We could not load the report numbers just now — ${(failed as Error).message}`}
+          message={`We could not load the report numbers just now, because ${(failed as Error).message}`}
           asOf={tasksQ.dataUpdatedAt > 0 ? fmtClock(new Date(tasksQ.dataUpdatedAt).toISOString()) : null}
           onRetry={() => {
             void tasksQ.refetch()
@@ -294,7 +294,7 @@ export default function CeoReports() {
               <h2 className="mb-6 inline-flex items-center gap-1.5 text-card text-fg">
                 {team}{' '}
                 <InfoTip
-                  text={`The ${team} team's week, one card per designer — the person who most needs a chat comes first.`}
+                  text={`The ${team} team's week, one card per designer, with the person who most needs a chat coming first.`}
                 />
               </h2>
               <Reveal className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -421,10 +421,10 @@ function trendDirection(cur: DesignerPeriodSummary, prev: DesignerPeriodSummary)
 /** Template sentences only — worst signal wins; every line says what to DO. */
 function interpretWeek(cur: DesignerPeriodSummary, prev: DesignerPeriodSummary, cfg: Config): string {
   if (cur.expectedQuota === 0 && cur.assigned === 0 && cur.delivered === 0) {
-    return 'No work was expected this week — time off, quiet days, or no new projects came in.'
+    return "No work was expected this week, whether that's time off, quiet days, or no new projects coming in."
   }
   if (cur.cancelled > 0) {
-    return `${cur.cancelled} order${cur.cancelled === 1 ? '' : 's'} lost to design problems — read the full story first, and judge the pattern over weeks, not one bad week.`
+    return `${cur.cancelled} order${cur.cancelled === 1 ? '' : 's'} lost to design problems, so read the full story first and judge the pattern over weeks rather than one bad week.`
   }
   if (
     cur.firstPassQualityPct != null &&
@@ -435,26 +435,26 @@ function interpretWeek(cur: DesignerPeriodSummary, prev: DesignerPeriodSummary, 
     const revised = cur.delivered - cur.firstPassClean
     const src =
       cur.clientCaughtRounds === 0 && cur.csrCaughtRounds > 0
-        ? ' — all caught by our own checkers'
+        ? ', all caught by our own checkers'
         : cur.csrCaughtRounds === 0 && cur.clientCaughtRounds > 0
-          ? ' — all caught by clients'
+          ? ', all caught by clients'
           : ''
-    return `Designs are getting sent back more often — ${revised} of ${cur.delivered} needed changes${src}. Worth a coaching chat.`
+    return `Designs are getting sent back more often, with ${revised} of ${cur.delivered} needing changes${src}. Worth a coaching chat.`
   }
   if (cur.attainmentPct != null && cur.attainmentPct < 60) {
-    return `Only ${cur.attainmentPct}% of their target — but first check they were given enough projects. If not, that is a planning gap, not a designer problem.`
+    return `Only ${cur.attainmentPct}% of their target, but first check they were given enough projects. If not, that is a planning gap, not a designer problem.`
   }
   if ((cur.firstPassQualityPct ?? 0) >= 90 && (cur.attainmentPct ?? 0) >= 100) {
-    return 'A strong week — target met and almost everything accepted first time.'
+    return 'A strong week, with target met and almost everything accepted first time.'
   }
   if (
     cur.firstPassQualityPct != null &&
     prev.firstPassQualityPct != null &&
     cur.firstPassQualityPct - prev.firstPassQualityPct >= 5
   ) {
-    return `Quality is up ${cur.firstPassQualityPct - prev.firstPassQualityPct} points on last week — whatever changed, keep doing it.`
+    return `Quality is up ${cur.firstPassQualityPct - prev.firstPassQualityPct} points on last week, so whatever changed, keep doing it.`
   }
-  return 'A steady week — nothing to worry about.'
+  return 'A steady week, with nothing to worry about.'
 }
 
 /** The whole-studio paragraph, from the same computed rows the cards use. */
@@ -488,7 +488,7 @@ function buildWeeklySummary(
       prevFpq != null && fpq !== prevFpq
         ? `, ${Math.abs(fpq - prevFpq)} points ${fpq > prevFpq ? 'up' : 'down'} on the week before`
         : ''
-    sentences.push(`${fpq}% of designs were right first time — ${clean} of ${delivered} needed no changes${deltaClause}.`)
+    sentences.push(`${fpq}% of designs were right first time, with ${clean} of ${delivered} needing no changes${deltaClause}.`)
   }
   const teamFpq = TEAMS.map((team) => {
     const teamRows = rows.filter((r) => r.designer.team === team)
@@ -507,7 +507,7 @@ function buildWeeklySummary(
       .map((r) => `${firstName(r.designer.name)} ${r.cur.cancelled}`)
       .join(', ')
     sentences.push(
-      `${cancelled} order${cancelled === 1 ? ' was' : 's were'} lost to design problems (${names}) — read each one's story, judge the pattern.`,
+      `${cancelled} order${cancelled === 1 ? ' was' : 's were'} lost to design problems (${names}), so read each one's story and judge the pattern.`,
     )
   } else {
     sentences.push('No orders were lost to design problems.')
@@ -515,7 +515,7 @@ function buildWeeklySummary(
   if (productionMedian != null) {
     const deltaClause =
       priorProductionMedian != null && productionMedian !== priorProductionMedian
-        ? ` — ${fmtDurationLong(Math.abs(productionMedian - priorProductionMedian))} ${productionMedian < priorProductionMedian ? 'faster' : 'slower'} than the week before`
+        ? `, ${fmtDurationLong(Math.abs(productionMedian - priorProductionMedian))} ${productionMedian < priorProductionMedian ? 'faster' : 'slower'} than the week before`
         : ''
     sentences.push(`Usual work time was ${fmtDurationLong(productionMedian)}${deltaClause}.`)
   }

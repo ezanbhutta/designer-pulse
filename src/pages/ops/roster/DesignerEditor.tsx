@@ -811,7 +811,7 @@ export function DesignerEditor({
                   >
                     <span className="tnum min-w-0 truncate">
                       {fmtDate(ex.the_date)} → {ex.daily_quota} a day
-                      {ex.reason && <span className="text-muted"> · {ex.reason}</span>}
+                      {ex.reason && <span className="text-muted">, for {ex.reason}</span>}
                     </span>
                     <button
                       type="button"

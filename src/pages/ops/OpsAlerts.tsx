@@ -210,7 +210,7 @@ export default function OpsAlerts() {
                 ? 'Nothing waiting. New problems show up here the moment the app spots them.'
                 : `${openCount} waiting${criticalCount > 0 ? `, ${criticalCount} urgent` : ''}.`}{' '}
             <span className="whitespace-nowrap text-label font-normal tracking-normal">
-              ↑↓ move · A mark seen · R mark done
+              ↑↓ to move, A to mark seen, R to mark done
             </span>
           </>
         }

@@ -115,8 +115,8 @@ export default function CeoCancellations() {
         severity: nowCount > 0 ? (nowCount > prevCount ? 'critical' : 'warning') : 'info',
         text:
           nowCount > 0
-            ? `${nowCount} order${nowCount === 1 ? '' : 's'} lost this week, next to ${prevCount} at this point last week — ${direction}${top ? `; ${firstName(top[0])} accounts for ${top[1]}` : ''}.`
-            : `No orders lost this week (${prevCount} at this point last week) — the pattern over time is what matters, and it looks clean.`,
+            ? `${nowCount} order${nowCount === 1 ? '' : 's'} lost this week, next to ${prevCount} at this point last week, which is ${direction}${top ? `, with ${firstName(top[0])} accounting for ${top[1]}` : ''}.`
+            : `No orders lost this week (${prevCount} at this point last week). The pattern over time is what matters, and it looks clean.`,
         detail:
           '"Cancelled" here always means an order lost because of a design problem. Open the full stories below before acting on anyone.',
       })
@@ -147,7 +147,7 @@ export default function CeoCancellations() {
 
       {failed != null && (
         <ErrorBanner
-          message={`We could not load the cancellations just now — ${(failed as Error).message}`}
+          message={`We could not load the cancellations just now, because ${(failed as Error).message}`}
           asOf={
             cancelledQ.dataUpdatedAt > 0 ? fmtClock(new Date(cancelledQ.dataUpdatedAt).toISOString()) : null
           }
@@ -158,11 +158,11 @@ export default function CeoCancellations() {
         />
       )}
 
-      <CornerTip tip="How this week's lost orders compare with last week — the pattern over time matters more than any single order.">
+      <CornerTip tip="How this week's lost orders compare with last week, since the pattern over time matters more than any single order.">
         <VerdictBlock
           title="The picture this week"
           items={model?.verdicts ?? []}
-          emptyMessage="No lost orders on record — nothing has been cancelled because of design problems."
+          emptyMessage="No lost orders on record. Nothing has been cancelled because of design problems."
           loading={loading}
         />
       </CornerTip>
@@ -180,7 +180,7 @@ export default function CeoCancellations() {
               })
             : null
         }
-        caption="The pattern over weeks matters more than any single order — open each story below before acting on anyone."
+        caption="The pattern over weeks matters more than any single order, so open each story below before acting on anyone."
         loading={loading}
       />
 
@@ -188,7 +188,7 @@ export default function CeoCancellations() {
       <p className="flex max-w-prose items-start gap-2 text-caption text-muted">
         <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         Whether a cancellation was the designer&apos;s fault is decided by the person who closed
-        the order. Treat each one as something to look into, not a final judgement — watch the
+        the order. Treat each one as something to look into, not a final judgement, and watch the
         pattern over weeks.
       </p>
 
@@ -213,7 +213,7 @@ export default function CeoCancellations() {
             <RevealItem key={g.designer?.id ?? 'unassigned'}>
               <section
                 className="card p-8"
-                aria-label={`Cancellations — ${g.designer?.name ?? 'unassigned'}`}
+                aria-label={`Cancellations for ${g.designer?.name ?? 'unassigned'}`}
               >
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   <h2 className="text-card text-fg">{g.designer?.name ?? 'No designer assigned'}</h2>
@@ -223,7 +223,7 @@ export default function CeoCancellations() {
                   </Badge>
                   <span className="tnum inline-flex items-center gap-1 text-label font-normal text-muted">
                     {g.assigned12w > 0
-                      ? `${g.cancelled12w} of the ${g.assigned12w} projects given in the last 12 weeks ended cancelled — ${Math.round((g.cancelled12w / g.assigned12w) * 100)}%`
+                      ? `${g.cancelled12w} of the ${g.assigned12w} projects given in the last 12 weeks ended cancelled, which is ${Math.round((g.cancelled12w / g.assigned12w) * 100)}%`
                       : 'no projects given in the last 12 weeks'}
                     <InfoTip text="Out of everything this designer was given in the last 12 weeks, the share that ended cancelled. A pattern here matters more than one bad order." />
                   </span>
@@ -241,7 +241,7 @@ export default function CeoCancellations() {
                           {t.name ?? t.task_id}
                         </span>
                         <span className="tnum text-label font-normal text-muted">
-                          given {fmtDate(t.created_at)} · cancelled {fmtDate(t.closed_at ?? t.last_event_at)} at{' '}
+                          given {fmtDate(t.created_at)} and cancelled {fmtDate(t.closed_at ?? t.last_event_at)} at{' '}
                           {fmtClock(t.closed_at ?? t.last_event_at)}
                         </span>
                         <span className="inline-flex items-center gap-0.5 text-label text-muted transition-colors duration-150 group-hover:text-fg">
@@ -270,7 +270,7 @@ export default function CeoCancellations() {
               <StatusBadge status="cancelled" />
               {selectedDesigner && (
                 <Badge tone="neutral">
-                  {selectedDesigner.name} · {selectedDesigner.team}
+                  {selectedDesigner.name} on the {selectedDesigner.team} team
                 </Badge>
               )}
               {selectedUrl && (
@@ -304,7 +304,7 @@ export default function CeoCancellations() {
             <p className="flex items-start gap-2 rounded-xl bg-surface-2/70 p-3 text-label font-normal text-muted">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               Fault was decided by the person who closed this order. Read the history below, then
-              judge the pattern across weeks — not this one order alone.
+              judge the pattern across weeks rather than this one order alone.
             </p>
             <div>
               <h3 className="eyebrow mb-3 inline-flex items-center gap-1">

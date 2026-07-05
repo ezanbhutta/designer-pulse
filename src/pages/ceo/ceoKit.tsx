@@ -77,7 +77,7 @@ export function HeroMetric({
 }) {
   if (loading) {
     return (
-      <section role="status" aria-label={`${eyebrow} — loading`}>
+      <section role="status" aria-label={`Loading ${eyebrow}`}>
         <div className="skeleton h-3 w-32" />
         <div className="skeleton mt-4 h-12 w-44" />
         <div className="skeleton mt-4 h-4 w-3/5 max-w-md" />

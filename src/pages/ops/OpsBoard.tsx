@@ -213,10 +213,10 @@ export default function OpsBoard() {
         history={
           /* Verdict first (§20.1): the live health read, chips not prose. */
           openTasksQ.isLoading ? (
-            `Live board · ${fmtDate(today)} Pakistan time · loading every open project…`
+            `Live board for ${fmtDate(today)} Pakistan time, loading every open project…`
           ) : (
             <span className="inline-flex flex-wrap items-center gap-2">
-              <span>Live board · {fmtDate(today)} Pakistan time ·</span>
+              <span>Live board for {fmtDate(today)} Pakistan time:</span>
               {healthy ? (
                 <Badge tone="success" icon={CheckCircle2}>
                   All good, nothing is stuck and everyone has enough work
@@ -423,8 +423,7 @@ export default function OpsBoard() {
                             {tasks.length} open
                             {gap && gap.expected > 0 && (
                               <span className="tnum">
-                                {' '}
-                                · has {gap.filled} of {gap.expected} today
+                                , and has {gap.filled} of {gap.expected} today
                               </span>
                             )}
                           </span>

@@ -17,13 +17,13 @@ function friendlyAuthError(raw: string): string {
     return "That email or password doesn't match. Try again."
   }
   if (msg.includes('email not confirmed')) {
-    return "Your email isn't confirmed yet — open the link we sent to your inbox first."
+    return "Your email isn't confirmed yet, so open the link we sent to your inbox first."
   }
   if (msg.includes('rate limit') || msg.includes('too many')) {
-    return 'Too many tries — wait a minute, then try again.'
+    return "That's too many tries, so wait a minute and try again."
   }
   if (msg.includes('fetch') || msg.includes('network')) {
-    return "Can't reach the server — check your internet and try again."
+    return "We can't reach the server, so check your internet and try again."
   }
   return raw
 }
@@ -69,7 +69,7 @@ export default function LoginPage() {
     if (session && !loading && !role) {
       setSubmitting(false)
       setError(
-        "You're signed in, but your account isn't set up in Studio Pulse yet — ask your admin to add you.",
+        "You're signed in, but your account isn't set up in Studio Pulse yet, so ask your admin to add you.",
       )
     }
   }, [session, loading, role])
@@ -102,7 +102,7 @@ export default function LoginPage() {
               className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3"
             >
               <p className="text-caption font-medium text-fg">
-                The app isn&apos;t connected to its database yet — see the README.
+                The app isn&apos;t connected to its database yet, so see the README.
               </p>
               <p className="mt-1.5 text-caption leading-relaxed text-muted">
                 Set <code className="font-mono">VITE_SUPABASE_URL</code> and{' '}

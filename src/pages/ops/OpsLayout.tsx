@@ -93,7 +93,7 @@ export default function OpsLayout() {
         {
           id: `list-${d.id}`,
           label: `Open ${d.name}'s list in ClickUp`,
-          hint: `${d.team} · new tab`,
+          hint: `${d.team}, opens a new tab`,
           keywords: `clickup list open ${d.name} ${d.team} ${d.specialty ?? ''}`,
           run: () => {
             window.open(url, '_blank', 'noopener,noreferrer')
@@ -106,7 +106,7 @@ export default function OpsLayout() {
 
   return (
     <ToastProvider>
-      <AppShell title="Studio Pulse · Ops" nav={nav} commands={commands}>
+      <AppShell title="Studio Pulse Ops" nav={nav} commands={commands}>
         <Outlet />
       </AppShell>
       {/* Generic chrome title — DesignerDetail's own header carries the

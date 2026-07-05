@@ -222,7 +222,7 @@ export default function OpsReports() {
         titleAccessory={
           <InfoTip text="How each person did over a period: targets met, quality and speed, with a PDF you can share." />
         }
-        history={`${MODE_LABEL[value.mode]} · ${rangeLabel}, compared with ${fmtDate(prior.start)} – ${fmtDate(prior.end)}.`}
+        history={`${MODE_LABEL[value.mode]}, ${rangeLabel}, compared with ${fmtDate(prior.start)} – ${fmtDate(prior.end)}.`}
         actions={
           <>
             <span className="flex items-center gap-1">
@@ -269,7 +269,7 @@ export default function OpsReports() {
       <ReportNotes designers={activeDesigners} start={range.start} end={range.end} />
 
       <VerdictBlock
-        title={`What stands out · ${MODE_LABEL[value.mode].toLowerCase()}`}
+        title={`What stands out for ${MODE_LABEL[value.mode].toLowerCase()}`}
         items={verdictItems}
         emptyMessage="Everyone is on track this period, nothing stands out."
         loading={loading}

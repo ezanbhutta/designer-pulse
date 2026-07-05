@@ -529,9 +529,9 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
           <CalendarDays className="h-4 w-4" aria-hidden="true" />
           {schedule ? (
             <span>
-              {schedule.daily_quota} projects a day · {fmtShiftTime(schedule.shift_start)} to{' '}
+              {schedule.daily_quota} projects a day, from {fmtShiftTime(schedule.shift_start)} to{' '}
               {fmtShiftTime(schedule.shift_end)} Pakistan time
-              {schedule.weekly_off != null && ` · day off ${DOW_LABELS[schedule.weekly_off]}`}
+              {schedule.weekly_off != null && `, with ${DOW_LABELS[schedule.weekly_off]} off`}
             </span>
           ) : (
             <span>No working hours are set yet, so "Target met" cannot be worked out.</span>
@@ -641,7 +641,7 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
                     chip ? chip.className : 'bg-surface-2 text-muted/60'
                   }`}
                   title={`${fmtDate(d)}: ${row?.status ?? 'nothing recorded'}${
-                    row?.warmup_gap_min != null ? ` · ${fmtDuration(row.warmup_gap_min)} to get going` : ''
+                    row?.warmup_gap_min != null ? `, taking ${fmtDuration(row.warmup_gap_min)} to get going` : ''
                   }`}
                 >
                   {chip ? chip.letter : '·'}
@@ -654,8 +654,9 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
           })}
         </div>
         <p className="mt-2 text-label normal-case tracking-normal text-muted">
-          P present · HW worked on a holiday · L on leave · H company holiday · W day off · A not
-          marked in · I day not finished
+          P means present, HW means they worked on a holiday, L means on leave, H means a company
+          holiday, W means a day off, A means they were not marked in, and I means the day was not
+          finished.
         </p>
       </section>
 

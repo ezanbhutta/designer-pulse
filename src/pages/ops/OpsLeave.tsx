@@ -198,7 +198,7 @@ export default function OpsLeave() {
           l.start_date === end ? fmtDate(l.start_date) : `${fmtDate(l.start_date)} – ${fmtDate(end)}`
         }. Approve or decline when you get a chance.`,
         detail: `Until you decide, they still count as expected in on those days${
-          l.reason ? ` · ${l.reason}` : ''
+          l.reason ? `, for ${l.reason}` : ''
         }`,
         action: {
           label: 'Review',
@@ -227,7 +227,7 @@ export default function OpsLeave() {
             l.start_date === end ? fmtDate(l.start_date) : `${fmtDate(l.start_date)} – ${fmtDate(end)}`
           }`,
           detail: `${l.paid ? 'Paid' : 'Unpaid'} (for records only). No projects are expected from them on those days${
-            l.reason ? ` · ${l.reason}` : ''
+            l.reason ? `, for ${l.reason}` : ''
           }`,
         })
       }
@@ -361,7 +361,7 @@ export default function OpsLeave() {
                         {l.start_date === end
                           ? fmtDate(l.start_date)
                           : `${fmtDate(l.start_date)} – ${fmtDate(end)}`}
-                        {l.reason && ` · ${l.reason}`}
+                        {l.reason && `, for ${l.reason}`}
                       </p>
                       <div className="mt-1 flex flex-wrap gap-1">
                         <Badge tone="neutral">
@@ -451,8 +451,8 @@ export default function OpsLeave() {
                     <p className="tnum text-label font-normal tracking-normal text-muted">
                       {fmtDate(hd.the_date)}
                       {hd.from_time && hd.to_time &&
-                        ` · away ${fmtShiftTime(hd.from_time)}–${fmtShiftTime(hd.to_time)}`}
-                      {hd.reason && ` · ${hd.reason}`}
+                        `, away from ${fmtShiftTime(hd.from_time)} to ${fmtShiftTime(hd.to_time)}`}
+                      {hd.reason && `, for ${hd.reason}`}
                     </p>
                     <div className="mt-1">
                       <Badge tone={hd.paid ? 'success' : 'warning'}>
@@ -612,7 +612,7 @@ function DesignerSelect({
         </option>
         {designers.map((d) => (
           <option key={d.id} value={d.id}>
-            {d.name} · {d.team}
+            {d.name}, {d.team}
           </option>
         ))}
       </select>

@@ -202,7 +202,7 @@ export default function CeoTrends() {
         severity: speedRead.tone === 'worse' ? 'warning' : 'info',
         text: `${scopeLabel} speed: ${speedRead.text}`,
         detail:
-          'Work time only — waiting for clients is not counted. A slow creep upward can be an early overload sign.',
+          'Work time only, since waiting for clients is not counted. A slow creep upward can be an early overload sign.',
         action: { label: 'See the chart', onClick: scrollTo('speed-trend-card') },
       })
     }
@@ -214,8 +214,8 @@ export default function CeoTrends() {
           flaggedCount > 0
             ? `${flaggedCount} designer${flaggedCount === 1 ? ' is' : 's are'} showing strong overload signs (${flaggedRisks
                 .map((r) => r.name)
-                .join(', ')}) — it would be kind to check in with them before they burn out.`
-            : `${model.risks.length} on the list to keep an eye on, but nobody past the worry line (${cfg.burnout_score}) — worth a glance, nothing urgent.`,
+                .join(', ')}), so it would be kind to check in with them before they burn out.`
+            : `${model.risks.length} on the list to keep an eye on, but nobody past the worry line (${cfg.burnout_score}), so it's worth a glance and nothing urgent.`,
         detail: 'An early warning only, not a judgement. Only you can see this.',
         action: { label: 'See the list', onClick: scrollTo('burnout-board') },
       })
@@ -225,7 +225,7 @@ export default function CeoTrends() {
       verdictItems.push({
         id: 'forecast',
         severity: breach ? 'warning' : 'info',
-        text: `New projects are arriving faster than they get finished (about ${model.forecast.inflowPerDay} come in each day and ${model.forecast.completionPerDay} are finished) — roughly ${model.forecast.projectedBacklog} could be waiting within ${model.forecast.horizonDays} days${breach ? '. It may be worth moving work around or adding help before it lands.' : ' — still under the worry line, worth keeping an eye on.'}`,
+        text: `New projects are arriving faster than they get finished (about ${model.forecast.inflowPerDay} come in each day and ${model.forecast.completionPerDay} are finished), so roughly ${model.forecast.projectedBacklog} could be waiting within ${model.forecast.horizonDays} days${breach ? '. It may be worth moving work around or adding help before it lands.' : ', though still under the worry line and worth keeping an eye on.'}`,
         action: { label: 'See the forecast', onClick: scrollTo('workload-forecast') },
       })
     }
@@ -257,12 +257,12 @@ export default function CeoTrends() {
         titleAccessory={
           <InfoTip text="How quality, speed, overload and workload have been moving over the last 12 weeks." />
         }
-        history="The last 12 weeks, week by week. Each line is measured against its own average over those weeks, so a problem shows up early — before it becomes a crisis"
+        history="The last 12 weeks, week by week. Each line is measured against its own average over those weeks, so a problem shows up early, before it becomes a crisis"
       />
 
       {failed != null && (
         <ErrorBanner
-          message={`We could not load the trend numbers just now — ${(failed as Error).message}`}
+          message={`We could not load the trend numbers just now, because ${(failed as Error).message}`}
           asOf={tasksQ.dataUpdatedAt > 0 ? fmtClock(new Date(tasksQ.dataUpdatedAt).toISOString()) : null}
           onRetry={() => {
             void tasksQ.refetch()
@@ -275,9 +275,9 @@ export default function CeoTrends() {
 
       <CornerTip tip="Two to four short points that sum up what the trend charts below are saying.">
         <VerdictBlock
-          title={`What the trends say — ${scope === 'All' ? 'whole studio' : scope}`}
+          title={`What the trends say for ${scope === 'All' ? 'the whole studio' : `the ${scope} team`}`}
           items={sortedVerdicts}
-          emptyMessage="Quality, speed, overload and next week's load all look steady — nothing needs your attention."
+          emptyMessage="Quality, speed, overload and next week's load all look steady, so nothing needs your attention."
           loading={loading}
         />
       </CornerTip>
@@ -291,7 +291,7 @@ export default function CeoTrends() {
 
       {/* ── The headline number: this week's quality vs its own past ───────── */}
       <HeroMetric
-        eyebrow={`Right first time this week — ${scope === 'All' ? 'whole studio' : scope}`}
+        eyebrow={`Right first time this week for ${scope === 'All' ? 'the whole studio' : `the ${scope} team`}`}
         tip="How many designs were accepted without anyone asking for changes in the latest week. Higher is better. The chip compares it with its own average over the last 12 weeks."
         value={latestQuality}
         format={(n) => `${n}%`}
@@ -306,7 +306,7 @@ export default function CeoTrends() {
         <RevealItem>
           <div id="quality-trend-card" className="card h-full p-8">
             <h2 className="eyebrow inline-flex items-center gap-1">
-              Right first time — {scope === 'All' ? 'whole studio' : scope}{' '}
+              Right first time for {scope === 'All' ? 'the whole studio' : `the ${scope} team`}{' '}
               <InfoTip text="Each week: how many designs were accepted without anyone asking for changes. Higher is better. The dotted line is the average over the last 12 weeks." />
             </h2>
             <p className="mt-3 max-w-prose text-caption font-medium text-fg">
@@ -328,7 +328,7 @@ export default function CeoTrends() {
               )}
             </div>
             <p className="mt-3 text-label font-normal text-muted">
-              Every change request counts against this score — whether a client or one of our own
+              Every change request counts against this score, whether a client or one of our own
               checkers asked for it.
             </p>
           </div>
@@ -337,7 +337,7 @@ export default function CeoTrends() {
         <RevealItem>
           <div id="speed-trend-card" className="card h-full p-8">
             <h2 className="eyebrow inline-flex items-center gap-1">
-              Work time — {scope === 'All' ? 'whole studio' : scope}{' '}
+              Work time for {scope === 'All' ? 'the whole studio' : `the ${scope} team`}{' '}
               <InfoTip text="Usual time from getting a project to sending the first design. Client waiting time is not counted. Lower is faster." />
             </h2>
             <p className="mt-3 max-w-prose text-caption font-medium text-fg">
@@ -370,7 +370,7 @@ export default function CeoTrends() {
           <div className="flex items-center gap-2">
             <Flame className="h-4 w-4 text-muted" aria-hidden="true" />
             <h2 className="eyebrow inline-flex items-center gap-1">
-              Overload warning — the last 2 weeks next to the 2 before{' '}
+              Overload warning, comparing the last 2 weeks with the 2 before{' '}
               <InfoTip text="Early signs someone may be running out of steam: fixes taking longer, fewer projects finished, but still showing up as usual." />
             </h2>
           </div>
@@ -382,8 +382,8 @@ export default function CeoTrends() {
         </div>
         <p className="mt-2 max-w-prose text-caption text-muted">
           A score from 0 to 100, built from three signs: fixes taking longer (40%), fewer projects
-          finished (35%), and still showing up at least as often — starting work sooner, yet
-          finishing less (25%). An early warning, not a judgement — only you can see this.
+          finished (35%), and still showing up at least as often, starting work sooner yet
+          finishing less (25%). An early warning, not a judgement, and only you can see this.
         </p>
 
         {loading ? (
@@ -396,7 +396,7 @@ export default function CeoTrends() {
           <div className="mt-6 flex items-center gap-3 rounded-xl bg-success-soft/60 p-4" aria-live="polite">
             <CheckCircle2 className="h-5 w-5 shrink-0 text-success" aria-hidden="true" />
             <p className="text-caption font-medium text-fg">
-              No overload signs — nobody is trending the wrong way. Good news.
+              No overload signs. Nobody is trending the wrong way. Good news.
             </p>
           </div>
         ) : (
@@ -410,7 +410,7 @@ export default function CeoTrends() {
                   {r.flagged ? 'Check in' : 'Watch'} {r.score}
                 </Badge>
                 <p className="w-full text-caption leading-snug text-muted sm:w-auto sm:flex-1">
-                  {r.causes.length > 0 ? capitalize(r.causes.join(' · ')) : 'Only a faint signal.'}
+                  {r.causes.length > 0 ? capitalize(joinNatural(r.causes)) : 'Only a faint signal.'}
                 </p>
               </li>
             ))}
@@ -433,10 +433,10 @@ export default function CeoTrends() {
           value={String(model?.forecast.projectedBacklog ?? 0)}
           cause={
             model
-              ? `next to ${model.forecast.openNow} open now — about ${model.forecast.inflowPerDay} new each day and ${model.forecast.completionPerDay} finished each day over the last 7 days`
+              ? `next to ${model.forecast.openNow} open now, with about ${model.forecast.inflowPerDay} new each day and ${model.forecast.completionPerDay} finished each day over the last 7 days`
               : null
           }
-          reference={model ? `Looking ${model.forecast.horizonDays} days ahead · we flag above ${cfg.forecast_threshold}` : null}
+          reference={model ? `Looking ${model.forecast.horizonDays} days ahead, we flag above ${cfg.forecast_threshold}` : null}
           state={
             model == null
               ? null
@@ -448,7 +448,7 @@ export default function CeoTrends() {
         />
         <div className="card p-8">
           <h2 className="eyebrow inline-flex items-center gap-1">
-            New work and finished work — last 7 days{' '}
+            New work and finished work over the last 7 days{' '}
             <InfoTip text="On the left, how many new projects arrived each day. On the right, how many were finished. When new work keeps outpacing finished work, it piles up." />
           </h2>
           {loading ? (
@@ -478,8 +478,8 @@ export default function CeoTrends() {
           {model && (
             <p className="mt-4 max-w-prose text-caption text-fg">
               {model.forecast.inflowPerDay > model.forecast.completionPerDay
-                ? `New projects are arriving faster than they get finished by about ${Math.round((model.forecast.inflowPerDay - model.forecast.completionPerDay) * 10) / 10} a day — roughly ${model.forecast.projectedBacklog} could be waiting within ${model.forecast.horizonDays} days${model.forecast.projectedBacklog > cfg.forecast_threshold ? '. It may be worth moving work around or adding help before it lands' : ''}.`
-                : `Finishing is keeping up with new work — about ${model.forecast.projectedBacklog} open in ${model.forecast.horizonDays} days. Nothing to change.`}
+                ? `New projects are arriving faster than they get finished by about ${Math.round((model.forecast.inflowPerDay - model.forecast.completionPerDay) * 10) / 10} a day, so roughly ${model.forecast.projectedBacklog} could be waiting within ${model.forecast.horizonDays} days${model.forecast.projectedBacklog > cfg.forecast_threshold ? '. It may be worth moving work around or adding help before it lands' : ''}.`
+                : `Finishing is keeping up with new work, with about ${model.forecast.projectedBacklog} open in ${model.forecast.horizonDays} days. Nothing to change.`}
             </p>
           )}
         </div>
@@ -492,6 +492,13 @@ function capitalize(s: string): string {
   return s.length ? s[0].toUpperCase() + s.slice(1) : s
 }
 
+/** Joins strings into a natural spoken list: "a", "a and b", "a, b, and c". */
+function joinNatural(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? ''
+  if (items.length === 2) return `${items[0]} and ${items[1]}`
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`
+}
+
 /** One-line reading of the latest point against the series' own baseline. */
 function readVsBaseline(
   points: TrendPoint[] | undefined,
@@ -502,11 +509,11 @@ function readVsBaseline(
   const latest = points[points.length - 1].value
   const diff = latest - baseline
   if (Math.abs(diff) < 0.5) {
-    return { text: `Right on its average for the last 12 weeks — ${opts.noun} is steady.`, tone: 'steady' }
+    return { text: `Right on its average for the last 12 weeks, so ${opts.noun} is steady.`, tone: 'steady' }
   }
   const better = opts.goodWhen === 'up' ? diff > 0 : diff < 0
   return {
-    text: `${opts.format(Math.abs(diff))} ${diff > 0 ? 'above' : 'below'} its own average over the last 12 weeks — ${opts.noun} is ${better ? 'better than usual' : 'worse than usual; worth watching over the next two weeks'}.`,
+    text: `${opts.format(Math.abs(diff))} ${diff > 0 ? 'above' : 'below'} its own average over the last 12 weeks, so ${opts.noun} is ${better ? 'better than usual' : 'worse than usual and worth watching over the next two weeks'}.`,
     tone: better ? 'better' : 'worse',
   }
 }

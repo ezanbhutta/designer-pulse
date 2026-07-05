@@ -434,8 +434,8 @@ export default function OpsAttendance() {
         }
         history={
           attendanceQ.isLoading
-            ? `Matching check in times against real work in ClickUp · ${fmtDate(date)}…`
-            : `${fmtDate(date)} · ${checkedIn} of ${scheduledCount} scheduled ${
+            ? `Matching check in times against real work in ClickUp for ${fmtDate(date)}…`
+            : `On ${fmtDate(date)}, ${checkedIn} of ${scheduledCount} scheduled ${
                 scheduledCount === 1 ? 'person has' : 'people have'
               } checked in${needsReview > 0 ? `, ${needsReview} day${needsReview === 1 ? '' : 's'} to look over` : ''}${
                 lateCount > 0 ? `, ${lateCount} arrived late` : ''
@@ -515,7 +515,7 @@ export default function OpsAttendance() {
       )}
 
       <VerdictBlock
-        title={`Needs a look · ${fmtDate(date)}`}
+        title={`Needs a look for ${fmtDate(date)}`}
         items={verdictItems}
         emptyMessage="Everyone is accounted for, nothing to check."
         loading={attendanceQ.isLoading || designersQ.isLoading}
@@ -547,7 +547,7 @@ export default function OpsAttendance() {
             scheduledCount - checkedIn > 0
               ? `${scheduledCount - checkedIn} still to check in`
               : 'everyone scheduled today has checked in'
-          }${extraCheckIns > 0 ? ` · plus ${extraCheckIns} in on a day off` : ''}`}
+          }${extraCheckIns > 0 ? `, plus ${extraCheckIns} in on a day off` : ''}`}
           state={scheduledCount > 0 && checkedIn < scheduledCount ? 'watch' : 'ok'}
           loading={attendanceQ.isLoading}
         />
@@ -683,7 +683,7 @@ export default function OpsAttendance() {
                           <div>
                             <Badge tone={meta.tone} icon={meta.icon}>
                               {STATUS_DISPLAY[row.status]}
-                              {row.is_half_day ? ' · half day' : ''}
+                              {row.is_half_day ? ', half day' : ''}
                             </Badge>
                             {row.needs_review && (
                               <p className="mt-1 text-label font-normal tracking-normal text-warning">
@@ -693,8 +693,11 @@ export default function OpsAttendance() {
                           </div>
                         ) : (
                           <span className="text-label font-normal tracking-normal text-muted">
-                            {shiftLabel ? `Hours ${shiftLabel} Pakistan time · nothing yet` : 'No work hours set'}
-                            {expected === 0 && shiftLabel ? ' · not expected in today' : ''}
+                            {shiftLabel
+                              ? `Hours ${shiftLabel} Pakistan time, and nothing logged yet${
+                                  expected === 0 ? ', though they are not expected in today' : ''
+                                }`
+                              : 'No work hours set'}
                           </span>
                         )}
                       </td>
@@ -733,7 +736,7 @@ export default function OpsAttendance() {
                         {row && (row.late_minutes > 0 || row.early_leave_minutes > 0) ? (
                           <span className="text-warning">
                             {row.late_minutes > 0 ? `+${fmtDuration(row.late_minutes)} late` : ''}
-                            {row.late_minutes > 0 && row.early_leave_minutes > 0 ? ' · ' : ''}
+                            {row.late_minutes > 0 && row.early_leave_minutes > 0 ? ' and ' : ''}
                             {row.early_leave_minutes > 0 ? `${fmtDuration(row.early_leave_minutes)} early` : ''}
                           </span>
                         ) : (
@@ -856,9 +859,9 @@ export default function OpsAttendance() {
                         r?.status ? STATUS_DISPLAY[r.status] : 'no record'
                       }${
                         r?.warmup_gap_min != null
-                          ? ` · start delay ${fmtDurationLong(r.warmup_gap_min)}`
+                          ? `, with a ${fmtDurationLong(r.warmup_gap_min)} start delay`
                           : ''
-                      }${r?.needs_review ? ' · needs a look' : ''}`
+                      }${r?.needs_review ? ', and needs a look' : ''}`
                       return (
                         <td key={wd} className="px-2 py-2 text-center">
                           <span
@@ -883,8 +886,9 @@ export default function OpsAttendance() {
             ))}
           </table>
           <p className="mt-4 max-w-prose text-label font-normal tracking-normal text-muted">
-            P present · HW worked on a holiday · L leave · H holiday · W weekly day off · A absent ·
-            I incomplete · ! please look it over
+            P means present, HW means they worked on a holiday, L means leave, H means holiday, W
+            means a weekly day off, A means absent, I means incomplete, and an exclamation mark
+            means it needs a look.
           </p>
         </div>
       )}

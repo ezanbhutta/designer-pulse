@@ -133,7 +133,7 @@ export default function OpsRoster() {
             <Skeleton className="h-4 w-72" />
           ) : (
             <span className="tnum">
-              {summaryParts.join(' · ')} · people, daily targets and work hours.
+              {summaryParts.join(', ')}, showing everyone's daily targets and work hours.
             </span>
           )
         }
@@ -186,7 +186,7 @@ export default function OpsRoster() {
               <div className="flex items-center gap-2">
                 <TriangleAlert className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
                 <h2 className="flex items-center gap-1.5 text-caption font-semibold text-fg">
-                  Needs attention <span className="tnum text-muted">· {attention.length}</span>
+                  Needs attention <span className="tnum text-muted">({attention.length})</span>
                   <InfoTip
                     text="These gaps stop the numbers from counting. Tap Fix to sort each one out."
                     label="About Needs attention"
