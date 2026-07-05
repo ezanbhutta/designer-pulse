@@ -38,6 +38,7 @@ import {
   useDesigners,
   useDesignerDrawer,
   useMetricsSince,
+  useOpenTasks,
   useQuotaCtx,
   useTasksSince,
 } from './opsData'
@@ -92,6 +93,7 @@ export default function OpsReports() {
   const designersQ = useDesigners()
   const { ctx } = useQuotaCtx()
   const tasksQ = useTasksSince(prior.start)
+  const openTasksQ = useOpenTasks()
   const metricsQ = useMetricsSince(prior.start, range.end)
 
   const activeDesigners = useActiveDesigners()
@@ -105,14 +107,17 @@ export default function OpsReports() {
   const loading = designersQ.isLoading || tasksQ.isLoading || metricsQ.isLoading
 
   const rows: ReportRow[] = useMemo(() => {
-    const tasks = tasksQ.data ?? []
+    // Merge the live open tasks with the period fetch so a project that is DUE
+    // in the window but has been sitting open (e.g. still in "pickup") is on
+    // the plate too; summarizeDesigner dedupes by task id.
+    const tasks = [...(openTasksQ.data ?? []), ...(tasksQ.data ?? [])]
     const metrics = metricsQ.data ?? []
     return designers.map((designer) => ({
       designer,
       cur: summarizeDesigner(designer.id, { start: range.start, end: range.end, tasks, metrics, quota: ctx }),
       prev: summarizeDesigner(designer.id, { start: prior.start, end: prior.end, tasks, metrics, quota: ctx }),
     }))
-  }, [designers, tasksQ.data, metricsQ.data, ctx, range.start, range.end, prior.start, prior.end])
+  }, [designers, openTasksQ.data, tasksQ.data, metricsQ.data, ctx, range.start, range.end, prior.start, prior.end])
 
   const byTeam = useMemo(() => {
     const grouped = new Map<string, ReportRow[]>()

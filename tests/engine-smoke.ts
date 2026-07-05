@@ -1,6 +1,6 @@
 import { computeTaskMetrics } from '../shared/metrics'
 import { computeAttendance } from '../shared/attendance'
-import { expectedQuotaOn, median, priorPeriod } from '../shared/aggregate'
+import { expectedQuotaOn, median, priorPeriod, summarizeDesigner } from '../shared/aggregate'
 import { pktDateOf, shiftWindow, pktInstant } from '../shared/pkt'
 
 let failures = 0
@@ -212,6 +212,36 @@ check('pkt.date', pktDateOf('2026-06-01T20:30:00Z'), '2026-06-02') // 01:30 PKT 
   check('quota.holiday', expectedQuotaOn('d1', '2026-06-01', { ...ctx, holidays: [{ id: 'h1', the_date: '2026-06-01', name: 'X' }] } as never), 0)
   // Leave zeroes even when an exception exists (absence beats expectation).
   check('quota.leave-beats-exception', expectedQuotaOn('d1', '2026-06-05', { ...ctx, leaves: [{ id: 'l1', designer_id: 'd1', leave_type: 'sick', start_date: '2026-06-05', end_date: null, paid: true, status: 'approved', reason: null, created_by: null, created_at: '' }] } as never), 0)
+}
+
+// ── The plate rule: "done" = the designer DELIVERED the first design, and the
+//    plate is the projects DUE that day — not created that day, and not only the
+//    ones whose whole order reached "complete". (Owner's Nimeazad case.) ──
+{
+  const day = '2026-06-05'
+  const dueToday = `${day}T12:00:00+05:00`
+  const dueYesterday = '2026-06-04T12:00:00+05:00'
+  const mk = (id: string, status: string, due: string | null) => ({
+    task_id: id, designer_id: 'd1', current_status: status, due_date: due,
+    created_at: dueToday, last_event_at: dueToday, closed_at: null, deleted: false,
+  })
+  const tasks = [
+    mk('A', 'deliver to client', dueToday),
+    mk('B', 'deliver to client', dueToday),
+    mk('C', 'deliver to client', dueToday),
+    mk('D', 'deliver to client', dueToday),
+    mk('E', 'pickup your projects', dueToday), // on the plate, not yet delivered
+    mk('F', 'deliver to client', dueYesterday), // delivered but due yesterday → off today's plate
+    mk('A', 'deliver to client', dueToday), // duplicate id → must not double-count
+  ]
+  const quota = {
+    schedules: [{ id: 's1', designer_id: 'd1', effective_from: '2020-01-01', effective_to: null, daily_quota: 5, shift_start: '09:00', shift_end: '17:00', is_overnight: false, weekly_off: null, late_grace_min: 15, early_leave_grace_min: 15 }],
+    exceptions: [], leaves: [], holidays: [], holidayWorkers: [],
+  }
+  const s = summarizeDesigner('d1', { start: day, end: day, tasks: tasks as never, metrics: [], quota: quota as never })
+  check('plate.assigned', s.assigned, 5) // 5 due today (duplicate deduped, yesterday excluded)
+  check('plate.completed', s.completed, 4) // 4 delivered, the pickup one still open
+  check('plate.attainment', s.attainmentPct, 80) // 4 of 5
 }
 
 check('median.odd', median([5, 1, 9]), 5)

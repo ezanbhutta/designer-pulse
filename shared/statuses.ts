@@ -47,6 +47,24 @@ export const ACTIVE_LOAD_STATUSES: CanonicalStatus[] = [
   'revision',
 ]
 
+/**
+ * Statuses where the designer has DELIVERED the first design — their
+ * production work on that project is done for the day, even if it then goes to
+ * the client or into changes. The owner counts a project as "done" the moment
+ * the first design is sent (it reaches "deliver to client"), NOT only when the
+ * whole order is finally closed. This is the set that counts toward the daily
+ * target. Excludes "pickup your projects" and "in progress" (not yet delivered)
+ * and "cancelled" (never delivered).
+ */
+export const DELIVERED_STATUSES: CanonicalStatus[] = [
+  'deliver to client',
+  'revision',
+  'revision complete',
+  'client response',
+  'final files',
+  'complete',
+]
+
 /** Prior statuses that classify a revision as CSR-caught (spec §4.2). */
 export const CSR_CAUGHT_SOURCES: CanonicalStatus[] = [
   'deliver to client',

@@ -472,6 +472,10 @@ function SelfViewBody() {
     () => (openTasksQ.data ?? []).filter((t) => t.designer_id === designerId && !t.deleted),
     [openTasksQ.data, designerId],
   )
+  // Today's / this week's plate counts projects by DUE date, so the summaries
+  // need the live open tasks as well as the trend-window fetch. summarizeDesigner
+  // dedupes by task id, so merging is safe.
+  const summaryTasks = useMemo(() => [...myOpenTasks, ...myTasks], [myOpenTasks, myTasks])
 
   const weekSum: DesignerPeriodSummary | null = useMemo(
     () =>
@@ -479,12 +483,12 @@ function SelfViewBody() {
         ? summarizeDesigner(designerId, {
             start: dates.weekStart,
             end: dates.weekEnd,
-            tasks: myTasks,
+            tasks: summaryTasks,
             metrics: myMetrics,
             quota,
           })
         : null,
-    [designerId, dates.weekStart, dates.weekEnd, myTasks, myMetrics, quota],
+    [designerId, dates.weekStart, dates.weekEnd, summaryTasks, myMetrics, quota],
   )
   const prevSum: DesignerPeriodSummary | null = useMemo(
     () =>
@@ -492,12 +496,12 @@ function SelfViewBody() {
         ? summarizeDesigner(designerId, {
             start: dates.prior.start,
             end: dates.prior.end,
-            tasks: myTasks,
+            tasks: summaryTasks,
             metrics: myMetrics,
             quota,
           })
         : null,
-    [designerId, dates.prior, myTasks, myMetrics, quota],
+    [designerId, dates.prior, summaryTasks, myMetrics, quota],
   )
   const daySum: DesignerPeriodSummary | null = useMemo(
     () =>
@@ -505,12 +509,12 @@ function SelfViewBody() {
         ? summarizeDesigner(designerId, {
             start: active.workDate,
             end: active.workDate,
-            tasks: myTasks,
+            tasks: summaryTasks,
             metrics: myMetrics,
             quota,
           })
         : null,
-    [designerId, active.workDate, myTasks, myMetrics, quota],
+    [designerId, active.workDate, summaryTasks, myMetrics, quota],
   )
   const expectedToday = designerId ? expectedQuotaOn(designerId, active.workDate, quota) : 0
 
@@ -721,7 +725,7 @@ function SelfViewBody() {
         <WeekSection
           designerId={designerId}
           period={metricsPeriod}
-          tasks={myTasks}
+          tasks={summaryTasks}
           metrics={myMetrics}
           attendance={myAttendance}
           trendLoading={analyticsLoading}

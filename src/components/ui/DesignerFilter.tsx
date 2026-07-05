@@ -56,15 +56,17 @@ export function DesignerFilter({
   }, [open])
 
   const isEveryone = selected.length === 0
-  const isChecked = (id: string) => isEveryone || selected.includes(id)
+  // In "All designers" mode the people below stay unticked — only an explicit,
+  // specific pick shows ticks — so "All" reads as one clean choice, not a list
+  // of sixteen ticked names.
+  const isChecked = (id: string) => selected.includes(id)
 
   const toggle = (id: string) => {
-    const effective = isEveryone ? allIds : selected
-    const next = effective.includes(id)
-      ? effective.filter((x) => x !== id)
-      : [...effective, id]
-    // Everyone-selected or nobody-selected both collapse to the clean "everyone"
-    // state, so the report is never filtered down to an empty page.
+    // Starting from everyone, picking a person begins a fresh list with just
+    // that one. Otherwise add or remove them. Picking everyone, or nobody,
+    // snaps back to the clean "All designers" choice.
+    const base = isEveryone ? [] : selected
+    const next = base.includes(id) ? base.filter((x) => x !== id) : [...base, id]
     onChange(next.length === 0 || next.length === allIds.length ? [] : next)
   }
 
@@ -103,18 +105,26 @@ export function DesignerFilter({
           aria-label="Choose which designers to show"
           className="absolute left-0 top-full z-palette mt-2 max-h-[60vh] w-[260px] overflow-y-auto rounded-xl border border-border bg-surface p-2 shadow-raised"
         >
-          <div className="flex items-center justify-between px-2 py-1.5">
-            <span className="text-label uppercase text-muted">Show</span>
-            {!isEveryone && (
-              <button
-                type="button"
-                onClick={() => onChange([])}
-                className="rounded-md px-2 py-1 text-label font-semibold text-brand hover:bg-brand-soft"
-              >
-                Everyone
-              </button>
-            )}
-          </div>
+          {/* "All designers" is one clean choice, ticked by default — the
+              people below stay unticked until you pick someone specific. */}
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={isEveryone}
+            onClick={() => onChange([])}
+            className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2 text-left text-caption font-semibold text-fg transition-colors duration-150 hover:bg-surface-2"
+          >
+            <span
+              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                isEveryone ? 'border-brand bg-brand text-brand-fg' : 'border-border bg-surface'
+              }`}
+              aria-hidden="true"
+            >
+              {isEveryone && <Check className="h-3 w-3" strokeWidth={3} />}
+            </span>
+            All designers
+          </button>
+          <div className="mx-1 my-1.5 h-px bg-border" />
           {[...byTeam.entries()].map(([team, members]) => (
             <div key={team} className="mt-1">
               <p className="px-2 pb-1 pt-1.5 text-label font-semibold uppercase tracking-[0.08em] text-muted">

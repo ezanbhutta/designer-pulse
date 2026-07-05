@@ -5,7 +5,7 @@
  * never raw counts (spec §2).
  */
 
-import { ACTIVE_LOAD_STATUSES, type CanonicalStatus } from './statuses'
+import { ACTIVE_LOAD_STATUSES, DELIVERED_STATUSES, type CanonicalStatus } from './statuses'
 import { addDays, dateRange, dowOf, pktDateOf } from './pkt'
 import { leaveCovers } from './attendance'
 import type {
@@ -119,13 +119,26 @@ const inPeriod = (iso: string | null, start: string, end: string) => {
 }
 
 export function summarizeDesigner(designerId: string, p: PeriodInputs): DesignerPeriodSummary {
-  const tasks = p.tasks.filter((t) => t.designer_id === designerId && !t.deleted)
+  // Dedupe by task id first, so a merged task set (open tasks + recent tasks,
+  // as the reports now pass) can never count the same project twice.
+  const tasks = [
+    ...new Map(
+      p.tasks.filter((t) => t.designer_id === designerId && !t.deleted).map((t) => [t.task_id, t]),
+    ).values(),
+  ]
   const byId = new Map(tasks.map((t) => [t.task_id, t]))
   const metrics = p.metrics.filter((m) => m.designer_id === designerId && byId.has(m.task_id))
 
-  const assignedTasks = tasks.filter((t) => inPeriod(t.created_at, p.start, p.end))
-  const completedTasks = tasks.filter(
-    (t) => t.current_status === 'complete' && inPeriod(t.closed_at ?? t.last_event_at, p.start, p.end),
+  // The plate (owner's rule, §slot): the projects whose DUE DATE falls in the
+  // period are the work the designer was meant to deliver in this window —
+  // creation date and status do not decide the plate.
+  const plate = tasks.filter((t) => inPeriod(t.due_date, p.start, p.end))
+  // Done = the designer has DELIVERED the first design (it has reached "deliver
+  // to client" or any later stage) — not only the projects whose whole order
+  // is finally closed. A project sitting in "pickup" or "in progress" is still
+  // an open slot; a delivered one counts, even while it waits with the client.
+  const completedTasks = plate.filter(
+    (t) => t.current_status != null && DELIVERED_STATUSES.includes(t.current_status),
   )
   const cancelledTasks = tasks.filter(
     (t) => t.current_status === 'cancelled' && inPeriod(t.closed_at ?? t.last_event_at, p.start, p.end),
@@ -133,28 +146,28 @@ export function summarizeDesigner(designerId: string, p: PeriodInputs): Designer
   const deliveredMetrics = metrics.filter((m) => inPeriod(m.first_delivered_at, p.start, p.end))
   const clean = deliveredMetrics.filter((m) => m.first_pass_clean).length
 
-  const assignedIds = new Set(assignedTasks.map((t) => t.task_id))
-  const assignedMetrics = metrics.filter((m) => assignedIds.has(m.task_id))
-  const revisionRounds = assignedMetrics.reduce((s, m) => s + m.revision_rounds, 0)
+  const plateIds = new Set(plate.map((t) => t.task_id))
+  const plateMetrics = metrics.filter((m) => plateIds.has(m.task_id))
+  const revisionRounds = plateMetrics.reduce((s, m) => s + m.revision_rounds, 0)
 
   const expected = expectedQuotaRange(designerId, p.start, p.end, p.quota)
   const productionMedian = median(
     deliveredMetrics.map((m) => m.production_min!).filter((x) => x != null),
   )
   const revisionMedian = median(
-    assignedMetrics
+    plateMetrics
       .map((m) => m.revision_turnaround_min!)
       .filter((x): x is number => x != null),
   )
 
   return {
     designerId,
-    assigned: assignedTasks.length,
+    assigned: plate.length,
     completed: completedTasks.length,
     cancelled: cancelledTasks.length,
     revisionRounds,
-    csrCaughtRounds: assignedMetrics.reduce((s, m) => s + m.csr_caught_rounds, 0),
-    clientCaughtRounds: assignedMetrics.reduce((s, m) => s + m.client_caught_rounds, 0),
+    csrCaughtRounds: plateMetrics.reduce((s, m) => s + m.csr_caught_rounds, 0),
+    clientCaughtRounds: plateMetrics.reduce((s, m) => s + m.client_caught_rounds, 0),
     delivered: deliveredMetrics.length,
     firstPassClean: clean,
     firstPassQualityPct: deliveredMetrics.length
@@ -164,11 +177,11 @@ export function summarizeDesigner(designerId: string, p: PeriodInputs): Designer
     attainmentPct: expected > 0 ? Math.round((completedTasks.length / expected) * 100) : null,
     productionMedianMin: productionMedian,
     revisionTurnaroundMedianMin: revisionMedian,
-    cancellationRatePct: assignedTasks.length
-      ? Math.round((cancelledTasks.length / assignedTasks.length) * 100)
+    cancellationRatePct: plate.length
+      ? Math.round((cancelledTasks.length / plate.length) * 100)
       : null,
-    reworkLoad: assignedTasks.length
-      ? Math.round((revisionRounds / assignedTasks.length) * 10) / 10
+    reworkLoad: plate.length
+      ? Math.round((revisionRounds / plate.length) * 10) / 10
       : null,
   }
 }
