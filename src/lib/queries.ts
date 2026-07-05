@@ -16,6 +16,7 @@ import type {
   Config,
   Designer,
   DesignerSchedule,
+  DayNote,
   HalfDay,
   Holiday,
   HolidayWorker,
@@ -47,6 +48,7 @@ export const qk = {
   shiftMarks: (date: string) => ['shift-marks', date] as const,
   config: ['config'] as const,
   cancelledTasks: ['tasks', 'cancelled'] as const,
+  dayNotes: (start: string, end: string) => ['day-notes', start, end] as const,
 }
 
 function throwIf<T>(data: T | null, error: { message: string } | null): T {
@@ -264,6 +266,33 @@ export async function requestLeave(req: {
   reason: string | null
 }) {
   const { error } = await supabase.from('leaves').insert({ ...req, status: 'pending', paid: true })
+  if (error) throw new Error(error.message)
+}
+
+// ── Day notes (dated context on the reports) ─────────────────────────────────
+
+export async function fetchDayNotes(start: string, end: string): Promise<DayNote[]> {
+  const { data, error } = await supabase
+    .from('day_notes')
+    .select('*')
+    .gte('the_date', start)
+    .lte('the_date', end)
+    .order('the_date', { ascending: false })
+    .order('created_at', { ascending: false })
+  return throwIf(data, error)
+}
+
+export async function insertDayNote(note: {
+  designer_id: string | null
+  the_date: string
+  note: string
+}): Promise<void> {
+  const { error } = await supabase.from('day_notes').insert(note)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteDayNote(id: string): Promise<void> {
+  const { error } = await supabase.from('day_notes').delete().eq('id', id)
   if (error) throw new Error(error.message)
 }
 

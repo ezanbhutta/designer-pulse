@@ -143,6 +143,16 @@ export interface Leave {
   created_at: string
 }
 
+/** A dated note explaining a day's context (e.g. a workload agreement). */
+export interface DayNote {
+  id: string
+  designer_id: string | null // null = the whole studio
+  the_date: string
+  note: string
+  created_by: string | null
+  created_at: string
+}
+
 export interface HalfDay {
   id: string
   designer_id: string

@@ -20,6 +20,7 @@ import {
   type RangeMode,
 } from '../../components/ui/DateRangePicker'
 import { DesignerFilter } from '../../components/ui/DesignerFilter'
+import { ReportNotes, useDayNotes, dayNotesToText } from '../../components/shared/ReportNotes'
 import { StatTile } from '../../components/ui/StatTile'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
@@ -78,17 +79,10 @@ export default function OpsReports() {
   const range = { start: value.start, end: value.end }
   const prior = priorPeriod(range.start, range.end)
 
-  // Who to include (empty = everyone) and the free-text note printed on the PDF,
-  // both remembered on this machine; the note is kept per period so last week's
-  // context never bleeds into this week's report.
+  // Who to include (empty = everyone), remembered on this machine.
   const [selectedIds, setSelectedIds] = useLocalStorage<string[]>('pulse.ops.reports.designers', [])
-  const [notesByPeriod, setNotesByPeriod] = useLocalStorage<Record<string, string>>(
-    'pulse.ops.reports.notes',
-    {},
-  )
-  const periodKey = `${range.start}_${range.end}`
-  const notes = notesByPeriod[periodKey] ?? ''
-  const setNotes = (v: string) => setNotesByPeriod({ ...notesByPeriod, [periodKey]: v })
+  // Dated notes for this period — saved centrally, shown below and on the PDF.
+  const notesQ = useDayNotes(range.start, range.end)
 
   const designersQ = useDesigners()
   const { ctx } = useQuotaCtx()
@@ -211,7 +205,7 @@ export default function OpsReports() {
         period: { start: range.start, end: range.end },
         rows: rows.map((r) => r.cur),
         designers: designersQ.data ?? [],
-        notes,
+        notes: dayNotesToText(notesQ.data ?? [], designersQ.data ?? []),
       })
       toast({ message: `PDF for ${rangeLabel} downloaded` })
     } catch (e) {
@@ -272,23 +266,7 @@ export default function OpsReports() {
         />
       )}
 
-      <section aria-label="Notes for this report" className="card p-5">
-        <label htmlFor="report-notes" className="eyebrow inline-flex items-center gap-1">
-          Notes for this report
-          <InfoTip text="Add any context you want to sit alongside the numbers — for example, if you agreed with a designer to take on fewer or more projects this period because of workload. Whatever you write here is printed on the downloaded PDF." />
-        </label>
-        <textarea
-          id="report-notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={3}
-          placeholder="For example: Nimeazad took on fewer projects this week by agreement, to focus on the Aldercrest brand."
-          className="mt-3 w-full resize-y rounded-xl border border-border bg-surface px-3 py-2 text-caption text-fg transition-colors placeholder:text-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-        />
-        <p className="mt-2 text-label text-muted">
-          Saved for this period on this computer, and printed at the top of the PDF.
-        </p>
-      </section>
+      <ReportNotes designers={activeDesigners} start={range.start} end={range.end} />
 
       <VerdictBlock
         title={`What stands out · ${MODE_LABEL[value.mode].toLowerCase()}`}

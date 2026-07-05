@@ -27,6 +27,7 @@ import {
   type RangeMode,
 } from '../../components/ui/DateRangePicker'
 import { DesignerFilter } from '../../components/ui/DesignerFilter'
+import { ReportNotes, useDayNotes, dayNotesToText } from '../../components/shared/ReportNotes'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/ToastProvider'
@@ -88,16 +89,10 @@ export default function CeoReports() {
   const period: PeriodRange = { start: value.start, end: value.end }
   const prior = priorPeriod(period.start, period.end)
 
-  // Who to include (empty = everyone) and the free-text note printed on the PDF,
-  // remembered on this machine; the note is kept per period.
+  // Who to include (empty = everyone), remembered on this machine.
   const [selectedIds, setSelectedIds] = useLocalStorage<string[]>('pulse.ceo.reports.designers', [])
-  const [notesByPeriod, setNotesByPeriod] = useLocalStorage<Record<string, string>>(
-    'pulse.ceo.reports.notes',
-    {},
-  )
-  const periodKey = `${period.start}_${period.end}`
-  const notes = notesByPeriod[periodKey] ?? ''
-  const setNotes = (v: string) => setNotesByPeriod({ ...notesByPeriod, [periodKey]: v })
+  // Dated notes for this period — saved centrally, shown below and on the PDF.
+  const notesQ = useDayNotes(period.start, period.end)
 
   const designersQ = useDesigners()
   const cfg = useConfigValues()
@@ -176,7 +171,7 @@ export default function CeoReports() {
       period,
       rows: model.rows.map((r) => r.cur),
       designers: model.active,
-      notes,
+      notes: dayNotesToText(notesQ.data ?? [], allActive),
     })
     toast({ message: `Weekly PDF for ${fmtDate(period.start)} – ${fmtDate(period.end)} downloaded.` })
   }
@@ -249,23 +244,7 @@ export default function CeoReports() {
         />
       )}
 
-      <section aria-label="Notes for this report" className="card p-5">
-        <label htmlFor="ceo-report-notes" className="eyebrow inline-flex items-center gap-1">
-          Notes for this report
-          <InfoTip text="Add any context you want to sit alongside the numbers — for example, if fewer or more projects were assigned this period by agreement because of workload. Whatever you write here is printed on the downloaded PDF." />
-        </label>
-        <textarea
-          id="ceo-report-notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={3}
-          placeholder="For example: Nimeazad took on fewer projects this week by agreement, to focus on the Aldercrest brand."
-          className="mt-3 w-full resize-y rounded-xl border border-border bg-surface px-3 py-2 text-caption text-fg transition-colors placeholder:text-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-        />
-        <p className="mt-2 text-label text-muted">
-          Saved for this period on this computer, and printed at the top of the PDF.
-        </p>
-      </section>
+      <ReportNotes designers={allActive} start={period.start} end={period.end} />
 
       {/* Weekly summary paragraph — assembled deterministically from the computed
           metrics with template sentences. §22.11 permits an LLM-generated
