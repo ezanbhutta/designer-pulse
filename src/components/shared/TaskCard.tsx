@@ -123,9 +123,9 @@ export const TaskCard = memo(function TaskCard({
         // on the dark cockpit background. active:scale is the tactile press
         // (manifesto pillar 8 — the card physically reacts to pressure).
         className={`${frame} block min-h-11 transition-[box-shadow,background-color,transform] duration-200 ease-out hover:bg-surface-2/50 hover:shadow-raised motion-safe:active:scale-[0.99]`}
-        aria-label={`${task.name ?? 'Untitled project'} — ${
+        aria-label={`${task.name ?? 'Untitled project'}, ${
           status ? STATUS_LABELS[status] : 'no status'
-        }, open history`}
+        }. Open its history.`}
       >
         {body}
       </button>

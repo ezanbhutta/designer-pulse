@@ -325,8 +325,10 @@ export default function OpsAlerts() {
                           <Badge tone={SEVERITY_TONE[a.severity]}>{SEVERITY_LABELS[a.severity]}</Badge>
                           {a.status === 'acknowledged' && <Badge tone="neutral">Seen</Badge>}
                           {resolved && <Badge tone="success" icon={CheckCheck}>Done</Badge>}
-                          <span>raised {fmtDateTime(a.fired_at)}</span>
-                          {resolved && a.resolved_at && <span>· done {fmtDateTime(a.resolved_at)}</span>}
+                          <span>
+                            raised {fmtDateTime(a.fired_at)}
+                            {resolved && a.resolved_at ? `, done ${fmtDateTime(a.resolved_at)}` : ''}
+                          </span>
                         </p>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1.5">

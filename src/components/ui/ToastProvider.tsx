@@ -162,7 +162,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       try {
         await t.undo?.()
       } catch {
-        push({ message: "Couldn't undo — the change may already be saved" })
+        push({ message: 'That could not be undone. The change may already be saved.' })
       }
     },
     [dismiss, push],

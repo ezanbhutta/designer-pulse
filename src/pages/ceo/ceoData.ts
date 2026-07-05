@@ -379,7 +379,7 @@ export function constraintRead(
   return {
     status: top.status,
     owner,
-    line: `Right now, most of the open time sits with ${owner} — ${top.count} open project${top.count === 1 ? ' has' : 's have'} been there about ${fmtDur(top.medianAgeMin)}, at "${STATUS_LABELS[top.status].toLowerCase()}".`,
+    line: `Right now, most of the open time sits with ${owner}, where ${top.count} open project${top.count === 1 ? ' has' : 's have'} been sitting for about ${fmtDur(top.medianAgeMin)}, at "${STATUS_LABELS[top.status].toLowerCase()}".`,
   }
 }
 
