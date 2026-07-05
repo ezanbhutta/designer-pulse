@@ -10,6 +10,7 @@ import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Clock, GitBranch, ShieldCheck, Sparkles } from 'lucide-react'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { DesignerFilter } from '../../components/ui/DesignerFilter'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { StatTile } from '../../components/ui/StatTile'
@@ -17,6 +18,7 @@ import { HBar, type HBarRow } from '../../components/ui/HBar'
 import { DeltaChip } from '../../components/ui/DeltaChip'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { CornerTip, HeroMetric, Reveal, RevealItem } from './ceoKit'
 import {
   ageMinutes,
@@ -82,6 +84,13 @@ export default function CeoOverview() {
   const tasksQ = useTasksWindow(windowStart)
   const metricsQ = useMetricsWindow(windowStart, today)
   const openQ = useOpenTasksLive()
+  // Narrows the "Who stood out" section only — every other verdict and hero
+  // number on this page always covers the whole studio.
+  const [selectedIds, setSelectedIds] = useLocalStorage<string[]>('pulse.ceo.overview.designers', [])
+  const allActive = useMemo(
+    () => (designersQ.data ? activeDesigners(designersQ.data) : []),
+    [designersQ.data],
+  )
 
   const loading =
     designersQ.isLoading || tasksQ.isLoading || metricsQ.isLoading || openQ.isLoading || quotaLoading
@@ -501,6 +510,10 @@ export default function CeoOverview() {
               Compared on &quot;Right first time&quot; and &quot;Target met&quot; only, and never on
               raw counts, because a small logo and a long brand guide are not the same amount of work.
             </p>
+            <div className="mt-4 flex items-center gap-1">
+              <DesignerFilter designers={allActive} selected={selectedIds} onChange={setSelectedIds} />
+              <InfoTip text="Narrow this section to one or more people. The rest of this page always covers the whole studio." />
+            </div>
             {loading ? (
               <div className="mt-6 space-y-2" role="status" aria-label="Loading who stood out">
                 {[0, 1, 2, 3].map((i) => (
@@ -512,12 +525,16 @@ export default function CeoOverview() {
                 <OutlierList
                   title="Right first time"
                   tip="How many designs were accepted without anyone asking for changes. Higher is better."
-                  rows={model?.fpqRanked ?? []}
+                  rows={(model?.fpqRanked ?? []).filter(
+                    (r) => selectedIds.length === 0 || selectedIds.includes(r.designer.id),
+                  )}
                 />
                 <OutlierList
                   title="Target met"
                   tip="Out of the projects they were supposed to take, how many they finished. This is the only fair way to compare different teams."
-                  rows={model?.attRanked ?? []}
+                  rows={(model?.attRanked ?? []).filter(
+                    (r) => selectedIds.length === 0 || selectedIds.includes(r.designer.id),
+                  )}
                 />
               </div>
             )}

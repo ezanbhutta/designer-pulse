@@ -12,11 +12,13 @@ import { Users } from 'lucide-react'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { Badge } from '../../components/ui/Badge'
 import { DeltaChip } from '../../components/ui/DeltaChip'
+import { DesignerFilter } from '../../components/ui/DesignerFilter'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { TrendLine, type TrendPoint } from '../../components/ui/TrendLine'
+import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { HeroMetric, Reveal, RevealItem } from './ceoKit'
 import {
   dueOnDay,
@@ -86,6 +88,16 @@ export default function CeoTeams() {
   const tasksQ = useTasksWindow(windowStart)
   const metricsQ = useMetricsWindow(windowStart, today)
   const openQ = useOpenTasksLive()
+
+  // Narrows which designer rows show inside each team card. Team-level
+  // numbers (quality, wait time, trend) stay computed from the WHOLE team
+  // regardless of this filter — a "team" metric narrowed to one person would
+  // no longer be a team metric.
+  const [selectedIds, setSelectedIds] = useLocalStorage<string[]>('pulse.ceo.teams.designers', [])
+  const allActive = useMemo(
+    () => (designersQ.data ? activeDesigners(designersQ.data) : []),
+    [designersQ.data],
+  )
 
   const loading =
     designersQ.isLoading || tasksQ.isLoading || metricsQ.isLoading || openQ.isLoading || quotaLoading
@@ -217,6 +229,12 @@ export default function CeoTeams() {
           <InfoTip text="How each team is doing this week, covering quality, waiting times, and every designer's numbers." />
         }
         history={`Week of ${fmtDate(week.start)} so far, compared with the same days last week and shown team by team. A logo, a brand guide, and an animation are different amounts of work, so only "Target met" is fair to compare across teams.`}
+        actions={
+          <span className="flex items-center gap-1">
+            <DesignerFilter designers={allActive} selected={selectedIds} onChange={setSelectedIds} />
+            <InfoTip text="Narrow each team's table to one or more people. Team-wide numbers like quality and waiting time still cover the whole team, not just who you've picked." />
+          </span>
+        }
       />
 
       {failed != null && (
@@ -275,12 +293,28 @@ export default function CeoTeams() {
 
       {teams && teams.length > 0 && (
         <Reveal className="space-y-8">
-          {teams.map((t) => (
-            <RevealItem key={t.team}>
-              <TeamCard model={t} />
-            </RevealItem>
-          ))}
+          {teams
+            .map((t) =>
+              selectedIds.length === 0
+                ? t
+                : { ...t, rows: t.rows.filter((r) => selectedIds.includes(r.designer.id)) },
+            )
+            .filter((t) => selectedIds.length === 0 || t.rows.length > 0)
+            .map((t) => (
+              <RevealItem key={t.team}>
+                <TeamCard model={t} />
+              </RevealItem>
+            ))}
         </Reveal>
+      )}
+      {teams && teams.length > 0 && selectedIds.length > 0 && !teams.some(
+        (t) => t.rows.some((r) => selectedIds.includes(r.designer.id)),
+      ) && (
+        <EmptyState
+          icon={Users}
+          title="No one matches that selection"
+          hint="Try choosing a different person, or switch back to all designers."
+        />
       )}
     </div>
   )

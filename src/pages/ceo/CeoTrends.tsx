@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom'
 import { CheckCircle2, Flame, TrendingUp } from 'lucide-react'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { Badge } from '../../components/ui/Badge'
+import { DesignerFilter } from '../../components/ui/DesignerFilter'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
@@ -67,6 +68,8 @@ export default function CeoTrends() {
   const prior14 = priorPeriod(cur14.start, cur14.end)
 
   const [scope, setScope] = useLocalStorage<Scope>('ceo:trends-scope', 'All')
+  // Narrows the overload watch-list below to one or more people.
+  const [selectedIds, setSelectedIds] = useLocalStorage<string[]>('pulse.ceo.trends.designers', [])
 
   const designersQ = useDesigners()
   const cfg = useConfigValues()
@@ -85,6 +88,10 @@ export default function CeoTrends() {
     quotaLoading
   const failed =
     designersQ.error ?? tasksQ.error ?? metricsQ.error ?? openQ.error ?? attendanceQ.error
+  const allActive = useMemo(
+    () => (designersQ.data ? activeDesigners(designersQ.data) : []),
+    [designersQ.data],
+  )
 
   const model = useMemo(() => {
     if (
@@ -258,6 +265,12 @@ export default function CeoTrends() {
           <InfoTip text="How quality, speed, overload and workload have been moving over the last 12 weeks." />
         }
         history="The last 12 weeks, week by week. Each line is measured against its own average over those weeks, so a problem shows up early, before it becomes a crisis"
+        actions={
+          <span className="flex items-center gap-1">
+            <DesignerFilter designers={allActive} selected={selectedIds} onChange={setSelectedIds} />
+            <InfoTip text="Narrow the overload watch-list below to one or more people. The quality and speed charts above always cover the studio or team scope you pick there." />
+          </span>
+        }
       />
 
       {failed != null && (
@@ -399,9 +412,16 @@ export default function CeoTrends() {
               No overload signs. Nobody is trending the wrong way. Good news.
             </p>
           </div>
+        ) : selectedIds.length > 0 &&
+          !model!.risks.some((r) => selectedIds.includes(r.designerId)) ? (
+          <p className="mt-6 text-caption text-muted">
+            No one you've picked is showing overload signs right now, which is good news for them.
+          </p>
         ) : (
           <ul className="mt-6 divide-y divide-border/50">
-            {model!.risks.map((r) => (
+            {model!.risks
+              .filter((r) => selectedIds.length === 0 || selectedIds.includes(r.designerId))
+              .map((r) => (
               <li key={r.designerId} className="flex flex-wrap items-start gap-x-3 gap-y-1 py-3.5">
                 <span className="min-w-[10rem] text-caption font-medium text-fg">
                   {r.name} <span className="text-label font-normal text-muted">{r.team}</span>

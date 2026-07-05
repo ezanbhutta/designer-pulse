@@ -11,13 +11,16 @@ import { useMemo, useState } from 'react'
 import { ChevronRight, ExternalLink, Info, OctagonX } from 'lucide-react'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { Badge } from '../../components/ui/Badge'
+import { DesignerFilter } from '../../components/ui/DesignerFilter'
 import { Drawer } from '../../components/ui/Drawer'
+import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { TaskTrail } from '../../components/shared/TaskTrail'
+import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { CalmClear, CornerTip, HeroMetric, Reveal, RevealItem } from './ceoKit'
 import { pktDateOf, pktToday } from '../../../shared/pkt'
 import type { Designer, TaskState } from '../../../shared/types'
@@ -58,6 +61,16 @@ export default function CeoCancellations() {
   const openQ = useOpenTasksLive()
 
   const [selected, setSelected] = useState<TaskState | null>(null)
+  // Narrows which designer's group of cancellations shows. The verdict and
+  // hero number above stay computed for the whole studio.
+  const [selectedIds, setSelectedIds] = useLocalStorage<string[]>(
+    'pulse.ceo.cancellations.designers',
+    [],
+  )
+  const allActive = useMemo(
+    () => (designersQ.data ? activeDesigners(designersQ.data) : []),
+    [designersQ.data],
+  )
 
   const loading = designersQ.isLoading || cancelledQ.isLoading || tasksQ.isLoading
   const failed = designersQ.error ?? cancelledQ.error ?? tasksQ.error
@@ -143,6 +156,12 @@ export default function CeoCancellations() {
           <InfoTip text="Orders lost because of design problems. Open each one to see its full story before judging anyone." />
         }
         history="Every order lost because of a design problem, with its full history one click away"
+        actions={
+          <span className="flex items-center gap-1">
+            <DesignerFilter designers={allActive} selected={selectedIds} onChange={setSelectedIds} />
+            <InfoTip text="Narrow this list to one or more people. Leave it on everyone to see every group." />
+          </span>
+        }
       />
 
       {failed != null && (
@@ -207,9 +226,25 @@ export default function CeoCancellations() {
         />
       )}
 
-      {model && model.groups.length > 0 && (
-        <Reveal className="space-y-8">
-          {model.groups.map((g) => (
+      {model &&
+        model.groups.length > 0 &&
+        (() => {
+          const groups =
+            selectedIds.length === 0
+              ? model.groups
+              : model.groups.filter((g) => g.designer && selectedIds.includes(g.designer.id))
+          if (groups.length === 0) {
+            return (
+              <EmptyState
+                icon={OctagonX}
+                title="No one matches that selection"
+                hint="Try choosing a different person, or switch back to everyone."
+              />
+            )
+          }
+          return (
+            <Reveal className="space-y-8">
+              {groups.map((g) => (
             <RevealItem key={g.designer?.id ?? 'unassigned'}>
               <section
                 className="card p-8"
@@ -254,9 +289,10 @@ export default function CeoCancellations() {
                 </ul>
               </section>
             </RevealItem>
-          ))}
-        </Reveal>
-      )}
+              ))}
+            </Reveal>
+          )
+        })()}
 
       <Drawer
         open={selected != null}

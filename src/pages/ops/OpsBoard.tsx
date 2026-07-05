@@ -1,13 +1,24 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { CheckCircle2, ChevronDown, ChevronRight, ExternalLink, TriangleAlert } from 'lucide-react'
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Flag,
+  ListFilter,
+  TriangleAlert,
+  Users,
+} from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { Drawer } from '../../components/ui/Drawer'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
+import { MultiSelectFilter } from '../../components/ui/MultiSelectFilter'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
+import { SortMenu } from '../../components/ui/SortMenu'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { TaskCard } from '../../components/shared/TaskCard'
 import { TaskTrail } from '../../components/shared/TaskTrail'
@@ -42,9 +53,46 @@ import {
 } from './opsData'
 
 type GroupBy = 'status' | 'designer'
+type SortBy = 'oldest' | 'newest' | 'priority' | 'name'
 
 const OPEN_STATUSES = STATUSES.filter((s) => !TERMINAL_STATUSES.includes(s))
 const COLUMN_CAP = 100
+
+const PRIORITY_OPTIONS = [
+  { value: 'urgent', label: 'Urgent' },
+  { value: 'high', label: 'High' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'low', label: 'Low' },
+]
+
+const SORT_OPTIONS: Array<{ value: SortBy; label: string }> = [
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'newest', label: 'Newest first' },
+  { value: 'priority', label: 'Priority first' },
+  { value: 'name', label: 'Name, A to Z' },
+]
+
+const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 }
+
+/** One sort, used everywhere a column or group of cards is ordered. */
+function sortTasksBy(sortBy: SortBy, now: Date) {
+  return (a: TaskState, b: TaskState) => {
+    switch (sortBy) {
+      case 'newest':
+        return ageMinutes(a, now) - ageMinutes(b, now)
+      case 'priority': {
+        const pa = PRIORITY_RANK[a.priority?.toLowerCase() ?? ''] ?? 4
+        const pb = PRIORITY_RANK[b.priority?.toLowerCase() ?? ''] ?? 4
+        return pa - pb || ageMinutes(b, now) - ageMinutes(a, now)
+      }
+      case 'name':
+        return (a.name ?? '').localeCompare(b.name ?? '')
+      case 'oldest':
+      default:
+        return ageMinutes(b, now) - ageMinutes(a, now)
+    }
+  }
+}
 
 /**
  * The live status board (spec §13.1): every open task by status or by
@@ -71,6 +119,15 @@ export default function OpsBoard() {
   // The disclosure remembers last use (§20.4), like the sibling group-by.
   const [showClosed, setShowClosed] = useLocalStorage<boolean>('pulse.ops.board.closed', false)
   const [trailTask, setTrailTask] = useState<TaskState | null>(null)
+
+  // Stage, priority and team filters (empty = everything), plus how cards
+  // order within each column or group. These only decide what's SHOWN — the
+  // health numbers in the header above stay computed from the real, unfiltered
+  // board, so an active filter never quietly hides a stuck-project warning.
+  const [statusFilter, setStatusFilter] = useLocalStorage<string[]>('pulse.ops.board.statusFilter', [])
+  const [priorityFilter, setPriorityFilter] = useLocalStorage<string[]>('pulse.ops.board.priorityFilter', [])
+  const [teamFilter, setTeamFilter] = useLocalStorage<string[]>('pulse.ops.board.teamFilter', [])
+  const [sortBy, setSortBy] = useLocalStorage<SortBy>('pulse.ops.board.sort', 'oldest')
 
   // A true Kanban: the columns fill the viewport below the header and each
   // column scrolls its OWN cards — the page frame never scrolls. The board's
@@ -109,6 +166,32 @@ export default function OpsBoard() {
     [designersQ.data],
   )
   const openTasks = openTasksQ.data ?? []
+
+  const teamOptions = useMemo(
+    () => [...new Set(designers.map((d) => d.team))].sort().map((t) => ({ value: t, label: t })),
+    [designers],
+  )
+
+  // Priority and team both narrow which cards show, everywhere on the board.
+  // Stage is handled separately per grouping: it picks which columns appear
+  // when grouped by stage, and filters cards directly when grouped by person.
+  const passesFilter = useMemo(() => {
+    return (t: TaskState) => {
+      if (priorityFilter.length > 0) {
+        const p = t.priority?.toLowerCase() ?? 'none'
+        if (!priorityFilter.includes(p)) return false
+      }
+      if (teamFilter.length > 0) {
+        const team = t.designer_id ? designerById.get(t.designer_id)?.team : undefined
+        if (!team || !teamFilter.includes(team)) return false
+      }
+      return true
+    }
+  }, [priorityFilter, teamFilter, designerById])
+  const matchesStatusFilter = (t: TaskState) =>
+    statusFilter.length === 0 || (t.current_status != null && statusFilter.includes(t.current_status))
+  const sortCmp = sortTasksBy(sortBy, now)
+  const filtersActive = statusFilter.length > 0 || priorityFilter.length > 0 || teamFilter.length > 0
 
   const closedToday = useMemo(
     () =>
@@ -281,6 +364,35 @@ export default function OpsBoard() {
         }
       />
 
+      {/* ── Narrow what shows: stage, priority and team, plus how to order it.
+          These only change what's on screen — the health numbers above stay
+          computed from the whole board. ── */}
+      <div className="mb-8 flex flex-wrap items-center gap-2">
+        <MultiSelectFilter
+          label="Stages"
+          icon={ListFilter}
+          options={OPEN_STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] }))}
+          selected={statusFilter}
+          onChange={setStatusFilter}
+        />
+        <MultiSelectFilter
+          label="Priorities"
+          icon={Flag}
+          options={PRIORITY_OPTIONS}
+          selected={priorityFilter}
+          onChange={setPriorityFilter}
+        />
+        <MultiSelectFilter
+          label="Teams"
+          icon={Users}
+          options={teamOptions}
+          selected={teamFilter}
+          onChange={setTeamFilter}
+        />
+        <SortMenu value={sortBy} onChange={setSortBy} options={SORT_OPTIONS} />
+        <InfoTip text="Narrow the board to certain stages, priorities or teams, and choose how cards are ordered within each column or person. Leave everything on 'All' to see the whole board." />
+      </div>
+
       {openTasksQ.error && (
         <ErrorBanner
           message="We couldn't load the latest projects, so you're seeing the last saved view."
@@ -318,8 +430,11 @@ export default function OpsBoard() {
           style={boardHeight ? { height: boardHeight } : undefined}
           className="flex items-stretch gap-5 overflow-x-auto pb-2"
         >
-          {[...OPEN_STATUSES, ...(showClosed ? TERMINAL_STATUSES : [])].map((status) => {
-            const tasks = derived.byStatus.get(status) ?? []
+          {[
+            ...OPEN_STATUSES.filter((s) => statusFilter.length === 0 || statusFilter.includes(s)),
+            ...(showClosed ? TERMINAL_STATUSES : []),
+          ].map((status) => {
+            const tasks = (derived.byStatus.get(status) ?? []).filter(passesFilter).sort(sortCmp)
             return (
               <section
                 key={status}
@@ -367,144 +482,168 @@ export default function OpsBoard() {
               </section>
             )
           })}
-          {/* ── Unmapped-status bucket — never invisible to Ops ── */}
-          {derived.unmapped.length > 0 && (
-            <section className="flex w-72 shrink-0 flex-col" aria-label="Unknown status">
-              <div className="flex items-center justify-between gap-2 px-1 pb-3">
-                <Badge tone="warning" icon={TriangleAlert}>
-                  Unknown status
-                </Badge>
-                <span className="tnum text-caption text-muted">{derived.unmapped.length}</span>
-              </div>
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
-                <p className="rounded-xl bg-warning-soft px-3 py-2 text-caption leading-snug text-warning">
-                  We don't recognize this status name. Please check the list's statuses in ClickUp.
-                </p>
-                {derived.unmapped.slice(0, COLUMN_CAP).map((t) => (
-                  <TaskCard
-                    key={t.task_id}
-                    task={t}
-                    designerName={
-                      t.designer_id ? designerById.get(t.designer_id)?.name : undefined
-                    }
-                    onOpen={() => setTrailTask(t)}
-                  />
-                ))}
-                {derived.unmapped.length > COLUMN_CAP && (
-                  <p className="text-center text-label font-normal tracking-normal text-muted">
-                    +{derived.unmapped.length - COLUMN_CAP} more with unknown statuses
-                  </p>
-                )}
-              </div>
-            </section>
-          )}
+          {/* ── Unmapped-status bucket — never invisible to Ops. Hidden only when
+              a stage filter is active, since none of these has a known stage
+              to match against. ── */}
+          {statusFilter.length === 0 &&
+            (() => {
+              const unmapped = derived.unmapped.filter(passesFilter).sort(sortCmp)
+              return (
+                unmapped.length > 0 && (
+                  <section className="flex w-72 shrink-0 flex-col" aria-label="Unknown status">
+                    <div className="flex items-center justify-between gap-2 px-1 pb-3">
+                      <Badge tone="warning" icon={TriangleAlert}>
+                        Unknown status
+                      </Badge>
+                      <span className="tnum text-caption text-muted">{unmapped.length}</span>
+                    </div>
+                    <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+                      <p className="rounded-xl bg-warning-soft px-3 py-2 text-caption leading-snug text-warning">
+                        We don't recognize this status name. Please check the list's statuses in ClickUp.
+                      </p>
+                      {unmapped.slice(0, COLUMN_CAP).map((t) => (
+                        <TaskCard
+                          key={t.task_id}
+                          task={t}
+                          designerName={
+                            t.designer_id ? designerById.get(t.designer_id)?.name : undefined
+                          }
+                          onOpen={() => setTrailTask(t)}
+                        />
+                      ))}
+                      {unmapped.length > COLUMN_CAP && (
+                        <p className="text-center text-label font-normal tracking-normal text-muted">
+                          +{unmapped.length - COLUMN_CAP} more with unknown statuses
+                        </p>
+                      )}
+                    </div>
+                  </section>
+                )
+              )
+            })()}
         </div>
       ) : (
         // ── Grouped by designer (teams first — cross-team raw counts aren't comparable, §2) ──
         <div className="space-y-12">
-          {[...teams.entries()].map(([team, members]) => (
-            <section key={team} aria-label={`${team} team`}>
-              <h2 className="eyebrow">{team}</h2>
-              <div className="mt-4 space-y-6">
-                {members.map((d) => {
-                  const tasks = byDesigner.map.get(d.id) ?? []
-                  const gap = derived.gapRows.find((r) => r.d.id === d.id)
-                  const listUrl = clickupListUrl(d.clickup_list_id)
-                  return (
-                    <div key={d.id} className="card p-6">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openDesigner(d.id)}
-                          className="min-h-11 text-left text-caption font-semibold text-fg transition-colors duration-150 ease-out hover:text-brand"
-                        >
-                          {d.name}
-                          <span className="ml-2 font-normal text-muted">
-                            {tasks.length} open
-                            {gap && gap.expected > 0 && (
-                              <span className="tnum">
-                                , and has {gap.filled} of {gap.expected} today
-                              </span>
-                            )}
-                          </span>
-                        </button>
-                        {listUrl && (
-                          <a
-                            href={listUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex min-h-11 items-center gap-1 text-label text-brand hover:underline"
+          {[...teams.entries()]
+            .filter(([team]) => teamFilter.length === 0 || teamFilter.includes(team))
+            .map(([team, members]) => (
+              <section key={team} aria-label={`${team} team`}>
+                <h2 className="eyebrow">{team}</h2>
+                <div className="mt-4 space-y-6">
+                  {members.map((d) => {
+                    const allTasks = byDesigner.map.get(d.id) ?? []
+                    const tasks = allTasks
+                      .filter((t) => passesFilter(t) && matchesStatusFilter(t))
+                      .sort(sortCmp)
+                    const gap = derived.gapRows.find((r) => r.d.id === d.id)
+                    const listUrl = clickupListUrl(d.clickup_list_id)
+                    return (
+                      <div key={d.id} className="card p-6">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openDesigner(d.id)}
+                            className="min-h-11 text-left text-caption font-semibold text-fg transition-colors duration-150 ease-out hover:text-brand"
                           >
-                            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                            Open list in ClickUp
-                          </a>
-                        )}
-                      </div>
-                      {gap?.gapLive && (
-                        <div
-                          className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-warning-soft px-3 py-2 text-caption text-warning"
-                          role="status"
-                        >
-                          <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
-                          <span>
-                            {gap.expected - gap.filled} open slot
-                            {gap.expected - gap.filled === 1 ? '' : 's'} today, so {firstName(d.name)}{' '}
-                            can take on more. Handing out the work is the team lead's job, not theirs.
-                          </span>
+                            {d.name}
+                            <span className="ml-2 font-normal text-muted">
+                              {allTasks.length} open
+                              {gap && gap.expected > 0 && (
+                                <span className="tnum">
+                                  , and has {gap.filled} of {gap.expected} today
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                          {listUrl && (
+                            <a
+                              href={listUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex min-h-11 items-center gap-1 text-label text-brand hover:underline"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                              Open list in ClickUp
+                            </a>
+                          )}
                         </div>
-                      )}
-                      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                        {tasks.length === 0 ? (
-                          <p className="text-caption text-muted">
-                            No projects right now, so they can take on new work.
-                          </p>
-                        ) : (
-                          tasks.map((t) => (
-                            <TaskCard key={t.task_id} task={t} onOpen={() => setTrailTask(t)} />
-                          ))
+                        {gap?.gapLive && (
+                          <div
+                            className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-warning-soft px-3 py-2 text-caption text-warning"
+                            role="status"
+                          >
+                            <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            <span>
+                              {gap.expected - gap.filled} open slot
+                              {gap.expected - gap.filled === 1 ? '' : 's'} today, so {firstName(d.name)}{' '}
+                              can take on more. Handing out the work is the team lead's job, not theirs.
+                            </span>
+                          </div>
                         )}
+                        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                          {tasks.length === 0 ? (
+                            <p className="text-caption text-muted">
+                              {filtersActive && allTasks.length > 0
+                                ? 'Nothing here matches the current filters.'
+                                : 'No projects right now, so they can take on new work.'}
+                            </p>
+                          ) : (
+                            tasks.map((t) => (
+                              <TaskCard key={t.task_id} task={t} onOpen={() => setTrailTask(t)} />
+                            ))
+                          )}
+                        </div>
                       </div>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+          {/* ── Orphaned bucket: no designer, or a former designer — never invisible,
+              though it drops out under an active team filter since these have
+              no team to match. ── */}
+          {(() => {
+            const orphaned = byDesigner.orphaned
+              .filter((t) => passesFilter(t) && matchesStatusFilter(t))
+              .sort(sortCmp)
+            return (
+              orphaned.length > 0 && (
+                <section aria-label="No designer or former designer">
+                  <h2 className="eyebrow">No designer / former designer</h2>
+                  <div className="card mt-4 p-6">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone="warning" icon={TriangleAlert}>
+                        {orphaned.length} open project{orphaned.length === 1 ? '' : 's'} without an
+                        active designer
+                      </Badge>
+                      <span className="text-caption text-muted">
+                        These have no designer, or their designer has left the roster. You can hand
+                        them to someone in ClickUp.
+                      </span>
                     </div>
-                  )
-                })}
-              </div>
-            </section>
-          ))}
-          {/* ── Orphaned bucket: no designer, or a former designer — never invisible ── */}
-          {byDesigner.orphaned.length > 0 && (
-            <section aria-label="No designer or former designer">
-              <h2 className="eyebrow">No designer / former designer</h2>
-              <div className="card mt-4 p-6">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone="warning" icon={TriangleAlert}>
-                    {byDesigner.orphaned.length} open project
-                    {byDesigner.orphaned.length === 1 ? '' : 's'} without an active designer
-                  </Badge>
-                  <span className="text-caption text-muted">
-                    These have no designer, or their designer has left the roster. You can hand them
-                    to someone in ClickUp.
-                  </span>
-                </div>
-                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  {byDesigner.orphaned.slice(0, COLUMN_CAP).map((t) => (
-                    <TaskCard
-                      key={t.task_id}
-                      task={t}
-                      designerName={
-                        t.designer_id ? designerById.get(t.designer_id)?.name : undefined
-                      }
-                      onOpen={() => setTrailTask(t)}
-                    />
-                  ))}
-                </div>
-                {byDesigner.orphaned.length > COLUMN_CAP && (
-                  <p className="mt-3 text-label font-normal tracking-normal text-muted">
-                    +{byDesigner.orphaned.length - COLUMN_CAP} more without an active designer
-                  </p>
-                )}
-              </div>
-            </section>
-          )}
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {orphaned.slice(0, COLUMN_CAP).map((t) => (
+                        <TaskCard
+                          key={t.task_id}
+                          task={t}
+                          designerName={
+                            t.designer_id ? designerById.get(t.designer_id)?.name : undefined
+                          }
+                          onOpen={() => setTrailTask(t)}
+                        />
+                      ))}
+                    </div>
+                    {orphaned.length > COLUMN_CAP && (
+                      <p className="mt-3 text-label font-normal tracking-normal text-muted">
+                        +{orphaned.length - COLUMN_CAP} more without an active designer
+                      </p>
+                    )}
+                  </div>
+                </section>
+              )
+            )
+          })()}
           {teams.size === 0 && (
             <EmptyState
               title="No designers yet"
