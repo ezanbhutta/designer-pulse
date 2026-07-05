@@ -49,7 +49,7 @@ export function TrendLine({
     return (
       <div
         role="img"
-        aria-label={`${ariaLabel} — no data yet`}
+        aria-label={`${ariaLabel}. There is no data yet.`}
         className="flex items-center justify-center rounded-xl bg-surface-2/60 text-caption text-muted"
         style={{ height }}
       >
@@ -142,7 +142,7 @@ export function TrendLine({
       </div>
       {single && (
         <p className="mt-1.5 text-caption text-muted">
-          Only one week of data yet — the line fills in as weeks pass.
+          There is only one week of data so far. The line will fill in as more weeks pass.
         </p>
       )}
     </div>

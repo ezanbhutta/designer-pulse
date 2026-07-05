@@ -35,8 +35,8 @@ export function dayNotesToText(notes: DayNote[], designers: Designer[]): string 
   return [...notes]
     .sort((a, b) => a.the_date.localeCompare(b.the_date))
     .map((n) => {
-      const who = n.designer_id ? nameById.get(n.designer_id) ?? 'A designer' : 'Whole studio'
-      return `${fmtDate(n.the_date)} — ${who}: ${n.note}`
+      const who = n.designer_id ? nameById.get(n.designer_id) ?? 'a designer' : 'the whole studio'
+      return `On ${fmtDate(n.the_date)}, about ${who}: ${n.note}`
     })
     .join('\n')
 }
@@ -82,7 +82,7 @@ export function ReportNotes({
     onError: (e: Error) =>
       toast({
         message: isSetupError(e)
-          ? 'Saving notes needs a quick one-time setup first — see the message below.'
+          ? 'Saving notes needs a small setup first, done just once. Please see the message below.'
           : `That did not save. ${e.message}`,
       }),
   })
@@ -90,7 +90,7 @@ export function ReportNotes({
   const delMut = useMutation({
     mutationFn: (id: string) => deleteDayNote(id),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['day-notes'] }),
-    onError: (e: Error) => toast({ message: `Could not remove it. ${e.message}` }),
+    onError: (e: Error) => toast({ message: `That could not be removed. ${e.message}` }),
   })
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
@@ -103,7 +103,7 @@ export function ReportNotes({
     <section aria-label="Notes for these days" className="card p-6">
       <h2 className="eyebrow inline-flex items-center gap-1">
         Notes for these days
-        <InfoTip text="Save a note on a specific day — for example, if you agreed with a designer to give them fewer or more projects that day because of the workload. These notes appear here and are printed on the PDF, so the reason behind the numbers is never lost." />
+        <InfoTip text="Save a note on a specific day. For example, if you agreed with a designer to give them fewer or more projects that day because of the workload, write it here. These notes appear here and are printed on the PDF, so the reason behind the numbers is never lost." />
       </h2>
 
       {canWrite && (
@@ -174,8 +174,8 @@ export function ReportNotes({
               <div className="min-w-0">
                 <p className="max-w-prose text-caption text-fg">{n.note}</p>
                 <p className="tnum mt-0.5 text-label text-muted">
-                  {fmtDate(n.the_date)} ·{' '}
-                  {n.designer_id ? nameById.get(n.designer_id) ?? 'A designer' : 'Whole studio'}
+                  {fmtDate(n.the_date)}, about{' '}
+                  {n.designer_id ? nameById.get(n.designer_id) ?? 'a designer' : 'the whole studio'}
                 </p>
               </div>
               {canWrite && (

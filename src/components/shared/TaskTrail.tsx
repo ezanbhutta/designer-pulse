@@ -49,7 +49,7 @@ export function TaskTrail({ taskId }: TaskTrailProps) {
   if (error) {
     return (
       <ErrorBanner
-        message="Could not load this project's history — the list below may be missing steps."
+        message="We could not load this project's history, so some steps below may be missing."
         onRetry={() => void refetch()}
       />
     )
@@ -119,15 +119,11 @@ export function TaskTrail({ taskId }: TaskTrailProps) {
               )}
             </div>
             <p className="tnum mt-1 text-label normal-case tracking-normal text-muted">
-              {fmtDateTime(e.event_time)}
-              {heldMin != null && status && e.event_type !== 'deleted' && (
-                <>
-                  {' · '}
-                  {isLast
-                    ? `in ${STATUS_LABELS[status]} for ${fmtDuration(heldMin)} so far`
-                    : `stayed here ${fmtDuration(heldMin)}`}
-                </>
-              )}
+              {heldMin != null && status && e.event_type !== 'deleted'
+                ? isLast
+                  ? `${fmtDateTime(e.event_time)}, and it has been in ${STATUS_LABELS[status]} for ${fmtDuration(heldMin)} so far`
+                  : `${fmtDateTime(e.event_time)}, staying here for ${fmtDuration(heldMin)}`
+                : fmtDateTime(e.event_time)}
             </p>
           </li>
         )
