@@ -27,7 +27,7 @@ import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock
 import { useToast } from '../../components/ui/ToastProvider'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { insertShiftMark } from '../../lib/queries'
-import { DOW_LABELS, fmtDate, fmtDuration, fmtShiftTime, fmtTime } from '../../lib/format'
+import { DOW_LABELS, fmtClock, fmtDate, fmtDuration, fmtDurationLong, fmtShiftTime, fmtTime } from '../../lib/format'
 import { addDays, dateRange, pktInstant, pktToday } from '../../../shared/pkt'
 import { expectedQuotaOn, median, scheduleFor } from '../../../shared/aggregate'
 import type {
@@ -225,8 +225,8 @@ export default function OpsAttendance() {
         items.push({
           id: `review-${row.id}`,
           severity: 'warning',
-          text: `Double-check ${designer.name}'s day — the system closed it because they forgot to press Check out`,
-          detail: 'They pressed Check in, but no work showed up after that. Please confirm before the day counts.',
+          text: `Please take another look at ${designer.name}'s day. The system closed it because they forgot to press Check out.`,
+          detail: 'They pressed Check in, but no work showed up afterward. Please confirm the day before it counts.',
           action: { label: 'Open details', onClick: () => openDesigner(designer.id) },
         })
       } else if (row.status === 'Incomplete') {
@@ -240,8 +240,8 @@ export default function OpsAttendance() {
         items.push({
           id: `absent-${row.id}`,
           severity: 'warning',
-          text: `${designer.name} was absent — no check-in and no work during their hours`,
-          detail: 'It was not a holiday, leave or day off — so this is unexplained.',
+          text: `${designer.name} was absent, with no sign of checking in and no work during their hours`,
+          detail: 'It was not a holiday, leave or day off, so this one is unexplained.',
           action: { label: 'Open details', onClick: () => openDesigner(designer.id) },
         })
       } else if (
@@ -251,9 +251,9 @@ export default function OpsAttendance() {
         items.push({
           id: `warmup-${row.id}`,
           severity: 'info',
-          text: `${designer.name} checked in at ${fmtTime(row.declared_in)} but took ${fmtDuration(
+          text: `${designer.name} checked in at ${fmtClock(row.declared_in)} but took ${fmtDurationLong(
             row.warmup_gap_min,
-          )} to start working — worth a quick chat`,
+          )} to get going. Might be worth a quick, friendly chat.`,
           detail: 'Start delay is the time between pressing Check in and doing the first real work in ClickUp.',
           action: { label: 'Open details', onClick: () => openDesigner(designer.id) },
         })
@@ -335,9 +335,8 @@ export default function OpsAttendance() {
       // clobber the optimistic mark and resurrect the button just pressed.
       void queryClient.invalidateQueries({ queryKey: ['shift-marks'] })
       setRecalcPending((s) => new Set(s).add(recalcKey(vars.designerId, vars.workDate, vars.markType)))
-      const label = vars.markType === 'check_in' ? 'check-in' : 'check-out'
       toast({
-        message: `${vars.markType === 'check_in' ? 'Check-in' : 'Check-out'} saved for ${fmtTime(vars.markedAt)}`,
+        message: `${vars.markType === 'check_in' ? 'Start of day' : 'End of day'} saved for ${fmtClock(vars.markedAt)}`,
         undo: async () => {
           // The delete works server-side for ops roles — but a failure must be
           // seen, never swallowed (§20.6): surface the exact error and leave
@@ -345,7 +344,7 @@ export default function OpsAttendance() {
           try {
             await deleteManualShiftMark(vars.designerId, vars.markedAt)
           } catch (e) {
-            toast({ message: `Could not undo the ${label} — ${(e as Error).message}` })
+            toast({ message: `We couldn't undo that. ${(e as Error).message}` })
             return
           }
           setRecalcPending((s) => {
@@ -362,7 +361,7 @@ export default function OpsAttendance() {
     },
     onError: (e: Error, _vars, mctx) => {
       for (const [key, data] of mctx?.snapshots ?? []) queryClient.setQueryData(key, data)
-      toast({ message: `Could not save it — ${e.message}` })
+      toast({ message: `We couldn't save that. ${e.message}` })
     },
   })
 
@@ -425,10 +424,10 @@ export default function OpsAttendance() {
         }
         history={
           attendanceQ.isLoading
-            ? `Check-ins matched against real work in ClickUp · ${fmtDate(date)}…`
-            : `${fmtDate(date)} — ${checkedIn} of ${scheduledCount} scheduled ${
+            ? `Matching check in times against real work in ClickUp · ${fmtDate(date)}…`
+            : `${fmtDate(date)} · ${checkedIn} of ${scheduledCount} scheduled ${
                 scheduledCount === 1 ? 'person has' : 'people have'
-              } checked in${needsReview > 0 ? `, ${needsReview} day${needsReview === 1 ? '' : 's'} to double-check` : ''}${
+              } checked in${needsReview > 0 ? `, ${needsReview} day${needsReview === 1 ? '' : 's'} to look over` : ''}${
                 lateCount > 0 ? `, ${lateCount} arrived late` : ''
               }.`
         }
@@ -460,7 +459,7 @@ export default function OpsAttendance() {
                 value={date}
                 max={today}
                 onChange={(e) => e.target.value && setDate(e.target.value)}
-                aria-label="Attendance date (PKT)"
+                aria-label="Attendance date (Pakistan time)"
                 className="tnum min-h-11 rounded-xl border border-border bg-surface px-3 text-caption text-fg"
               />
               <button
@@ -491,10 +490,10 @@ export default function OpsAttendance() {
 
       {attendanceQ.error && (
         <ErrorBanner
-          message="Could not load the latest attendance — you are seeing the last saved view."
+          message="We couldn't load the latest attendance, so you're seeing the last saved view."
           asOf={
             attendanceQ.dataUpdatedAt > 0
-              ? fmtTime(new Date(attendanceQ.dataUpdatedAt).toISOString())
+              ? fmtClock(new Date(attendanceQ.dataUpdatedAt).toISOString())
               : null
           }
           onRetry={() => void attendanceQ.refetch()}
@@ -502,9 +501,9 @@ export default function OpsAttendance() {
       )}
 
       <VerdictBlock
-        title={`Needs a look — ${fmtDate(date)}`}
+        title={`Needs a look · ${fmtDate(date)}`}
         items={verdictItems}
-        emptyMessage="Everyone is accounted for — nothing to check."
+        emptyMessage="Everyone is accounted for, nothing to check."
         loading={attendanceQ.isLoading || designersQ.isLoading}
       />
 
@@ -514,11 +513,11 @@ export default function OpsAttendance() {
           eyebrow="Start delay"
           tip="The time between pressing Check in and doing the first real work in ClickUp. This is the usual (middle) value for the whole team."
           icon={Hourglass}
-          value={fmtDuration(warmupMedian)}
+          value={fmtDurationLong(warmupMedian)}
           delta={metricDelta(warmupMedian, warmupPrev, {
             goodWhen: 'down',
-            format: fmtDuration,
-            vs: 'vs prior day',
+            format: fmtDurationLong,
+            vs: 'compared with the day before',
           })}
           cause="the usual gap between checking in and starting real work"
           state={warmupMedian == null ? null : warmupMedian > 60 ? 'flag' : warmupMedian > 30 ? 'watch' : 'ok'}
@@ -529,7 +528,7 @@ export default function OpsAttendance() {
           tip="How many of today's scheduled people have pressed Check in."
           icon={UserCheck}
           value={`${checkedIn} of ${scheduledCount}`}
-          delta={metricDelta(checkedIn, prevStats.checked, { goodWhen: 'up', vs: 'vs prior day' })}
+          delta={metricDelta(checkedIn, prevStats.checked, { goodWhen: 'up', vs: 'compared with the day before' })}
           cause={`${
             scheduledCount - checkedIn > 0
               ? `${scheduledCount - checkedIn} still to check in`
@@ -539,12 +538,12 @@ export default function OpsAttendance() {
           loading={attendanceQ.isLoading}
         />
         <StatTile
-          eyebrow="Double-check"
-          tip="The system closed this day automatically because the person forgot to press Check out. Please double-check it."
+          eyebrow="Days to look over"
+          tip="The system closed these days on its own because the person forgot to press Check out. Please look them over when you can."
           icon={TriangleAlert}
           value={String(needsReview)}
-          delta={metricDelta(needsReview, prevStats.review, { goodWhen: 'down', vs: 'vs prior day' })}
-          cause="the system closed these days on its own — please double-check them"
+          delta={metricDelta(needsReview, prevStats.review, { goodWhen: 'down', vs: 'compared with the day before' })}
+          cause="the system closed these days on its own, so please look them over"
           state={needsReview > 0 ? 'flag' : 'ok'}
           loading={attendanceQ.isLoading}
         />
@@ -553,7 +552,7 @@ export default function OpsAttendance() {
           tip="People who checked in after their start time, allowing a small grace period."
           icon={LogIn}
           value={String(lateCount)}
-          delta={metricDelta(lateCount, prevStats.late, { goodWhen: 'down', vs: 'vs prior day' })}
+          delta={metricDelta(lateCount, prevStats.late, { goodWhen: 'down', vs: 'compared with the day before' })}
           cause="checked in after their start time"
           state={lateCount > 0 ? 'watch' : 'ok'}
           loading={attendanceQ.isLoading}
@@ -578,7 +577,7 @@ export default function OpsAttendance() {
         <EmptyState
           icon={UserCheck}
           title="No designers yet"
-          hint="Add people on the Roster page — their attendance will show up here."
+          hint="Add people on the Roster page, and their attendance will show up here."
         />
       ) : view === 'day' ? (
         // ── Day table, needs-attention-first ──
@@ -590,7 +589,7 @@ export default function OpsAttendance() {
                 <th scope="col" className="whitespace-nowrap px-4 py-3 font-medium">
                   <span className="inline-flex items-center gap-1">
                     Status
-                    <InfoTip text="What kind of day it was — worked, on leave, day off, absent, and so on." />
+                    <InfoTip text="What kind of day it was: worked, on leave, day off, absent, and so on." />
                   </span>
                 </th>
                 <th scope="col" className="whitespace-nowrap px-4 py-3 text-right font-medium">
@@ -602,7 +601,7 @@ export default function OpsAttendance() {
                 <th scope="col" className="whitespace-nowrap px-4 py-3 text-right font-medium">
                   <span className="inline-flex items-center gap-1">
                     Out
-                    <InfoTip text="The time they pressed Check out. If they forgot, the system fills it in and marks the day for a double-check." />
+                    <InfoTip text="The time they pressed Check out. If they forgot, the system fills it in and flags the day for a second look." />
                   </span>
                 </th>
                 <th scope="col" className="whitespace-nowrap bg-surface-2/70 px-4 py-3 text-right font-semibold text-fg">
@@ -630,7 +629,7 @@ export default function OpsAttendance() {
                       text={
                         isToday
                           ? 'Press Check in or Check out for someone who forgot.'
-                          : 'Add a missed check-in or check-out for this date — pick the time it really happened.'
+                          : 'Add a missed check in or check out for this date. Pick the time it really happened.'
                       }
                     />
                   </span>
@@ -674,13 +673,13 @@ export default function OpsAttendance() {
                             </Badge>
                             {row.needs_review && (
                               <p className="mt-1 text-label font-normal tracking-normal text-warning">
-                                closed by the system — please double-check
+                                closed by the system, please look it over
                               </p>
                             )}
                           </div>
                         ) : (
                           <span className="text-label font-normal tracking-normal text-muted">
-                            {shiftLabel ? `Hours ${shiftLabel} PKT — nothing yet` : 'No work hours set'}
+                            {shiftLabel ? `Hours ${shiftLabel} Pakistan time · nothing yet` : 'No work hours set'}
                             {expected === 0 && shiftLabel ? ' · not expected in today' : ''}
                           </span>
                         )}
@@ -689,10 +688,10 @@ export default function OpsAttendance() {
                       <td className="px-4 py-3 text-right">
                         <span className="tnum text-muted">{fmtTime(row?.declared_out)}</span>
                         {row?.declared_out && row.checkout_source === 'auto_clickup' && (
-                          <p className="text-label font-normal tracking-normal text-muted">filled in — their last work activity</p>
+                          <p className="text-label font-normal tracking-normal text-muted">filled in from their last bit of work</p>
                         )}
                         {row?.declared_out && row.checkout_source === 'auto_shift_end' && (
-                          <p className="text-label font-normal tracking-normal text-warning">filled in by the system — double-check</p>
+                          <p className="text-label font-normal tracking-normal text-warning">filled in by the system, please look it over</p>
                         )}
                       </td>
                       <td className={`px-4 py-3 text-right ${warmupFlagged ? 'bg-warning-soft/60' : 'bg-surface-2/40'}`}>
@@ -735,8 +734,8 @@ export default function OpsAttendance() {
                               value={fixDraft.time}
                               onChange={(e) => setFixDraft({ ...fixDraft, time: e.target.value })}
                               aria-label={`${
-                                fixDraft.markType === 'check_in' ? 'Check-in' : 'Check-out'
-                              } time for ${designer.name} (PKT)`}
+                                fixDraft.markType === 'check_in' ? 'Start of day' : 'End of day'
+                              } time for ${designer.name} (Pakistan time)`}
                               className="tnum min-h-11 rounded-xl border border-border bg-surface px-2 text-label font-normal text-fg"
                             />
                             <button
@@ -770,7 +769,7 @@ export default function OpsAttendance() {
                             Check in
                           </button>
                         ) : outSaved ? (
-                          <span className="text-label font-normal tracking-normal text-muted">saved — updating shortly</span>
+                          <span className="text-label font-normal tracking-normal text-muted">saved, updating shortly</span>
                         ) : !row.declared_out || row.checkout_source !== 'self' ? (
                           <button
                             type="button"
@@ -843,9 +842,9 @@ export default function OpsAttendance() {
                         r?.status ? STATUS_DISPLAY[r.status] : 'no record'
                       }${
                         r?.warmup_gap_min != null
-                          ? ` · start delay ${fmtDuration(r.warmup_gap_min)}`
+                          ? ` · start delay ${fmtDurationLong(r.warmup_gap_min)}`
                           : ''
-                      }${r?.needs_review ? ' · double-check' : ''}`
+                      }${r?.needs_review ? ' · needs a look' : ''}`
                       return (
                         <td key={wd} className="px-2 py-2 text-center">
                           <span
@@ -871,7 +870,7 @@ export default function OpsAttendance() {
           </table>
           <p className="mt-4 max-w-prose text-label font-normal tracking-normal text-muted">
             P present · HW worked on a holiday · L leave · H holiday · W weekly day off · A absent ·
-            I incomplete · ! please double-check
+            I incomplete · ! please look it over
           </p>
         </div>
       )}

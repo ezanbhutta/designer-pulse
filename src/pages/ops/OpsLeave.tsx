@@ -31,7 +31,7 @@ import {
   upsertHoliday,
   upsertLeave,
 } from '../../lib/queries'
-import { fmtDate, fmtShiftTime, fmtTime } from '../../lib/format'
+import { fmtClock, fmtDate, fmtShiftTime } from '../../lib/format'
 import { addDays, pktToday } from '../../../shared/pkt'
 import { leaveCovers } from '../../../shared/attendance'
 import type { HalfDay, Holiday, Leave } from '../../../shared/types'
@@ -92,23 +92,23 @@ export default function OpsLeave() {
   const leaveDelete = useMutation({
     mutationFn: (id: string) => deleteLeave(id),
     onSuccess: () => invalidate(),
-    onError: (e: Error) => toast({ message: `Could not delete — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't delete that. ${e.message}` }),
   })
   const halfDelete = useMutation({
     mutationFn: (id: string) => deleteHalfDay(id),
     onSuccess: () => invalidate(),
-    onError: (e: Error) => toast({ message: `Could not delete — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't delete that. ${e.message}` }),
   })
   const holidayDelete = useMutation({
     mutationFn: (id: string) => deleteHoliday(id),
     onSuccess: () => invalidate(),
-    onError: (e: Error) => toast({ message: `Could not delete — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't delete that. ${e.message}` }),
   })
   const volunteerMutation = useMutation({
     mutationFn: (vars: { the_date: string; designer_id: string; working: boolean }) =>
       setHolidayWorker(vars.the_date, vars.designer_id, vars.working),
     onSuccess: () => invalidate(),
-    onError: (e: Error) => toast({ message: `Could not save that — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't save that. ${e.message}` }),
   })
 
   const removeLeave = (row: Leave) => {
@@ -131,13 +131,13 @@ export default function OpsLeave() {
   const leaveApprove = useMutation({
     mutationFn: (row: Leave) => upsertLeave({ ...row, status: 'approved' }),
     onSuccess: () => invalidate(),
-    onError: (e: Error) => toast({ message: `Could not approve — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't approve that. ${e.message}` }),
   })
   const approveLeave = (row: Leave) => {
     leaveApprove.mutate(row, {
       onSuccess: () =>
         toast({
-          message: `${designerName(row.designer_id)}'s leave approved — attendance and daily targets adjust on their own`,
+          message: `${designerName(row.designer_id)}'s leave approved. Attendance and daily targets adjust on their own.`,
           undo: async () => {
             await upsertLeave({ ...row, status: 'pending' })
             invalidate()
@@ -161,7 +161,7 @@ export default function OpsLeave() {
     halfDelete.mutate(row.id, {
       onSuccess: () =>
         toast({
-          message: `Half-day for ${designerName(row.designer_id)} removed`,
+          message: `Half day for ${designerName(row.designer_id)} removed`,
           undo: async () => {
             await upsertHalfDay(row)
             invalidate()
@@ -196,7 +196,7 @@ export default function OpsLeave() {
           l.leave_type ? `${l.leave_type} leave` : 'leave'
         } ${
           l.start_date === end ? fmtDate(l.start_date) : `${fmtDate(l.start_date)} – ${fmtDate(end)}`
-        } — approve or decline`,
+        }. Approve or decline when you get a chance.`,
         detail: `Until you decide, they still count as expected in on those days${
           l.reason ? ` · ${l.reason}` : ''
         }`,
@@ -226,7 +226,7 @@ export default function OpsLeave() {
           text: `${d.name} on ${l.leave_type ?? 'leave'} ${
             l.start_date === end ? fmtDate(l.start_date) : `${fmtDate(l.start_date)} – ${fmtDate(end)}`
           }`,
-          detail: `${l.paid ? 'Paid' : 'Unpaid'} (for records only) — no projects expected from them on those days${
+          detail: `${l.paid ? 'Paid' : 'Unpaid'} (for records only). No projects are expected from them on those days${
             l.reason ? ` · ${l.reason}` : ''
           }`,
         })
@@ -237,23 +237,23 @@ export default function OpsLeave() {
       items.push({
         id: `holiday-${h.id}`,
         severity: 'info',
-        text: `Holiday — ${h.name ?? 'unnamed'} on ${fmtDate(h.the_date)}`,
+        text: `Holiday: ${h.name ?? 'unnamed'} on ${fmtDate(h.the_date)}`,
         detail:
           volunteers > 0
             ? `${volunteers} offered to work that day (they may earn a bonus)`
-            : 'No one has offered to work — everyone gets the day off',
+            : 'No one has offered to work, so everyone gets the day off',
       })
     }
     for (const hd of (halfDaysQ.data ?? []).filter((x) => x.the_date >= today && x.the_date <= horizon)) {
       items.push({
         id: `half-${hd.id}`,
         severity: 'info',
-        text: `${designerName(hd.designer_id)} half-day on ${fmtDate(hd.the_date)}${
+        text: `${designerName(hd.designer_id)} half day on ${fmtDate(hd.the_date)}${
           hd.from_time && hd.to_time
             ? ` (away ${fmtShiftTime(hd.from_time)}–${fmtShiftTime(hd.to_time)})`
             : ''
         }`,
-        detail: 'They still count as present — only the away hours are taken off their day.',
+        detail: 'They still count as present, and only the away hours come off their day.',
       })
     }
     return items
@@ -267,12 +267,12 @@ export default function OpsLeave() {
         breadcrumbs={['Ops', 'Leave']}
         title="Leave"
         titleAccessory={
-          <InfoTip text="Record time off, half-days and holidays here. Attendance and daily targets adjust on their own." />
+          <InfoTip text="Record time off, half days and holidays here. Attendance and daily targets adjust on their own." />
         }
         history={
           ctxLoading
-            ? 'For records only — this never changes anyone\u2019s pay. Loading the calendar…'
-            : `For records only — this never changes anyone\u2019s pay. ${
+            ? 'For records only. This never changes anyone\u2019s pay. Loading the calendar…'
+            : `For records only. This never changes anyone\u2019s pay. ${
                 pendingCount > 0
                   ? `${pendingCount} request${pendingCount === 1 ? '' : 's'} waiting for a decision.`
                   : verdictItems.length > 0
@@ -294,10 +294,10 @@ export default function OpsLeave() {
 
       {(designersQ.error || halfDaysQ.error) && (
         <ErrorBanner
-          message="Could not load the latest calendar — you are seeing the last saved view."
+          message="We couldn't load the latest calendar, so you're seeing the last saved view."
           asOf={(() => {
             const lastGood = Math.max(designersQ.dataUpdatedAt, halfDaysQ.dataUpdatedAt)
-            return lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null
+            return lastGood > 0 ? fmtClock(new Date(lastGood).toISOString()) : null
           })()}
           onRetry={() => {
             void designersQ.refetch()
@@ -309,7 +309,7 @@ export default function OpsLeave() {
       <VerdictBlock
         title="Off in the next 7 days"
         items={verdictItems}
-        emptyMessage="No time off in the next 7 days — everyone is available."
+        emptyMessage="No time off in the next 7 days, everyone is available."
         loading={ctxLoading || halfDaysQ.isLoading}
       />
 
@@ -340,7 +340,7 @@ export default function OpsLeave() {
                 <EmptyState
                   icon={Coffee}
                   title="No leave recorded"
-                  hint="Add leave here — attendance and daily targets adjust on their own."
+                  hint="Add leave here, and attendance and daily targets adjust on their own."
                 />
               </li>
             ) : (
@@ -368,7 +368,7 @@ export default function OpsLeave() {
                           <span className="capitalize">{l.leave_type ?? 'Leave'}</span>
                         </Badge>
                         <Badge tone={l.paid ? 'success' : 'warning'}>
-                          {l.paid ? 'Paid' : 'Unpaid'} — for records only
+                          {l.paid ? 'Paid' : 'Unpaid'}, for records only
                         </Badge>
                         {pending && <Badge tone="warning">Awaiting approval</Badge>}
                         {l.status === 'rejected' && <Badge tone="neutral">Declined</Badge>}
@@ -414,14 +414,14 @@ export default function OpsLeave() {
           <div className="flex items-center justify-between gap-3">
             <h2 className="flex min-w-0 items-center gap-2 text-card text-fg">
               <Hourglass className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
-              <span className="truncate">Half-days</span>
-              <InfoTip text="Someone away for part of the day. They still count as present — only the away hours are taken off." />
+              <span className="truncate">Half days</span>
+              <InfoTip text="Someone away for part of the day. They still count as present, and only the away hours come off." />
             </h2>
             <button
               type="button"
               onClick={() => setDrawer('half')}
-              aria-label="Add half-day"
-              title="Add half-day"
+              aria-label="Add half day"
+              title="Add half day"
               className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-fg transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-brand motion-safe:active:scale-[0.95]"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
@@ -434,8 +434,8 @@ export default function OpsLeave() {
               <li>
                 <EmptyState
                   icon={Hourglass}
-                  title="No half-days"
-                  hint="A half-day keeps the person present — only the away hours are taken off."
+                  title="No half days"
+                  hint="A half day keeps the person present, and only the away hours come off."
                 />
               </li>
             ) : (
@@ -456,7 +456,7 @@ export default function OpsLeave() {
                     </p>
                     <div className="mt-1">
                       <Badge tone={hd.paid ? 'success' : 'warning'}>
-                        {hd.paid ? 'Paid' : 'Unpaid'} — for records only
+                        {hd.paid ? 'Paid' : 'Unpaid'}, for records only
                       </Badge>
                     </div>
                   </div>
@@ -464,7 +464,7 @@ export default function OpsLeave() {
                     type="button"
                     onClick={() => removeHalf(hd)}
                     className="-m-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted transition-colors duration-150 ease-out hover:bg-danger-soft hover:text-danger motion-safe:active:scale-95"
-                    aria-label={`Remove half-day for ${designerName(hd.designer_id)}`}
+                    aria-label={`Remove half day for ${designerName(hd.designer_id)}`}
                   >
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -480,7 +480,7 @@ export default function OpsLeave() {
             <h2 className="flex min-w-0 items-center gap-2 text-card text-fg">
               <PartyPopper className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
               <span className="truncate">Holidays</span>
-              <InfoTip text="Days off for the whole company. People can offer to work on a holiday — tick their name on its row." />
+              <InfoTip text="Days off for the whole company. People can offer to work on a holiday, so tick their name on its row." />
             </h2>
             <button
               type="button"
@@ -573,7 +573,7 @@ export default function OpsLeave() {
           }}
         />
       </Drawer>
-      <Drawer open={drawer === 'half'} onClose={() => setDrawer(null)} title="Add half-day">
+      <Drawer open={drawer === 'half'} onClose={() => setDrawer(null)} title="Add half day">
         <HalfDayForm
           onDone={() => {
             setDrawer(null)
@@ -612,7 +612,7 @@ function DesignerSelect({
         </option>
         {designers.map((d) => (
           <option key={d.id} value={d.id}>
-            {d.name} — {d.team}
+            {d.name} · {d.team}
           </option>
         ))}
       </select>
@@ -630,7 +630,7 @@ function PaidToggle({ paid, setPaid }: { paid: boolean; setPaid: (v: boolean) =>
         className="h-4 w-4 accent-brand"
       />
       Paid
-      <span className="text-label font-normal tracking-normal text-muted">for records only — pay is never changed here</span>
+      <span className="text-label font-normal tracking-normal text-muted">for records only, pay is never changed here</span>
     </label>
   )
 }
@@ -657,10 +657,10 @@ function LeaveForm({ onDone }: { onDone: () => void }) {
         reason: reason || null,
       }),
     onSuccess: () => {
-      toast({ message: 'Leave saved — attendance and daily targets adjust on their own' })
+      toast({ message: 'Leave saved. Attendance and daily targets adjust on their own.' })
       onDone()
     },
-    onError: (e: Error) => toast({ message: `Could not save the leave — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't save the leave. ${e.message}` }),
   })
 
   const submit = (e: FormEvent) => {
@@ -736,10 +736,10 @@ function HalfDayForm({ onDone }: { onDone: () => void }) {
         reason: reason || null,
       }),
     onSuccess: () => {
-      toast({ message: 'Half-day saved — they still count as present for the day' })
+      toast({ message: 'Half day saved. They still count as present for the day.' })
       onDone()
     },
-    onError: (e: Error) => toast({ message: `Could not save the half-day — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't save the half day. ${e.message}` }),
   })
 
   return (
@@ -757,11 +757,11 @@ function HalfDayForm({ onDone }: { onDone: () => void }) {
       </label>
       <div className="grid grid-cols-2 gap-3">
         <label className="block text-caption font-medium text-fg">
-          Away from (PKT)
+          Away from (Pakistan time)
           <input type="time" value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} />
         </label>
         <label className="block text-caption font-medium text-fg">
-          Away until (PKT)
+          Away until (Pakistan time)
           <input type="time" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} />
         </label>
       </div>
@@ -776,7 +776,7 @@ function HalfDayForm({ onDone }: { onDone: () => void }) {
         className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-brand px-4 text-caption font-semibold text-brand-fg transition-opacity duration-150 ease-out hover:opacity-90 disabled:opacity-50 motion-safe:active:scale-[0.98]"
       >
         <CalendarPlus className="h-4 w-4" aria-hidden="true" />
-        Save half-day
+        Save half day
       </button>
     </form>
   )
@@ -791,10 +791,10 @@ function HolidayForm({ onDone }: { onDone: () => void }) {
   const mutation = useMutation({
     mutationFn: () => upsertHoliday({ the_date: date, name: name || undefined }),
     onSuccess: () => {
-      toast({ message: `Holiday saved for ${fmtDate(date)} — tick anyone who will work that day on its row` })
+      toast({ message: `Holiday saved for ${fmtDate(date)}. Tick anyone who will work that day on its row.` })
       onDone()
     },
-    onError: (e: Error) => toast({ message: `Could not add the holiday — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't add the holiday. ${e.message}` }),
   })
 
   return (
@@ -811,12 +811,12 @@ function HolidayForm({ onDone }: { onDone: () => void }) {
       </label>
       <label className="block text-caption font-medium text-fg">
         Name
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Eid al-Fitr" className={inputCls} />
+        <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="for example, Eid al-Fitr" className={inputCls} />
       </label>
       <p className="flex max-w-prose items-start gap-2 rounded-xl bg-surface-2 px-4 py-3 text-caption text-muted">
         <CalendarDays className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         This gives the whole company the day off, and no projects are expected. If someone offers
-        to work, tick their name on the holiday's row — their day counts as "worked on a holiday"
+        to work, tick their name on the holiday's row. Their day counts as "worked on a holiday"
         and may earn a bonus (the app only records this).
       </p>
       <button

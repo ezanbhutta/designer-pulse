@@ -12,7 +12,7 @@ import { useToast } from '../../components/ui/ToastProvider'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { presentAlert } from '../../lib/alertPresentation'
 import { STALE_LIVE, fetchAlerts, qk, setAlertStatus } from '../../lib/queries'
-import { fmtDateTime, fmtTime } from '../../lib/format'
+import { fmtClock, fmtDateTime } from '../../lib/format'
 import type { Alert, AlertType } from '../../../shared/types'
 import { useDesigners } from './opsData'
 
@@ -33,7 +33,7 @@ const TYPE_LABELS: Record<AlertType, string> = {
   cancellation: 'Cancelled orders',
   assignment_gap: 'People needing work',
   task_aging: 'Stuck projects',
-  forgotten_checkout: 'Forgotten check-outs',
+  forgotten_checkout: 'Forgot to check out',
   quality_decay: 'Quality slipping',
   burnout: 'Working too much',
   workload_forecast: 'Workload ahead',
@@ -42,22 +42,22 @@ const TYPE_LABELS: Record<AlertType, string> = {
 /** One-line plain-language meaning per alert group — for the ⓘ info tips. */
 const TYPE_EXPLAINERS: Record<AlertType, string> = {
   cancellation:
-    'Orders lost because of a design problem. Check the project history before judging anyone.',
+    'Orders lost because of a design problem. Please read the project history before judging anyone.',
   assignment_gap:
-    "These people still have room for more projects today. Giving them work is the team lead's job, not theirs.",
+    "These people still have room for more projects today. Giving them the work is the team lead's job, not theirs.",
   task_aging:
-    'Projects that have not moved for too long. The ones waiting on clients are the most important to chase.',
+    'Projects that have not moved in a while. A gentle nudge is usually all it takes to get them going again.',
   forgotten_checkout:
-    'The system closed these days automatically because the person forgot to press Check out. Please double-check them.',
+    'The system closed these days on its own because the person forgot to press Check out. Please look them over.',
   quality_decay: 'More designs than usual are coming back with change requests.',
-  burnout: 'Signs someone may be overloaded — long days or too many projects at once.',
-  workload_forecast: 'A heads-up that the coming days look too busy or too quiet.',
+  burnout: 'Signs someone may be overloaded, like long days or too many projects at once.',
+  workload_forecast: 'A quiet note that the coming days look too busy or too quiet.',
 }
 
 const SEVERITY_RANK = { critical: 0, warning: 1, info: 2 } as const
 const SEVERITY_TONE = { info: 'brand', warning: 'warning', critical: 'danger' } as const
 /** Plain words for severity levels (visible text only, sentence case like every other badge). */
-const SEVERITY_LABELS = { info: 'FYI', warning: 'Warning', critical: 'Urgent' } as const
+const SEVERITY_LABELS = { info: 'Good to know', warning: 'Warning', critical: 'Urgent' } as const
 
 /**
  * Alerts inbox (spec §12): detection rows carry their prescription (§20.3) via
@@ -127,7 +127,7 @@ export default function OpsAlerts() {
     },
     onError: (e: Error, _vars, ctx) => {
       for (const [key, data] of ctx?.snapshots ?? []) queryClient.setQueryData(key, data)
-      toast({ message: `Could not save that — we put it back the way it was (${e.message})` })
+      toast({ message: `We couldn't save that, so we put it back the way it was (${e.message})` })
     },
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   })
@@ -207,8 +207,8 @@ export default function OpsAlerts() {
             {alertsQ.isLoading
               ? 'Checking for problems…'
               : openCount === 0
-                ? 'Nothing waiting — new problems show up here the moment the app spots them.'
-                : `${openCount} waiting${criticalCount > 0 ? ` — ${criticalCount} urgent` : ''}.`}{' '}
+                ? 'Nothing waiting. New problems show up here the moment the app spots them.'
+                : `${openCount} waiting${criticalCount > 0 ? `, ${criticalCount} urgent` : ''}.`}{' '}
             <span className="whitespace-nowrap text-label font-normal tracking-normal">
               ↑↓ move · A mark seen · R mark done
             </span>
@@ -232,10 +232,10 @@ export default function OpsAlerts() {
 
       {alertsQ.error && (
         <ErrorBanner
-          message="Could not load the latest alerts — you are seeing the last saved view."
+          message="We couldn't load the latest alerts, so you're seeing the last saved view."
           asOf={
             alertsQ.dataUpdatedAt > 0
-              ? fmtTime(new Date(alertsQ.dataUpdatedAt).toISOString())
+              ? fmtClock(new Date(alertsQ.dataUpdatedAt).toISOString())
               : null
           }
           onRetry={() => void alertsQ.refetch()}
@@ -271,7 +271,7 @@ export default function OpsAlerts() {
             // Clearing the alert queue is THE achievement moment (pillar 11).
             <InboxZeroReward
               title="Inbox zero"
-              message="Nothing needs you right now — new problems show up here the moment the app spots them."
+              message="Nothing needs you right now. New problems show up here the moment the app spots them."
             />
           ) : (
             <EmptyState icon={BellOff} title="Nothing needs you right now." hint="No alerts so far." />

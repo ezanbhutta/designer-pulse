@@ -285,13 +285,13 @@ export function DesignerEditor({
       toast({
         message: designer
           ? scheduleChanged
-            ? `${saved.name} saved — new schedule starts ${fmtDate(form.effective_from)}`
+            ? `${saved.name} saved. The new schedule starts ${fmtDate(form.effective_from)}.`
             : `${saved.name} saved`
           : `${saved.name} added to the ${form.team} team`,
       })
       onClose()
     },
-    onError: (e: Error) => toast({ message: `Couldn't save — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't save that. ${e.message}` }),
   })
 
   const submit = (e?: FormEvent) => {
@@ -299,7 +299,7 @@ export function DesignerEditor({
     const errs: FieldErrors = {}
     if (!form.name.trim()) errs.name = 'Please enter a name.'
     if (trimmedListId && !/^\d+$/.test(trimmedListId))
-      errs.clickup_list_id = 'List IDs are numbers only — copy it from the list URL.'
+      errs.clickup_list_id = 'List IDs are numbers only. Copy it from the list URL.'
     const userId = form.clickup_user_id.trim()
     if (userId && !/^\d+$/.test(userId)) errs.clickup_user_id = 'User IDs are numbers only.'
     if (!form.shift_start) errs.shift_start = 'Please pick a start time.'
@@ -337,7 +337,7 @@ export function DesignerEditor({
     mutationFn: ({ id, status }: { id: string; status: 'active' | 'archived' }) =>
       setDesignerStatus(id, status),
     onSuccess: () => invalidateRoster(),
-    onError: (e: Error) => toast({ message: `Couldn't update — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't update that. ${e.message}` }),
   })
 
   const archive = () => {
@@ -347,7 +347,7 @@ export function DesignerEditor({
       {
         onSuccess: () => {
           toast({
-            message: `${designer.name} archived — their history stays`,
+            message: `${designer.name} archived. Their history stays.`,
             undo: () => statusMutation.mutate({ id: designer.id, status: 'active' }),
           })
           onClose()
@@ -407,13 +407,13 @@ export function DesignerEditor({
       setExQuota('')
       setExReason('')
     },
-    onError: (e: Error) => toast({ message: `Couldn't add — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't add that. ${e.message}` }),
   })
 
   const exceptionDelete = useMutation({
     mutationFn: (id: string) => deleteQuotaException(id),
     onSuccess: () => invalidateRoster(),
-    onError: (e: Error) => toast({ message: `Couldn't remove — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't remove that. ${e.message}` }),
   })
 
   const addException = () => {
@@ -497,14 +497,14 @@ export function DesignerEditor({
             <Field
               id={id('specialty')}
               label="Specialty"
-              tip="What kind of work they do — shown under their name in the list."
+              tip="What kind of work they do. It shows under their name in the list."
             >
               <input
                 id={id('specialty')}
                 type="text"
                 value={form.specialty}
                 onChange={(e) => patch({ specialty: e.target.value })}
-                placeholder="e.g. 3-concept logos"
+                placeholder="for example, logos with 3 concepts"
                 className={inputCls()}
               />
             </Field>
@@ -512,7 +512,7 @@ export function DesignerEditor({
           <Field
             id={id('order')}
             label="Display order"
-            tip="Where they appear on the roster page — lower numbers show first."
+            tip="Where they appear on the roster page. Lower numbers show first."
             hint="Lower numbers show higher in the list."
           >
             <input
@@ -542,7 +542,7 @@ export function DesignerEditor({
             id={id('list')}
             label="List ID"
             tip="The number of this person's task list in ClickUp. If the list has exactly the same name as the person, it connects by itself."
-            hint="Lists named exactly after the designer connect by themselves within 15 minutes — only needed when the names differ."
+            hint="Lists named exactly after the designer connect by themselves within 15 minutes. You only need this when the names differ."
             error={errors.clickup_list_id}
             trailing={
               listUrl ? (
@@ -564,7 +564,7 @@ export function DesignerEditor({
               inputMode="numeric"
               value={form.clickup_list_id}
               onChange={(e) => patch({ clickup_list_id: e.target.value })}
-              placeholder="e.g. 901811577312"
+              placeholder="for example 901811577312"
               aria-invalid={errors.clickup_list_id ? true : undefined}
               aria-describedby={
                 errors.clickup_list_id ? `${id('list')}-error` : `${id('list')}-hint`
@@ -575,8 +575,8 @@ export function DesignerEditor({
           <Field
             id={id('user')}
             label="User ID"
-            tip="Their personal ID in ClickUp — used to match tasks assigned to them."
-            hint="Optional — for assignee matching."
+            tip="Their personal ID in ClickUp, used to match tasks assigned to them."
+            hint="Optional, for matching tasks to the right person."
             error={errors.clickup_user_id}
           >
             <input
@@ -586,7 +586,7 @@ export function DesignerEditor({
               min={0}
               value={form.clickup_user_id}
               onChange={(e) => patch({ clickup_user_id: e.target.value })}
-              placeholder="e.g. 101464943"
+              placeholder="for example 101464943"
               aria-invalid={errors.clickup_user_id ? true : undefined}
               aria-describedby={
                 errors.clickup_user_id ? `${id('user')}-error` : `${id('user')}-hint`
@@ -600,7 +600,7 @@ export function DesignerEditor({
         <section ref={scheduleSectionRef} aria-label="Work schedule" className="scroll-mt-4 space-y-4">
           <SectionHeading
             title="Work schedule"
-            tip="Their daily target and work hours. Changes start from a date you pick — past days keep their old numbers."
+            tip="Their daily target and work hours. Changes start from a date you pick, and past days keep their old numbers."
           />
           <Field
             id={id('quota')}
@@ -645,7 +645,7 @@ export function DesignerEditor({
                 id={id('start')}
                 label="Work starts"
                 required
-                tip="All times are Pakistan time — the whole team works to one clock."
+                tip="All times are Pakistan time. The whole team works to one clock."
                 error={errors.shift_start}
               >
                 <input
@@ -675,7 +675,7 @@ export function DesignerEditor({
             {overnight && (
               <p className="mt-2 flex items-center gap-1.5 text-label font-normal tracking-normal text-muted">
                 <Moon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                Overnight — they work past midnight, so the day ends on the next date.
+                Overnight: they work past midnight, so the day ends on the next date.
               </p>
             )}
           </div>
@@ -712,7 +712,7 @@ export function DesignerEditor({
           <div className="grid grid-cols-2 gap-3">
             <Field
               id={id('late')}
-              label="Late allowance (min)"
+              label="Late allowance (minutes)"
               tip="How many minutes late they can check in before it counts as late."
             >
               <input
@@ -732,7 +732,7 @@ export function DesignerEditor({
             </Field>
             <Field
               id={id('early')}
-              label="Early-leave allowance (min)"
+              label="Early leave allowance (minutes)"
               tip="How many minutes early they can leave before it counts as leaving early."
             >
               <input
@@ -756,7 +756,7 @@ export function DesignerEditor({
             label="Starts from"
             required
             tip="The date these new numbers start counting. Old days keep the old numbers."
-            hint="Schedule changes start a new period — past days stay judged against the old numbers."
+            hint="Schedule changes start a new period. Past days are still judged against the old numbers."
             error={errors.effective_from}
           >
             <input
@@ -774,7 +774,7 @@ export function DesignerEditor({
           </Field>
           {designer && !scheduleChanged && (
             <p className="text-label font-normal tracking-normal text-muted">
-              Schedule unchanged — saving keeps the current period.
+              Schedule unchanged, so saving keeps the current period.
             </p>
           )}
         </section>
@@ -793,14 +793,14 @@ export function DesignerEditor({
           >
             <SectionHeading
               title="Special days"
-              tip="One-day changes to the daily target — for example a lighter Friday. They beat the schedule on that date only."
+              tip="A change to the daily target for a single date, like a lighter Friday. It beats the schedule on that date only."
             />
             <p className="text-label font-normal leading-relaxed tracking-normal text-muted">
-              One-off overrides — e.g. a reduced Friday.
+              A change for a single date, like a lighter Friday.
             </p>
             <ul className="space-y-1.5">
               {exceptions.length === 0 && (
-                <li className="text-caption text-muted">None — the daily target applies every day.</li>
+                <li className="text-caption text-muted">None yet. The daily target applies every day.</li>
               )}
               {[...exceptions]
                 .sort((a, b) => b.the_date.localeCompare(a.the_date))
@@ -810,7 +810,7 @@ export function DesignerEditor({
                     className="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-3 py-1.5 text-caption"
                   >
                     <span className="tnum min-w-0 truncate">
-                      {fmtDate(ex.the_date)} → {ex.daily_quota}/day
+                      {fmtDate(ex.the_date)} → {ex.daily_quota} a day
                       {ex.reason && <span className="text-muted"> · {ex.reason}</span>}
                     </span>
                     <button

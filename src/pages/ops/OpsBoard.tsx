@@ -13,7 +13,7 @@ import { TaskCard } from '../../components/shared/TaskCard'
 import { TaskTrail } from '../../components/shared/TaskTrail'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { clickupListUrl, clickupTaskUrl } from '../../lib/queries'
-import { fmtDate, fmtDateTime, fmtDuration, fmtTime } from '../../lib/format'
+import { fmtClock, fmtDate, fmtDateTime, fmtDurationLong } from '../../lib/format'
 import { pktToday } from '../../../shared/pkt'
 import { ageMinutes, expectedQuotaOn, scheduleFor } from '../../../shared/aggregate'
 import {
@@ -213,13 +213,13 @@ export default function OpsBoard() {
         history={
           /* Verdict first (§20.1): the live health read, chips not prose. */
           openTasksQ.isLoading ? (
-            `Live board · ${fmtDate(today)} PKT — loading every open project…`
+            `Live board · ${fmtDate(today)} Pakistan time · loading every open project…`
           ) : (
             <span className="inline-flex flex-wrap items-center gap-2">
-              <span>Live board · {fmtDate(today)} PKT ·</span>
+              <span>Live board · {fmtDate(today)} Pakistan time ·</span>
               {healthy ? (
                 <Badge tone="success" icon={CheckCircle2}>
-                  All good — nothing is stuck and everyone has enough work
+                  All good, nothing is stuck and everyone has enough work
                 </Badge>
               ) : (
                 <>
@@ -229,7 +229,7 @@ export default function OpsBoard() {
                     </Badge>
                   )}
                   {derived.clientWait > 0 && (
-                    <Badge tone="waiting">{derived.clientWait} waiting for client</Badge>
+                    <Badge tone="waiting">{derived.clientWait} waiting to hear back from clients</Badge>
                   )}
                   {underQuota.length > 0 && (
                     <Badge tone="warning" icon={TriangleAlert}>
@@ -259,7 +259,7 @@ export default function OpsBoard() {
                 onChange={setGroupBy}
                 ariaLabel="Group board by"
               />
-              <InfoTip text="Choose how to group the board — by the stage each project is at, or by the person doing it." />
+              <InfoTip text="Choose how to group the board: by the stage each project is at, or by the person doing it." />
             </span>
             <span className="flex items-center gap-1">
               <button
@@ -283,10 +283,10 @@ export default function OpsBoard() {
 
       {openTasksQ.error && (
         <ErrorBanner
-          message="Could not load the latest projects — you are seeing the last saved view."
+          message="We couldn't load the latest projects, so you're seeing the last saved view."
           asOf={
             openTasksQ.dataUpdatedAt > 0
-              ? fmtTime(new Date(openTasksQ.dataUpdatedAt).toISOString())
+              ? fmtClock(new Date(openTasksQ.dataUpdatedAt).toISOString())
               : null
           }
           onRetry={() => void openTasksQ.refetch()}
@@ -338,7 +338,7 @@ export default function OpsBoard() {
                   {tasks.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-caption text-muted">
                       {status === 'revision'
-                        ? 'No change requests — nice and clean'
+                        ? 'No change requests, nice and clean'
                         : status === 'cancelled'
                           ? 'No cancellations today'
                           : 'Nothing here'}
@@ -357,7 +357,7 @@ export default function OpsBoard() {
                       ))}
                       {tasks.length > COLUMN_CAP && (
                         <p className="pb-1 text-center text-label font-normal tracking-normal text-muted">
-                          +{tasks.length - COLUMN_CAP} more — switch to "By person" to see them
+                          +{tasks.length - COLUMN_CAP} more, switch to "By person" to see them
                         </p>
                       )}
                     </>
@@ -377,7 +377,7 @@ export default function OpsBoard() {
               </div>
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
                 <p className="rounded-xl bg-warning-soft px-3 py-2 text-caption leading-snug text-warning">
-                  We do not recognize this status name — check the list's statuses in ClickUp.
+                  We don't recognize this status name. Please check the list's statuses in ClickUp.
                 </p>
                 {derived.unmapped.slice(0, COLUMN_CAP).map((t) => (
                   <TaskCard
@@ -448,16 +448,15 @@ export default function OpsBoard() {
                           <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
                           <span>
                             {gap.expected - gap.filled} open slot
-                            {gap.expected - gap.filled === 1 ? '' : 's'} — {firstName(d.name)} can
-                            take more projects today. Handing out work is the team lead's job, not
-                            theirs.
+                            {gap.expected - gap.filled === 1 ? '' : 's'} today, so {firstName(d.name)}{' '}
+                            can take on more. Handing out the work is the team lead's job, not theirs.
                           </span>
                         </div>
                       )}
                       <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                         {tasks.length === 0 ? (
                           <p className="text-caption text-muted">
-                            No projects right now — they can take new work.
+                            No projects right now, so they can take on new work.
                           </p>
                         ) : (
                           tasks.map((t) => (
@@ -482,8 +481,8 @@ export default function OpsBoard() {
                     {byDesigner.orphaned.length === 1 ? '' : 's'} without an active designer
                   </Badge>
                   <span className="text-caption text-muted">
-                    These have no designer, or their designer has left the roster — give them to
-                    someone in ClickUp.
+                    These have no designer, or their designer has left the roster. You can hand them
+                    to someone in ClickUp.
                   </span>
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -526,7 +525,7 @@ export default function OpsBoard() {
             <div className="flex flex-wrap items-center gap-2">
               {trailTask.current_status && <StatusBadge status={trailTask.current_status} />}
               <span className="tnum text-caption text-muted">
-                at this stage for {fmtDuration(ageMinutes(trailTask))}
+                at this stage for {fmtDurationLong(ageMinutes(trailTask))}
               </span>
             </div>
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-caption">

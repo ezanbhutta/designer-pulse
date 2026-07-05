@@ -23,7 +23,7 @@ import { StatTile } from '../../components/ui/StatTile'
 import { VerdictBlock, type VerdictItem } from '../../components/ui/VerdictBlock'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { useToast } from '../../components/ui/ToastProvider'
-import { fmtDate, fmtDuration, fmtPct, fmtTime } from '../../lib/format'
+import { fmtClock, fmtDate, fmtDuration, fmtPct } from '../../lib/format'
 import { pktToday } from '../../../shared/pkt'
 import {
   priorPeriod,
@@ -143,11 +143,11 @@ export default function OpsReports() {
       items.push({
         id: `att-${r.designer.id}`,
         severity: pct < 50 ? 'critical' : 'warning',
-        text: `${r.designer.name} met ${pct}% of their target — finished ${r.cur.completed} of ${r.cur.expectedQuota}`,
+        text: `${r.designer.name} met ${pct}% of their target, finishing ${r.cur.completed} of ${r.cur.expectedQuota}`,
         detail:
           r.cur.assigned < r.cur.expectedQuota
-            ? `They were only given ${r.cur.assigned} projects — the shortfall may be in handing out work, not the person`
-            : 'They were given enough projects — the shortfall is in getting them done',
+            ? `They were only given ${r.cur.assigned} projects, so the shortfall may be in handing out the work, not the person`
+            : 'They were given enough projects, so the shortfall is in getting them done',
         action: { label: 'Open details', onClick: () => openDesigner(r.designer.id) },
       })
     }
@@ -155,11 +155,11 @@ export default function OpsReports() {
       items.push({
         id: `fpq-${r.designer.id}`,
         severity: 'warning',
-        text: `${r.designer.name} was right first time on ${r.cur.firstPassQualityPct}% — ${r.cur.firstPassClean} of ${r.cur.delivered} needed no changes`,
+        text: `${r.designer.name} had ${r.cur.firstPassQualityPct}% of their work accepted without changes, ${r.cur.firstPassClean} of ${r.cur.delivered}`,
         detail:
           r.cur.csrCaughtRounds >= r.cur.clientCaughtRounds
-            ? `${r.cur.csrCaughtRounds} rounds of changes were caught by our own checkers — some coaching may help`
-            : `${r.cur.clientCaughtRounds} rounds of changes came from clients — our checking step or the brief may need tightening`,
+            ? `${r.cur.csrCaughtRounds} rounds of changes were caught by our own checkers, so some coaching may help`
+            : `${r.cur.clientCaughtRounds} rounds of changes came from clients, so our checking step or the brief may need tightening`,
         action: { label: 'Open details', onClick: () => openDesigner(r.designer.id) },
       })
     }
@@ -167,8 +167,8 @@ export default function OpsReports() {
       items.push({
         id: `cancel-${r.designer.id}`,
         severity: 'critical',
-        text: `${r.designer.name}: ${r.cur.cancelled} cancelled order${r.cur.cancelled === 1 ? '' : 's'} — lost because of a design problem`,
-        detail: 'Check the project history first, and look at the pattern — not just one project.',
+        text: `${r.designer.name}: ${r.cur.cancelled} cancelled order${r.cur.cancelled === 1 ? '' : 's'}, lost because of a design problem`,
+        detail: 'Please read the project history first, and look at the pattern, not just one project.',
         action: { label: 'Open details', onClick: () => openDesigner(r.designer.id) },
       })
     }
@@ -189,7 +189,7 @@ export default function OpsReports() {
       })
       toast({ message: `PDF for ${rangeLabel} downloaded` })
     } catch (e) {
-      toast({ message: 'Could not build the PDF — check your connection and try again' })
+      toast({ message: 'We couldn’t build the PDF. Please check your connection and try again.' })
       throw e // the stateful button resets to idle — never a false success ✓
     }
   }
@@ -200,7 +200,7 @@ export default function OpsReports() {
         breadcrumbs={['Ops', 'Reports']}
         title="Reports"
         titleAccessory={
-          <InfoTip text="How each person did over a period — targets met, quality and speed — with a PDF you can share." />
+          <InfoTip text="How each person did over a period: targets met, quality and speed, with a PDF you can share." />
         }
         history={`${MODE_LABEL[value.mode]} · ${rangeLabel}, compared with ${fmtDate(prior.start)} – ${fmtDate(prior.end)}.`}
         actions={
@@ -226,10 +226,10 @@ export default function OpsReports() {
 
       {(tasksQ.error || metricsQ.error) && (
         <ErrorBanner
-          message="Could not load the latest numbers — you are seeing the last saved view."
+          message="We couldn't load the latest numbers, so you're seeing the last saved view."
           asOf={(() => {
             const lastGood = Math.max(tasksQ.dataUpdatedAt, metricsQ.dataUpdatedAt)
-            return lastGood > 0 ? fmtTime(new Date(lastGood).toISOString()) : null
+            return lastGood > 0 ? fmtClock(new Date(lastGood).toISOString()) : null
           })()}
           onRetry={() => {
             void tasksQ.refetch()
@@ -239,47 +239,47 @@ export default function OpsReports() {
       )}
 
       <VerdictBlock
-        title={`What stands out — ${MODE_LABEL[value.mode].toLowerCase()}`}
+        title={`What stands out · ${MODE_LABEL[value.mode].toLowerCase()}`}
         items={verdictItems}
-        emptyMessage="Everyone is on track this period — nothing stands out."
+        emptyMessage="Everyone is on track this period, nothing stands out."
         loading={loading}
       />
 
       {/* ── Studio rollup (§20.2) ── */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-3" aria-label="Studio rollup">
         <StatTile
-          eyebrow="Target met — whole studio"
+          eyebrow="Target met across the studio"
           tip="Out of all the projects the team was supposed to take, how many they finished."
           icon={Gauge}
           value={fmtPct(totals.attainment.cur)}
           delta={metricDelta(totals.attainment.cur, totals.attainment.prev, {
             goodWhen: 'up',
-            format: (v) => `${v} pts`,
+            format: (v) => `${v} points`,
           })}
-          cause={`finished ${totals.completed.cur} of ${totals.expected.cur} expected — the fairest way to compare teams`}
+          cause={`finished ${totals.completed.cur} of ${totals.expected.cur} expected, the fairest way to compare teams`}
           loading={loading}
         />
         <StatTile
-          eyebrow="Right first time — whole studio"
+          eyebrow="Right first time across the studio"
           tip="How many designs were accepted without anyone asking for changes. Higher is better."
           icon={ShieldCheck}
           value={fmtPct(totals.fpq.cur)}
           delta={metricDelta(totals.fpq.cur, totals.fpq.prev, {
             goodWhen: 'up',
-            format: (v) => `${v} pts`,
+            format: (v) => `${v} points`,
           })}
           cause={`${totals.clean.cur} of ${totals.delivered.cur} designs needed no changes`}
           loading={loading}
         />
         <StatTile
           eyebrow="Cancelled orders"
-          tip="Orders lost because of a design problem. Check the project history before judging anyone."
+          tip="Orders lost because of a design problem. Please read the project history before judging anyone."
           icon={TriangleAlert}
           value={String(totals.cancelled.cur)}
           delta={metricDelta(totals.cancelled.cur, totals.cancelled.prev, { goodWhen: 'down' })}
           cause={
             totals.assigned.cur > 0
-              ? `${Math.round((totals.cancelled.cur / totals.assigned.cur) * 100)}% of ${totals.assigned.cur} projects given — lost to design problems`
+              ? `${Math.round((totals.cancelled.cur / totals.assigned.cur) * 100)}% of ${totals.assigned.cur} projects given, lost to design problems`
               : 'no projects given in this period'
           }
           state={totals.cancelled.cur > 0 ? 'flag' : 'ok'}
@@ -288,9 +288,9 @@ export default function OpsReports() {
       </section>
 
       <p className="max-w-prose rounded-xl bg-surface-2 px-4 py-3 text-caption text-muted">
-        A logo, a 25-page brand guide and an animation take very different amounts of work — so
+        A logo, a brand guide of 25 pages and an animation take very different amounts of work, so
         never compare raw counts between teams. Compare{' '}
-        <strong className="text-fg">Target met %</strong> only.
+        <strong className="text-fg">Target met</strong> only.
       </p>
 
       {loading ? (

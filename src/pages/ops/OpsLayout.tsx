@@ -59,7 +59,7 @@ export default function OpsLayout() {
       { id: 'nav-board', label: 'Go to Board', hint: 'every open project and its stage', keywords: 'board kanban tasks status live', run: go('/ops/board') },
       { id: 'nav-roster', label: 'Go to Roster', hint: 'people, daily targets, work hours', keywords: 'roster designers schedule quota shift', run: go('/ops/roster') },
       { id: 'nav-attendance', label: 'Go to Attendance', hint: 'who is in and when they started', keywords: 'attendance presence check-in warmup', run: go('/ops/attendance') },
-      { id: 'nav-leave', label: 'Go to Leave', hint: 'time off, half-days, holidays', keywords: 'leave holiday half-day calendar', run: go('/ops/leave') },
+      { id: 'nav-leave', label: 'Go to Leave', hint: 'time off, half days, holidays', keywords: 'leave holiday half-day calendar', run: go('/ops/leave') },
       { id: 'nav-alerts', label: 'Go to Alerts', hint: openAlertCount ? `${openAlertCount} waiting` : 'nothing waiting', keywords: 'alerts inbox acknowledge resolve', run: go('/ops/alerts') },
       { id: 'nav-reports', label: 'Go to Reports', hint: 'how each person did, with a PDF', keywords: 'reports weekly pdf export attainment', run: go('/ops/reports') },
     ]
@@ -106,7 +106,7 @@ export default function OpsLayout() {
 
   return (
     <ToastProvider>
-      <AppShell title="Studio Pulse — Ops" nav={nav} commands={commands}>
+      <AppShell title="Studio Pulse · Ops" nav={nav} commands={commands}>
         <Outlet />
       </AppShell>
       {/* Generic chrome title — DesignerDetail's own header carries the

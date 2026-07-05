@@ -118,7 +118,7 @@ export function DesignerRow({
           <>
             <Badge tone="neutral">
               <span className="tnum">
-                Target {schedule.daily_quota}/day
+                Target {schedule.daily_quota} a day
               </span>
             </Badge>
             <Badge tone="neutral" icon={overnight ? Moon : undefined}>
@@ -135,7 +135,7 @@ export function DesignerRow({
                 <span className="tnum">{exceptionCount}</span> special day
                 {exceptionCount === 1 ? '' : 's'}
                 <InfoTip
-                  text="Days with a different daily target — for example a lighter Friday."
+                  text="Days with a different daily target, like a lighter Friday."
                   label="What are special days?"
                 />
               </Badge>

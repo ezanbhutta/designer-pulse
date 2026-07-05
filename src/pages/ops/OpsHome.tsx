@@ -39,7 +39,7 @@ import {
   fetchCancelledTasks,
   qk,
 } from '../../lib/queries'
-import { fmtDate, fmtDuration, fmtPct, fmtShiftTime, fmtTime } from '../../lib/format'
+import { fmtClock, fmtDate, fmtDurationLong, fmtPct, fmtShiftTime } from '../../lib/format'
 import { addDays, pktInstant, pktToday } from '../../../shared/pkt'
 import {
   ageMinutes,
@@ -227,9 +227,9 @@ export default function OpsHome() {
         severity: 'warning',
         text:
           a.message ??
-          `${d?.name ?? 'A designer'} has open slots — they can take more projects today`,
+          `${d?.name ?? 'A designer'} has room for a few more projects today`,
         detail: row
-          ? `Has ${row.filled} of ${row.expected} projects due today. Handing out work is the team lead's job, not theirs.`
+          ? `They have ${row.filled} of ${row.expected} projects due today. Handing out the work is the team lead's job, not theirs.`
           : undefined,
         action: href
           ? { label: `Open ${d ? firstName(d.name) : 'the'} list`, href }
@@ -246,9 +246,9 @@ export default function OpsHome() {
         id: `age-${task.task_id}`,
         kind: 'stuck',
         severity: age >= threshold * 2 ? 'critical' : 'warning',
-        text: `"${task.name ?? task.task_id}" stuck in ${
+        text: `"${task.name ?? task.task_id}" has been stuck in ${
           task.current_status ? STATUS_LABELS[task.current_status] : 'one stage'
-        } for ${fmtDuration(age)}`,
+        } for ${fmtDurationLong(age)}`,
         detail: `${d?.name ?? 'No one yet'} · flagged after ${Math.round(threshold / (24 * 60))} days without moving`,
         action: href ? { label: 'Open in ClickUp', href } : undefined,
       })
@@ -271,8 +271,8 @@ export default function OpsHome() {
         id: `cancel-${t.task_id}`,
         kind: 'cancelled',
         severity: 'critical',
-        text: `Order lost: "${t.name ?? t.task_id}"${d ? ` — ${d.name}` : ''}`,
-        detail: 'The order was lost because of a design problem. Open its history before judging anyone.',
+        text: `Order lost: "${t.name ?? t.task_id}"${d ? ` · ${d.name}` : ''}`,
+        detail: 'This order was lost because of a design problem. Please open its history before judging anyone.',
         action: { label: 'See what happened', onClick: () => setTrailTask(t) },
       })
     } else if (cancelTasks.length > 1) {
@@ -288,7 +288,7 @@ export default function OpsHome() {
             id: `cancel-${t.task_id}`,
             kind: 'cancelled' as const,
             severity: 'critical' as const,
-            text: `"${t.name ?? t.task_id}"${d ? ` — ${d.name}` : ''}`,
+            text: `"${t.name ?? t.task_id}"${d ? ` · ${d.name}` : ''}`,
             action: { label: 'See what happened', onClick: () => setTrailTask(t) },
           }
         }),
@@ -302,8 +302,8 @@ export default function OpsHome() {
         id: `review-${row.id}`,
         kind: 'attendance',
         severity: 'info',
-        text: `Double-check ${d?.name ?? 'a designer'}'s day — the system closed it because they forgot to press Check out`,
-        detail: 'There was no check-out and no sign of work. Please confirm before the day counts.',
+        text: `Please take another look at ${d?.name ?? 'a designer'}'s day. The system closed it because they forgot to press Check out.`,
+        detail: 'They never pressed Check out, and there was no sign of work afterward. Please confirm the day before it counts.',
         action: { label: 'Open Attendance', onClick: () => navigate('/ops/attendance') },
       })
     }
@@ -322,12 +322,10 @@ export default function OpsHome() {
         id: `slots-${r.designer.id}`,
         kind: 'capacity',
         severity: 'info',
-        text: `${r.designer.name} has ${slots} open slot${slots === 1 ? '' : 's'} — ${
-          firstName(r.designer.name)
-        } can take more projects today`,
-        detail: `Has ${r.filled} of ${r.expected} projects due today · day started ${
+        text: `${r.designer.name} has room for ${slots} more project${slots === 1 ? '' : 's'} today`,
+        detail: `They have ${r.filled} of ${r.expected} projects due today · their day started at ${
           r.schedule ? fmtShiftTime(r.schedule.shift_start) : '—'
-        } PKT`,
+        } Pakistan time`,
         action: href ? { label: 'Open their list', href } : undefined,
       })
     }
@@ -392,16 +390,16 @@ export default function OpsHome() {
         breadcrumbs={['Ops', 'Today']}
         title="Today"
         titleAccessory={
-          <InfoTip text="A live picture of today — what needs you, today's numbers, who has room for more work, and what is stuck." />
+          <InfoTip text="A live picture of today: what needs you, today's numbers, who has room for more work, and what has gone quiet." />
         }
         history={
           inboxLoading
-            ? `${fmtDate(today)} · all times PKT — checking the board…`
+            ? `${fmtDate(today)} · all times in Pakistan time · checking the board…`
             : verdictItems.length === 0
-              ? `${fmtDate(today)} · all times PKT — nothing needs a human, ${openTasks.length} project${
+              ? `${fmtDate(today)} · all times in Pakistan time · nothing needs a human, ${openTasks.length} project${
                   openTasks.length === 1 ? '' : 's'
-                } moving on their own.`
-              : `${fmtDate(today)} · all times PKT — ${verdictItems.length} thing${
+                } moving along on their own.`
+              : `${fmtDate(today)} · all times in Pakistan time · ${verdictItems.length} thing${
                   verdictItems.length === 1 ? '' : 's'
                 } need${verdictItems.length === 1 ? 's' : ''} a human, ${openTasks.length} project${
                   openTasks.length === 1 ? '' : 's'
@@ -411,10 +409,10 @@ export default function OpsHome() {
 
       {openTasksQ.error && (
         <ErrorBanner
-          message="Could not load the latest projects — you are seeing the last saved view."
+          message="We couldn't load the latest projects, so you're seeing the last saved view."
           asOf={
             openTasksQ.dataUpdatedAt > 0
-              ? fmtTime(new Date(openTasksQ.dataUpdatedAt).toISOString())
+              ? fmtClock(new Date(openTasksQ.dataUpdatedAt).toISOString())
               : null
           }
           onRetry={() => void openTasksQ.refetch()}
@@ -431,7 +429,7 @@ export default function OpsHome() {
                 <AnimatedCounter value={verdictItems.length} />
               </span>
             )}
-            <InfoTip text="Everything that needs a person right now, worst first. Each row carries its own one-click next step." />
+            <InfoTip text="Everything that needs a human right now, most urgent first. Each row comes with its own next step, one tap away." />
           </h2>
           <p className="text-label uppercase text-muted">worst first</p>
         </div>
@@ -466,7 +464,7 @@ export default function OpsHome() {
         ) : verdictItems.length === 0 ? (
           <InboxZeroReward
             title="All clear"
-            message="Nothing needs you right now — everyone has enough work and nothing is stuck. New problems appear here the moment the app spots them."
+            message="Nothing needs you right now. Everyone has enough work and nothing has gone quiet. New things will show up here the moment the app notices them."
           />
         ) : (
           <motion.ul
@@ -580,7 +578,7 @@ export default function OpsHome() {
         <div className="mb-6 flex items-baseline gap-2">
           <h2 className="inline-flex items-center gap-2 text-card text-fg">
             Today's pulse
-            <InfoTip text="Today's numbers at a glance — each one says how it compares with yesterday and why." />
+            <InfoTip text="Today's numbers at a glance. Each one shows how it compares with yesterday, and why." />
           </h2>
         </div>
         {/* 2-up inside the 1000px reading column — labels never truncate and
@@ -593,7 +591,7 @@ export default function OpsHome() {
             value={`${derived.totalAssignedToday} of ${derived.totalExpected}`}
             delta={metricDelta(derived.totalAssignedToday, derived.assignedYesterday, {
               goodWhen: 'up',
-              vs: 'vs yesterday by this time',
+              vs: 'compared with yesterday at this time',
             })}
             cause={
               underQuotaCount > 0
@@ -610,11 +608,11 @@ export default function OpsHome() {
             value={String(derived.completedTodayTasks.length)}
             delta={metricDelta(derived.completedTodayTasks.length, derived.completedYesterday, {
               goodWhen: 'up',
-              vs: 'vs yesterday by this time',
+              vs: 'compared with yesterday at this time',
             })}
             cause={
               derived.completedTodayTasks.length > 0
-                ? `${completedClean} of ${derived.completedTodayTasks.length} were right first time — no changes asked`
+                ? `${completedClean} of ${derived.completedTodayTasks.length} were accepted without any changes`
                 : 'nothing finished yet today'
             }
             loading={tasksQ.isLoading || metricsQ.isLoading}
@@ -626,7 +624,7 @@ export default function OpsHome() {
             value={String(openRevisions.length)}
             delta={metricDelta(openRevisions.length, revisionsAtDayStart, {
               goodWhen: 'down',
-              vs: 'vs start of day',
+              vs: 'compared with the start of the day',
             })}
             cause={
               openRevisions.length > 0
@@ -641,7 +639,7 @@ export default function OpsHome() {
           />
           <StatTile
             eyebrow="Busy level"
-            tip="How full today's plates are — only projects DUE today count, compared to today's total target."
+            tip="How full today's plates are. Only projects due today count, measured against today's total target."
             icon={Gauge}
             value={fmtPct(utilization)}
             cause={`${derived.totalFilled} projects due today across ${designers.length} ${
@@ -665,7 +663,7 @@ export default function OpsHome() {
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="inline-flex items-center gap-2 text-card text-fg">
               Who has room for more
-              <InfoTip text="People who can take more projects today. Only projects DUE today fill a plate — status doesn't matter. Giving them work is the team lead's job, not theirs." />
+              <InfoTip text="People who can take more projects today. Only projects due today fill a plate, whatever their status. Giving them the work is the team lead's job, not theirs." />
             </h2>
             <span className="text-label uppercase text-muted">most free first</span>
           </div>
@@ -707,10 +705,10 @@ export default function OpsHome() {
                       <p className="tnum text-label font-normal tracking-normal text-muted">
                         {r.filled} due today, target {r.expected}
                         {r.spare > 0
-                          ? ` — ${r.spare} open slot${r.spare === 1 ? '' : 's'}`
+                          ? `, room for ${r.spare} more`
                           : r.spare < 0
-                            ? ` — ${-r.spare} over their target`
-                            : ' — at their target'}
+                            ? `, ${-r.spare} over their target`
+                            : ', right at their target'}
                       </p>
                     </button>
                     <span
@@ -744,7 +742,7 @@ export default function OpsHome() {
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="inline-flex items-center gap-2 text-card text-fg">
               Stuck projects
-              <InfoTip text="Projects that have not moved for too long. The ones waiting on clients are the most important to chase." />
+              <InfoTip text="Projects that have not moved in a while. A gentle nudge is usually all it takes to get them going again." />
             </h2>
             <Link
               to="/ops/board"

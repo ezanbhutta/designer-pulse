@@ -65,7 +65,7 @@ const pdfGeneratedAt = (now: Date): string =>
     hour: '2-digit',
     minute: '2-digit',
     timeZone: 'Asia/Karachi',
-  }).format(now)} PKT`
+  }).format(now)} Pakistan time`
 
 const pct = (v: number | null): string => (v == null ? '—' : `${v}%`)
 
@@ -118,7 +118,7 @@ export async function generateWeeklyReportPdf(args: WeeklyReportArgs): Promise<v
     doc.setFont('helvetica', 'italic')
     doc.setFontSize(10)
     doc.setTextColor(...MUTED)
-    doc.text('No designer work recorded in this week.', MARGIN_X, y + 6)
+    doc.text('No designer work was recorded for this week.', MARGIN_X, y + 6)
   }
 
   drawFooters(doc)
@@ -170,12 +170,12 @@ function drawHeader(
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
   doc.setTextColor(...INK)
-  doc.text('Studio Pulse — Weekly Designer Report', titleX, 20)
+  doc.text('Studio Pulse Weekly Designer Report', titleX, 20)
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
   doc.setTextColor(...MUTED)
-  const periodLabel = `Week ${pdfDate(period.start)} – ${pdfDate(period.end, true)} (PKT)`
+  const periodLabel = `Week of ${pdfDate(period.start)} to ${pdfDate(period.end, true)}, Pakistan time`
   doc.text(teamName ? `${periodLabel} · ${teamName} team` : periodLabel, MARGIN_X, 27)
   doc.text(`Generated ${pdfGeneratedAt(new Date())}`, CONTENT_RIGHT, 27, { align: 'right' })
 

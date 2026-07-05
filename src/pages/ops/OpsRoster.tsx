@@ -10,7 +10,7 @@ import { InfoTip } from '../../components/ui/InfoTip'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/ToastProvider'
 import { qk, setDesignerStatus } from '../../lib/queries'
-import { fmtTime } from '../../lib/format'
+import { fmtClock } from '../../lib/format'
 import { pktToday } from '../../../shared/pkt'
 import { scheduleFor } from '../../../shared/aggregate'
 import type { Designer, DesignerSchedule, Team } from '../../../shared/types'
@@ -89,9 +89,9 @@ export default function OpsRoster() {
 
   const issueText = (i: AttentionIssue): string => {
     if (i.unlinked && i.unscheduled)
-      return `${i.designer.name} isn't linked to ClickUp and has no work schedule — nothing is tracked for them`
-    if (i.unlinked) return `${i.designer.name} isn't linked to ClickUp — their work isn't tracked`
-    return `${i.designer.name} has no work schedule — their days and targets can't be counted`
+      return `${i.designer.name} isn't linked to ClickUp and has no work schedule yet, so nothing is being tracked for them`
+    if (i.unlinked) return `${i.designer.name} isn't linked to ClickUp yet, so their work isn't being tracked`
+    return `${i.designer.name} has no work schedule yet, so their days and targets can't be counted`
   }
 
   // ── Hard delete — the one confirm dialog this page is allowed (§20.6) ──────
@@ -102,7 +102,7 @@ export default function OpsRoster() {
       void queryClient.invalidateQueries({ queryKey: qk.schedules })
       void queryClient.invalidateQueries({ queryKey: qk.quotaExceptions })
     },
-    onError: (e: Error) => toast({ message: `Couldn't delete — ${e.message}` }),
+    onError: (e: Error) => toast({ message: `We couldn't delete them. ${e.message}` }),
   })
 
   const confirmDelete = () => {
@@ -133,7 +133,7 @@ export default function OpsRoster() {
             <Skeleton className="h-4 w-72" />
           ) : (
             <span className="tnum">
-              {summaryParts.join(' · ')} — people, daily targets and work hours.
+              {summaryParts.join(' · ')} · people, daily targets and work hours.
             </span>
           )
         }
@@ -151,10 +151,10 @@ export default function OpsRoster() {
 
       {designersQ.error != null && (
         <ErrorBanner
-          message="Couldn't load the roster — showing the last loaded designers."
+          message="We couldn't load the roster, so you're seeing the last loaded designers."
           asOf={
             designersQ.dataUpdatedAt > 0
-              ? fmtTime(new Date(designersQ.dataUpdatedAt).toISOString())
+              ? fmtClock(new Date(designersQ.dataUpdatedAt).toISOString())
               : null
           }
           onRetry={() => void designersQ.refetch()}
@@ -218,8 +218,8 @@ export default function OpsRoster() {
                 ))}
               </ul>
               <p className="mt-4 max-w-prose text-label font-normal leading-relaxed tracking-normal text-muted">
-                ClickUp lists named exactly after the designer link themselves within 15 minutes —
-                you only need to step in when the names differ.
+                ClickUp lists named exactly after the designer link themselves within 15 minutes. You
+                only need to step in when the names differ.
               </p>
             </section>
           ) : (
@@ -234,7 +234,7 @@ export default function OpsRoster() {
             <EmptyState
               icon={UserPlus}
               title="No designers yet"
-              hint="Add your first designer — their daily target and work hours make every other number possible."
+              hint="Add your first designer. Their daily target and work hours make every other number possible."
               action={
                 <button
                   type="button"
@@ -311,7 +311,7 @@ export default function OpsRoster() {
       <ConfirmDialog
         open={deleteTarget != null}
         title={deleteTarget ? `Delete ${deleteTarget.name} permanently?` : 'Delete designer'}
-        body="Archiving is the safe way out — their tasks and history stay. Deleting hides them everywhere and is meant for rare mistakes only. This cannot be undone."
+        body="Archiving is the safe way out, and their tasks and history stay. Deleting hides them everywhere and is meant for rare mistakes only. This cannot be undone."
         confirmLabel="Delete designer"
         destructive
         onConfirm={confirmDelete}
@@ -372,7 +372,7 @@ function TeamSection({
       </div>
       {active.length === 0 && archived.length === 0 ? (
         <div className="mt-3 rounded-2xl border border-dashed border-border bg-surface/50 px-5 py-6 text-caption text-muted">
-          No {team} designers yet —{' '}
+          No {team} designers yet,{' '}
           <button
             type="button"
             onClick={() => onAdd(team)}
@@ -388,7 +388,7 @@ function TeamSection({
             {active.map(row)}
             {active.length === 0 && (
               <p className="px-5 py-5 text-caption text-muted">
-                No active designers on this team — {archived.length} archived below.
+                No active designers on this team. {archived.length} archived below.
               </p>
             )}
           </div>

@@ -255,7 +255,7 @@ export function metricDelta(
   if (current == null || prior == null) return null
   const diff = current - prior
   const fmt = opts.format ?? ((abs: number) => String(abs))
-  const vs = opts.vs ?? 'vs last period'
+  const vs = opts.vs ?? 'compared with the previous period'
   if (diff === 0) return { label: `no change ${vs}`, direction: 'flat', good: true }
   return {
     label: `${diff > 0 ? '+' : '−'}${fmt(Math.abs(diff))} ${vs}`,
