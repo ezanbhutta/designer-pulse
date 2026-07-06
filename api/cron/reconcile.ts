@@ -254,27 +254,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         }
     }
 
-    // ── Phase A: the due-today sweep for EVERY list, before anything heavy.
-    // Owner's law: the day's plate must ALWAYS match ClickUp, both directions.
-    // Rotating order inside the sweep guarantees no list is starved even when
-    // the budget dies early — the next run picks up where the rotation moved.
-    const sweep = await sweepDueToday(supa, lists, designers, started.getTime() + 14_000)
-    dueTodaySwept = sweep.tasks
-    duePhantomsHealed = sweep.phantoms
-
-    // ── Phase B: updated-since walk, also rotated so a heavy backlogged list
-    // cannot permanently starve the tail. last_sync only advances when a full
-    // pass completes, so partial (budget-cut) runs safely redo the window.
+    // ── Phase B FIRST: the updated-since walk that advances the sync cursor.
+    // The whole failure mode was a stuck clock, so the clock-advancing pass now
+    // runs before anything else and always gets the budget. Rotated so a heavy
+    // backlogged list cannot starve the tail; the window is capped to STEP_MS so
+    // a single run always fits and the cursor moves forward.
     const mapped = lists.filter((l) => designers.has(l.id))
     mappedLists = mapped.length
     const rotB = mapped.length ? Math.floor(started.getTime() / 900_000) % mapped.length : 0
     const orderB = [...mapped.slice(rotB), ...mapped.slice(0, rotB)]
     for (const list of orderB) {
       const designer = designers.get(list.id)!
-      // Process page-by-page (≤100 tasks each): after a long webhook outage a
-      // busy list can hold 700+ updated tasks, and accumulating them first
-      // meant one oversized `.in()` (gateway 414 → 500 → last_sync stuck) and
-      // zero completed work when the budget ran out mid-accumulation.
       for (let page = 0; ; page++) {
         const { tasks: batch, lastPage } = await getListTasks(list.id, {
           dateUpdatedGt: sinceMs,
@@ -287,10 +277,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         if (lastPage) break
       }
     }
-
-    // Advance only to the slice we actually finished — the next run continues
-    // from here until the cursor reaches now.
+    // Slice finished — advance the cursor now, before the due-today sweep, so
+    // even if that runs out of budget the clock has already moved forward.
     await setLastSync(supa, new Date(windowEndMs).toISOString())
+
+    // ── Phase A (now second): the due-today sweep, with the budget that
+    // remains. It runs every cycle and rotates, so a partial pass is safe and
+    // the day's plate still converges.
+    const sweep = await sweepDueToday(supa, lists, designers, started.getTime() + 20_000)
+    dueTodaySwept = sweep.tasks
+    duePhantomsHealed = sweep.phantoms
     respond(200, {
       ok: true,
       since: new Date(sinceMs).toISOString(),

@@ -20,8 +20,8 @@ import { getLastSync } from '../_lib/config'
 
 export const config = { maxDuration: 60 }
 
-/** At most one real ClickUp pull per minute, however many tabs are open. */
-const DEBOUNCE_MS = 60_000
+/** At most one real ClickUp pull per window, however many tabs poke it. */
+const DEBOUNCE_MS = 90_000
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (req.method !== 'POST') {
@@ -53,10 +53,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   } catch {
     /* treat a read failure as "stale" and let the sync run */
   }
-  const ageMs = lastSync ? Date.now() - new Date(lastSync).getTime() : Infinity
-  if (ageMs < DEBOUNCE_MS) {
-    json(res, 200, { ok: true, skipped: true, reason: 'recently synced', lastSync })
+
+  // Debounce on a dedicated attempt marker, NOT last_sync. While a big backlog
+  // is clearing, last_sync barely moves, so debouncing on it would let every
+  // open tab kick off its own reconcile and hammer ClickUp (they then rate-limit
+  // each other and none finishes). The attempt marker caps real triggers to one
+  // per window no matter how many tabs poke it.
+  let attemptMs = 0
+  try {
+    const { data } = await supa
+      .from('app_config')
+      .select('value')
+      .eq('key', 'sync_attempt_at')
+      .maybeSingle()
+    const v = (data as { value?: unknown } | null)?.value
+    if (typeof v === 'string') attemptMs = Date.parse(v)
+  } catch {
+    /* no marker yet — allow the sync */
+  }
+  if (Number.isFinite(attemptMs) && Date.now() - attemptMs < DEBOUNCE_MS) {
+    json(res, 200, { ok: true, skipped: true, reason: 'recently attempted', lastSync })
     return
+  }
+  // Claim the slot before doing the slow work so concurrent tabs debounce out.
+  try {
+    await supa
+      .from('app_config')
+      .upsert({ key: 'sync_attempt_at', value: new Date().toISOString() }, { onConflict: 'key' })
+  } catch {
+    /* best-effort — worst case another tab also triggers, still idempotent */
   }
 
   const secret = process.env.CRON_SECRET
