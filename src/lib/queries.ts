@@ -112,17 +112,25 @@ export async function requestSync(force = false): Promise<SyncResult> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
   if (!token) return { ok: false }
+  // Never let a stalled request hang forever — that would wedge the in-flight
+  // guard and block every later poll and Refresh click. Give up after 55s (the
+  // server itself caps at 60s) and report a clean failure.
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 55_000)
   try {
     // `force` is an explicit person pressing Refresh — it runs even inside the
     // debounce window. Background polls leave force off so many tabs stay cheap.
     const res = await fetch(`/api/sync/refresh${force ? '?force=1' : ''}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
+      signal: ctrl.signal,
     })
     if (!res.ok) return { ok: false }
     return (await res.json()) as SyncResult
   } catch {
     return { ok: false }
+  } finally {
+    clearTimeout(timer)
   }
 }
 

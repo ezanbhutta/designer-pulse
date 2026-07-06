@@ -33,13 +33,19 @@ export function useKeepFresh(): KeepFresh {
     setSyncing(true)
     try {
       const r = await requestSync(force)
-      // A fresh pull actually landed — refresh every open view. (Skips mean the
-      // data is already recent; no need to refetch.)
+      // A fresh pull actually landed — refresh every open view and stamp the
+      // clock to NOW, because we just pulled the current state from ClickUp.
+      // (Pressing Refresh always forces a real pull, so a click always lands on
+      // "Synced just now".) A skip means the data was already recent, so keep
+      // showing the real stored time instead.
       if (r.ok && r.triggered && !r.skipped) {
         await qc.invalidateQueries()
+        setLastSyncIso(new Date().toISOString())
+      } else if (r.ok && typeof r.lastSync === 'string') {
+        setLastSyncIso(r.lastSync)
+      } else if (r.ok) {
+        setLastSyncIso(new Date().toISOString())
       }
-      if (r.ok && typeof r.lastSync === 'string') setLastSyncIso(r.lastSync)
-      else if (r.ok) setLastSyncIso(new Date().toISOString())
     } catch {
       /* leave the indicator where it is — a failed poke simply won't advance it */
     } finally {
