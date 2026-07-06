@@ -42,6 +42,13 @@ export const config = { maxDuration: 60 }
 
 const OVERLAP_MS = 5 * 60_000
 const FIRST_RUN_LOOKBACK_MS = 24 * 3600_000
+/**
+ * Longest slice of ClickUp updates one run will process. A long backlog (e.g.
+ * after a webhook outage) is cleared one step at a time, advancing the cursor
+ * each run, so no single run re-attempts a 40-hour window and times out. Caught
+ * up, the window collapses to "now" and steady-state is unchanged.
+ */
+const STEP_MS = 3 * 3600_000
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
@@ -63,9 +70,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   try {
     const supa = supabaseAdmin()
     const lastSync = await getLastSync(supa)
-    const sinceMs = lastSync
-      ? Math.max(0, new Date(lastSync).getTime() - OVERLAP_MS)
-      : started.getTime() - FIRST_RUN_LOOKBACK_MS
+    const cursorMs = lastSync ? new Date(lastSync).getTime() : started.getTime() - FIRST_RUN_LOOKBACK_MS
+    const sinceMs = Math.max(0, cursorMs - OVERLAP_MS)
+    // End of THIS run's slice: never more than STEP_MS past the cursor, never
+    // beyond now. On a caught-up system this is just `now`.
+    const windowEndMs = Math.min(started.getTime(), cursorMs + STEP_MS)
+    // Any DB-heavy pass must abort before the invocation is force-killed at 60s
+    // (which loses all progress). This wall clock is checked between tasks, so a
+    // large heal batch always returns partial instead of dying.
+    const wallDeadlineMs = started.getTime() + 23_000
 
     const [lists, designers] = await Promise.all([
       discoverSpaceLists(DESIGNERS_SPACE_ID),
@@ -153,6 +166,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         }
 
         for (const task of batch) {
+          if (Date.now() > wallDeadlineMs) throw new ClickUpBudgetError()
           tasksChecked++
           const existing = existingById.get(task.id)
           const cuStatus = canonicalizeStatus(task.status?.status ?? null)
@@ -264,6 +278,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       for (let page = 0; ; page++) {
         const { tasks: batch, lastPage } = await getListTasks(list.id, {
           dateUpdatedGt: sinceMs,
+          dateUpdatedLt: windowEndMs,
           includeClosed: true,
           page,
         })
@@ -273,10 +288,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
     }
 
-    await setLastSync(supa, started.toISOString())
+    // Advance only to the slice we actually finished — the next run continues
+    // from here until the cursor reaches now.
+    await setLastSync(supa, new Date(windowEndMs).toISOString())
     respond(200, {
       ok: true,
       since: new Date(sinceMs).toISOString(),
+      until: new Date(windowEndMs).toISOString(),
+      caughtUp: windowEndMs >= started.getTime(),
       lists: lists.length,
       mappedLists,
       autoLinked,

@@ -22,6 +22,7 @@ import {
   createWebhook,
   getTaskTimeInStatus,
   getWebhooks,
+  normalizeListId,
   updateWebhook,
   type ClickUpTask,
 } from './clickup'
@@ -50,8 +51,9 @@ export async function listDesignerMap(supa: SupabaseAdmin): Promise<Map<string, 
   expectOk(error, 'designers read')
   const map = new Map<string, Designer>()
   for (const row of (data ?? []) as Designer[]) {
-    // Trim defensively — a pasted id with stray whitespace must still map.
-    const listId = row.clickup_list_id?.trim()
+    // Normalise defensively — a pasted id with stray whitespace, or a whole
+    // list-view URL pasted into the field, must still map to the numeric id.
+    const listId = row.clickup_list_id ? normalizeListId(row.clickup_list_id) : null
     if (listId) map.set(listId, row)
   }
   return map

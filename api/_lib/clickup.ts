@@ -204,9 +204,26 @@ export async function discoverSpaceLists(
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Accept a bare numeric list id OR a pasted ClickUp list-view URL and return
+ * the numeric list id. A URL like ".../v/l/6-901811577312-1" saved into
+ * clickup_list_id once made every /list/{id}/task call 404 — normalise it here
+ * so a mis-pasted id self-heals instead of silently failing (spec §6.4).
+ */
+export function normalizeListId(raw: string): string {
+  const s = raw.trim()
+  if (/^\d+$/.test(s)) return s
+  const view = s.match(/\/v\/l[a-z]*\/(?:\d+-)?(\d+)/i)
+  if (view) return view[1]
+  const nums = s.match(/\d{6,}/g)
+  return nums && nums.length ? nums[nums.length - 1] : s
+}
+
 export interface ListTasksOptions {
   /** ms epoch — only tasks updated after this instant. */
   dateUpdatedGt?: number
+  /** ms epoch — only tasks updated before this instant (slice an update window). */
+  dateUpdatedLt?: number
   /** ms epoch — only tasks created after this instant. */
   dateCreatedGt?: number
   /** ms epoch — only tasks created before this instant. */
@@ -234,12 +251,13 @@ export async function getListTasks(
   params.set('order_by', opts.orderBy ?? 'updated')
   params.set('reverse', 'true')
   if (opts.dateUpdatedGt != null) params.set('date_updated_gt', String(Math.floor(opts.dateUpdatedGt)))
+  if (opts.dateUpdatedLt != null) params.set('date_updated_lt', String(Math.floor(opts.dateUpdatedLt)))
   if (opts.dateCreatedGt != null) params.set('date_created_gt', String(Math.floor(opts.dateCreatedGt)))
   if (opts.dateCreatedLt != null) params.set('date_created_lt', String(Math.floor(opts.dateCreatedLt)))
   if (opts.dueDateGt != null) params.set('due_date_gt', String(Math.floor(opts.dueDateGt)))
   if (opts.dueDateLt != null) params.set('due_date_lt', String(Math.floor(opts.dueDateLt)))
   const data = await request<{ tasks?: ClickUpTask[]; last_page?: boolean }>(
-    `/list/${listId}/task?${params.toString()}`,
+    `/list/${normalizeListId(listId)}/task?${params.toString()}`,
   )
   const tasks = data.tasks ?? []
   return { tasks, lastPage: data.last_page ?? tasks.length === 0 }
