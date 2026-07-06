@@ -278,6 +278,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     while (true) {
       sinceMs = Math.max(0, cursor - OVERLAP_MS)
       windowEndMs = Math.min(started.getTime(), cursor + step)
+      const windowStart = Date.now()
       // Pull every list for this window CONCURRENTLY. Sixteen lists fetched one
       // after another spent the whole invocation on network waiting and only one
       // window fit per run; in parallel a quiet window costs one round trip, so
@@ -302,6 +303,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         }),
       )
       const windowTasks = counts.reduce((a, b) => a + b, 0)
+      const windowMs = Date.now() - windowStart
       // Window finished — advance the cursor now, before anything else, so even
       // if the next window or the due-today sweep runs out of budget the clock
       // has already moved forward.
@@ -309,9 +311,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       cursor = windowEndMs
       if (windowEndMs >= started.getTime()) break // caught up to now
       if (Date.now() > started.getTime() + DRAIN_SOFT_MS) break // out of budget; next run continues
-      // A quiet window means we can safely leap further; a busy one snaps back so
-      // a busy stretch is never gathered into one oversized window.
-      step = windowTasks === 0 ? Math.min(step * 4, MAX_STEP_MS) : STEP_MS
+      // Leap further whenever the window was cheap — light on work OR quick on the
+      // clock. Waiting for an EXACTLY empty window never triggered (a few boundary
+      // tasks kept creeping in), so the clock crawled three hours at a time. Time
+      // is the real budget, so a fast window means we can safely jump much
+      // further; only a genuinely heavy, slow window snaps the step back so a busy
+      // stretch is never gathered into one oversized, timeout-prone window.
+      const light = windowTasks < 100 || windowMs < 2_500
+      step = light ? Math.min(step * 4, MAX_STEP_MS) : STEP_MS
     }
 
     // ── Phase A (now second): the due-today sweep, with the budget that
