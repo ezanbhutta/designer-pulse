@@ -42,6 +42,8 @@ export interface ClickUpTask {
   priority: { priority: string } | null
   tags: Array<{ name: string }> | null
   assignees: Array<{ id: number; username?: string; email?: string }> | null
+  /** The member who set the task up. ClickUp returns this on the list view too. */
+  creator?: { id: number; username?: string; email?: string } | null
   list: { id: string; name?: string } | null
   parent?: string | null
 }

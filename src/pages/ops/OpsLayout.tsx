@@ -4,6 +4,7 @@ import {
   Bell,
   CalendarDays,
   FileText,
+  Headset,
   Home,
   Kanban,
   UserCheck,
@@ -54,6 +55,7 @@ export default function OpsLayout() {
     { to: '/ops/attendance', label: 'Attendance', icon: UserCheck },
     { to: '/ops/leave', label: 'Leave', icon: CalendarDays },
     { to: '/ops/alerts', label: 'Alerts', icon: Bell, badge: openAlertCount || undefined },
+    { to: '/ops/onsite', label: 'Onsite team', icon: Headset },
     { to: '/ops/reports', label: 'Reports', icon: FileText },
   ]
 
@@ -66,6 +68,7 @@ export default function OpsLayout() {
       { id: 'nav-attendance', label: 'Go to Attendance', hint: 'who is in and when they started', keywords: 'attendance presence check-in warmup', run: go('/ops/attendance') },
       { id: 'nav-leave', label: 'Go to Leave', hint: 'time off, half days, holidays', keywords: 'leave holiday half-day calendar', run: go('/ops/leave') },
       { id: 'nav-alerts', label: 'Go to Alerts', hint: openAlertCount ? `${openAlertCount} waiting` : 'nothing waiting', keywords: 'alerts inbox acknowledge resolve', run: go('/ops/alerts') },
+      { id: 'nav-onsite', label: 'Go to Onsite team', hint: 'CSR and project manager load', keywords: 'onsite csr project manager pm load handed out client', run: go('/ops/onsite') },
       { id: 'nav-reports', label: 'Go to Reports', hint: 'how each person did, with a PDF', keywords: 'reports weekly pdf export attainment', run: go('/ops/reports') },
     ]
     // Frequent actions, one keystroke away (§20.6 / §21.6).

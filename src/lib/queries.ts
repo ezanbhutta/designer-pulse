@@ -79,6 +79,35 @@ export interface SyncResult {
   reason?: string
 }
 
+/** The onsite team's live project load (CSR 1..10 + project managers), read
+ *  from ClickUp task creators. Tracked separately from the remote designers. */
+export interface OnsiteMember {
+  name: string
+  active: number
+  newThisWeek: number
+  byTeam: Record<string, number>
+}
+export interface OnsiteLoad {
+  computedAt?: string
+  members: OnsiteMember[]
+  totalActive: number
+  totalNewThisWeek: number
+  cached?: boolean
+  error?: string
+  partial?: boolean
+}
+
+export async function fetchOnsiteLoad(force = false): Promise<OnsiteLoad> {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) throw new Error('Please sign in to see the onsite team.')
+  const res = await fetch(`/api/onsite${force ? '?force=1' : ''}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(`We could not load the onsite team (${res.status}).`)
+  return (await res.json()) as OnsiteLoad
+}
+
 export async function requestSync(force = false): Promise<SyncResult> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token

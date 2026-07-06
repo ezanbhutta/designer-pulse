@@ -13,6 +13,7 @@ const OpsRoster = lazy(() => import('./pages/ops/OpsRoster'))
 const OpsAttendance = lazy(() => import('./pages/ops/OpsAttendance'))
 const OpsLeave = lazy(() => import('./pages/ops/OpsLeave'))
 const OpsAlerts = lazy(() => import('./pages/ops/OpsAlerts'))
+const OpsOnsite = lazy(() => import('./pages/ops/OpsOnsite'))
 const OpsReports = lazy(() => import('./pages/ops/OpsReports'))
 const CeoLayout = lazy(() => import('./pages/ceo/CeoLayout'))
 const CeoOverview = lazy(() => import('./pages/ceo/CeoOverview'))
@@ -76,6 +77,7 @@ export default function App() {
           <Route path="attendance" element={<OpsAttendance />} />
           <Route path="leave" element={<OpsLeave />} />
           <Route path="alerts" element={<OpsAlerts />} />
+          <Route path="onsite" element={<OpsOnsite />} />
           <Route path="reports" element={<OpsReports />} />
         </Route>
 
