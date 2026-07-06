@@ -49,6 +49,20 @@ const FIRST_RUN_LOOKBACK_MS = 24 * 3600_000
  * up, the window collapses to "now" and steady-state is unchanged.
  */
 const STEP_MS = 3 * 3600_000
+/**
+ * A quiet window (nothing updated) lets the next window leap further, so a long
+ * but idle backlog (e.g. a workspace untouched for days) is walked in a handful
+ * of steps instead of one 3-hour hop per run. Any window that carries work snaps
+ * the step back to STEP_MS so a busy stretch is never gathered into one oversized
+ * (timeout-prone) window. Capped so a single leap can never span too much ground.
+ */
+const MAX_STEP_MS = 2 * 24 * 3600_000
+/**
+ * Stop draining new windows at this point in the invocation and leave the rest
+ * of the budget for the due-today sweep and the response flush. Whatever the
+ * cursor reached is already saved, so the next run continues from there.
+ */
+const DRAIN_SOFT_MS = 18_000
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (!requireCronAuth(req, res)) return
@@ -71,10 +85,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const supa = supabaseAdmin()
     const lastSync = await getLastSync(supa)
     const cursorMs = lastSync ? new Date(lastSync).getTime() : started.getTime() - FIRST_RUN_LOOKBACK_MS
-    const sinceMs = Math.max(0, cursorMs - OVERLAP_MS)
-    // End of THIS run's slice: never more than STEP_MS past the cursor, never
-    // beyond now. On a caught-up system this is just `now`.
-    const windowEndMs = Math.min(started.getTime(), cursorMs + STEP_MS)
     // Any DB-heavy pass must abort before the invocation is force-killed at 60s
     // (which loses all progress). This wall clock is checked between tasks, so a
     // large heal batch always returns partial instead of dying.
@@ -256,30 +266,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     // ── Phase B FIRST: the updated-since walk that advances the sync cursor.
     // The whole failure mode was a stuck clock, so the clock-advancing pass now
-    // runs before anything else and always gets the budget. Rotated so a heavy
-    // backlogged list cannot starve the tail; the window is capped to STEP_MS so
-    // a single run always fits and the cursor moves forward.
+    // runs before anything else and always gets the budget. It DRAINS: it keeps
+    // advancing windows within this invocation until it either catches up to now
+    // or the soft time budget runs out, saving the cursor after every completed
+    // window. Rotated so a heavy backlogged list cannot starve the tail; a busy
+    // window stays STEP_MS-small (always fits), a quiet one leaps further so an
+    // idle backlog closes in a few steps instead of one hop per run.
     const mapped = lists.filter((l) => designers.has(l.id))
     mappedLists = mapped.length
     const rotB = mapped.length ? Math.floor(started.getTime() / 900_000) % mapped.length : 0
     const orderB = [...mapped.slice(rotB), ...mapped.slice(0, rotB)]
-    for (const list of orderB) {
-      const designer = designers.get(list.id)!
-      for (let page = 0; ; page++) {
-        const { tasks: batch, lastPage } = await getListTasks(list.id, {
-          dateUpdatedGt: sinceMs,
-          dateUpdatedLt: windowEndMs,
-          includeClosed: true,
-          page,
-        })
-        if (!batch.length) break
-        await processBatch(list, designer, batch)
-        if (lastPage) break
+
+    let cursor = cursorMs
+    let step = STEP_MS
+    let sinceMs = Math.max(0, cursor - OVERLAP_MS)
+    let windowEndMs = cursor
+    while (true) {
+      sinceMs = Math.max(0, cursor - OVERLAP_MS)
+      windowEndMs = Math.min(started.getTime(), cursor + step)
+      let windowTasks = 0
+      for (const list of orderB) {
+        const designer = designers.get(list.id)!
+        for (let page = 0; ; page++) {
+          const { tasks: batch, lastPage } = await getListTasks(list.id, {
+            dateUpdatedGt: sinceMs,
+            dateUpdatedLt: windowEndMs,
+            includeClosed: true,
+            page,
+          })
+          if (!batch.length) break
+          windowTasks += batch.length
+          await processBatch(list, designer, batch)
+          if (lastPage) break
+        }
       }
+      // Window finished — advance the cursor now, before anything else, so even
+      // if the next window or the due-today sweep runs out of budget the clock
+      // has already moved forward.
+      await setLastSync(supa, new Date(windowEndMs).toISOString())
+      cursor = windowEndMs
+      if (windowEndMs >= started.getTime()) break // caught up to now
+      if (Date.now() > started.getTime() + DRAIN_SOFT_MS) break // out of budget; next run continues
+      // A quiet window means we can safely leap further; a busy one snaps back so
+      // a busy stretch is never gathered into one oversized window.
+      step = windowTasks === 0 ? Math.min(step * 4, MAX_STEP_MS) : STEP_MS
     }
-    // Slice finished — advance the cursor now, before the due-today sweep, so
-    // even if that runs out of budget the clock has already moved forward.
-    await setLastSync(supa, new Date(windowEndMs).toISOString())
 
     // ── Phase A (now second): the due-today sweep, with the budget that
     // remains. It runs every cycle and rotates, so a partial pass is safe and
