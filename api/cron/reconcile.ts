@@ -95,20 +95,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       listDesignerMap(supa),
     ])
 
-    // Self-extending mapping: link name-matching lists to unlinked designers
-    // so their history starts flowing without anyone typing list ids.
-    const autoLinked = await autoLinkDesignerLists(supa, lists, designers)
-    // ClickUp owns the spelling: linked designers wear the exact list name.
-    const renamed = await syncDesignerNames(supa, lists, designers)
-    // The instant channel guarantees itself: verify/repair the ClickUp
-    // webhook registration + signing secret every run.
+    // Housekeeping (auto-link new lists, sync names, verify the webhook) is
+    // deferred until AFTER the clock catches up below, so it never steals budget
+    // from the clock-advancing walk — the whole point of the stall fix. Steady
+    // state (everyone already linked) is unaffected; a brand-new list simply
+    // starts syncing one run later.
+    let autoLinked: Awaited<ReturnType<typeof autoLinkDesignerLists>> = []
+    let renamed: Awaited<ReturnType<typeof syncDesignerNames>> = []
     let webhook: Awaited<ReturnType<typeof ensureWebhookHealthy>> = null
-    try {
-      webhook = await ensureWebhookHealthy(supa)
-    } catch (err) {
-      if (err instanceof ClickUpBudgetError) throw err
-      console.error('[cron/reconcile] webhook ensure failed', err)
-    }
 
     let mappedLists = 0
     let tasksChecked = 0
@@ -284,22 +278,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     while (true) {
       sinceMs = Math.max(0, cursor - OVERLAP_MS)
       windowEndMs = Math.min(started.getTime(), cursor + step)
-      let windowTasks = 0
-      for (const list of orderB) {
-        const designer = designers.get(list.id)!
-        for (let page = 0; ; page++) {
-          const { tasks: batch, lastPage } = await getListTasks(list.id, {
-            dateUpdatedGt: sinceMs,
-            dateUpdatedLt: windowEndMs,
-            includeClosed: true,
-            page,
-          })
-          if (!batch.length) break
-          windowTasks += batch.length
-          await processBatch(list, designer, batch)
-          if (lastPage) break
-        }
-      }
+      // Pull every list for this window CONCURRENTLY. Sixteen lists fetched one
+      // after another spent the whole invocation on network waiting and only one
+      // window fit per run; in parallel a quiet window costs one round trip, so
+      // many windows drain in a single run and the clock actually catches up.
+      const counts = await Promise.all(
+        orderB.map(async (list) => {
+          const designer = designers.get(list.id)!
+          let n = 0
+          for (let page = 0; ; page++) {
+            const { tasks: batch, lastPage } = await getListTasks(list.id, {
+              dateUpdatedGt: sinceMs,
+              dateUpdatedLt: windowEndMs,
+              includeClosed: true,
+              page,
+            })
+            if (!batch.length) break
+            n += batch.length
+            await processBatch(list, designer, batch)
+            if (lastPage) break
+          }
+          return n
+        }),
+      )
+      const windowTasks = counts.reduce((a, b) => a + b, 0)
       // Window finished — advance the cursor now, before anything else, so even
       // if the next window or the due-today sweep runs out of budget the clock
       // has already moved forward.
@@ -318,6 +320,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     const sweep = await sweepDueToday(supa, lists, designers, started.getTime() + 20_000)
     dueTodaySwept = sweep.tasks
     duePhantomsHealed = sweep.phantoms
+
+    // ── Housekeeping LAST: link any new name-matching lists, sync names, verify
+    // the instant webhook. Best-effort and lowest priority — if the budget is
+    // already spent on the clock and the plate, this simply runs next cycle. It
+    // must never abort a run whose important work already succeeded.
+    try {
+      autoLinked = await autoLinkDesignerLists(supa, lists, designers)
+      renamed = await syncDesignerNames(supa, lists, designers)
+      webhook = await ensureWebhookHealthy(supa)
+    } catch (err) {
+      if (!(err instanceof ClickUpBudgetError)) {
+        console.error('[cron/reconcile] housekeeping failed', err)
+      }
+    }
     respond(200, {
       ok: true,
       since: new Date(sinceMs).toISOString(),
