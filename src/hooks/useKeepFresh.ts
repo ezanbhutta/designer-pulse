@@ -27,12 +27,12 @@ export function useKeepFresh(): KeepFresh {
   const [lastSyncIso, setLastSyncIso] = useState<string | null>(null)
   const inFlight = useRef(false)
 
-  const run = useCallback(async () => {
+  const run = useCallback(async (force = false) => {
     if (inFlight.current || !session) return
     inFlight.current = true
     setSyncing(true)
     try {
-      const r = await requestSync()
+      const r = await requestSync(force)
       // A fresh pull actually landed — refresh every open view. (Skips mean the
       // data is already recent; no need to refetch.)
       if (r.ok && r.triggered && !r.skipped) {
@@ -64,5 +64,5 @@ export function useKeepFresh(): KeepFresh {
     }
   }, [session, run])
 
-  return { syncing, lastSyncIso, syncNow: () => void run() }
+  return { syncing, lastSyncIso, syncNow: () => void run(true) }
 }

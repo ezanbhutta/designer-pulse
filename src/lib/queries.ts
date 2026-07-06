@@ -79,12 +79,14 @@ export interface SyncResult {
   reason?: string
 }
 
-export async function requestSync(): Promise<SyncResult> {
+export async function requestSync(force = false): Promise<SyncResult> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
   if (!token) return { ok: false }
   try {
-    const res = await fetch('/api/sync/refresh', {
+    // `force` is an explicit person pressing Refresh — it runs even inside the
+    // debounce window. Background polls leave force off so many tabs stay cheap.
+    const res = await fetch(`/api/sync/refresh${force ? '?force=1' : ''}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     })

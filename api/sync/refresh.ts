@@ -71,7 +71,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   } catch {
     /* no marker yet — allow the sync */
   }
-  if (Number.isFinite(attemptMs) && Date.now() - attemptMs < DEBOUNCE_MS) {
+  // An explicit Refresh press (`?force=1`) runs even inside the debounce window,
+  // so a person can trigger a catch-up on demand. Background polls omit it, so
+  // any number of open tabs still cost at most one real pull per window.
+  const force = req.query?.force === '1' || req.query?.force === 'true'
+  if (!force && Number.isFinite(attemptMs) && Date.now() - attemptMs < DEBOUNCE_MS) {
     json(res, 200, { ok: true, skipped: true, reason: 'recently attempted', lastSync })
     return
   }
