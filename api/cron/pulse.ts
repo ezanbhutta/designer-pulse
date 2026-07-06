@@ -339,6 +339,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       .limit(2000)
     expectOk(sgErr, 'open gap alerts read')
     const gapResolveIds: number[] = []
+    // Still-open gaps whose count changed since firing: rewrite the stored
+    // message + context so "N slots open" always equals expected minus filled,
+    // never a stale snapshot. One source of truth, everywhere it is read.
+    const gapRefresh: Array<{ id: number; message: string; context: Record<string, unknown> }> = []
     for (const a of (gapAlertRows ?? []) as Array<{
       id: number
       designer_id: string | null
@@ -354,7 +358,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       try {
         const expected = expectedQuotaOn(a.designer_id, workDate, quota)
         const nowFilled = slotsFilledFor(a.designer_id, workDate)
-        if (expected - nowFilled <= 0) gapResolveIds.push(a.id)
+        const gap = expected - nowFilled
+        if (gap <= 0) {
+          gapResolveIds.push(a.id)
+          continue
+        }
+        const prevGap = typeof a.context?.gap === 'number' ? (a.context.gap as number) : null
+        const prevFilled = typeof a.context?.filled === 'number' ? (a.context.filled as number) : null
+        if (prevGap !== gap || prevFilled !== nowFilled) {
+          const name = designers.find((x) => x.id === a.designer_id)?.name ?? 'this designer'
+          gapRefresh.push({
+            id: a.id,
+            message: `${gap} slot${gap === 1 ? '' : 's'} open — open ${name}'s list in ClickUp`,
+            context: { ...(a.context ?? {}), work_date: workDate, expected, filled: nowFilled, gap },
+          })
+        }
       } catch (err) {
         console.error('[cron/pulse] gap re-check failed', err)
       }
@@ -366,6 +384,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         .in('id', gapResolveIds)
       expectOk(sgResErr, 'gap alerts auto-resolve')
       autoResolved += gapResolveIds.length
+    }
+    for (const u of gapRefresh) {
+      const { error: refErr } = await supa
+        .from('alerts')
+        .update({ message: u.message, context: u.context })
+        .eq('id', u.id)
+      expectOk(refErr, 'gap alert count refresh')
     }
 
     summary.work_date = today

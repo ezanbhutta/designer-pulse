@@ -221,13 +221,21 @@ export default function OpsHome() {
       const d = a.designer_id ? designerById.get(a.designer_id) : undefined
       const row = derived.rows.find((r) => r.designer.id === a.designer_id)
       const href = d ? clickupListUrl(d.clickup_list_id) : null
+      // ONE source of truth for "slots open": expected minus filled from the
+      // SAME live row the detail reads. The stored alert message is a snapshot
+      // from when it fired; if a project was handed out since, the count must
+      // shrink to match "X of Y", never sit stale (e.g. "2 open" beside "3 of 4").
+      // If the gap has closed entirely, drop the item — the pulse cron resolves it.
+      const slots = row ? Math.max(0, row.expected - row.filled) : null
+      if (slots === 0) continue
       items.push({
         id: `gap-${a.id}`,
         kind: 'capacity',
         severity: 'warning',
         text:
-          a.message ??
-          `${d?.name ?? 'A designer'} has room for a few more projects today`,
+          slots != null
+            ? `${slots} slot${slots === 1 ? '' : 's'} open — open ${d ? `${d.name}'s` : 'the'} list in ClickUp`
+            : (a.message ?? `${d?.name ?? 'A designer'} has room for a few more projects today`),
         detail: row
           ? `They have ${row.filled} of ${row.expected} projects due today. Handing out the work is the team lead's job, not theirs.`
           : undefined,
