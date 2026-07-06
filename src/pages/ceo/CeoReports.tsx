@@ -44,7 +44,6 @@ import {
 import { pktToday } from '../../../shared/pkt'
 import type { Config, Designer } from '../../../shared/types'
 import { fmtClock, fmtDate, fmtDuration, fmtDurationLong, fmtPct } from '../../lib/format'
-import { generateWeeklyReportPdf } from '../../lib/reportPdf'
 import {
   TEAMS,
   activeDesigners,
@@ -184,6 +183,7 @@ export default function CeoReports() {
         attendance.filter((a) => a.designer_id === d.id),
       )
     }
+    const { generateWeeklyReportPdf } = await import('../../lib/reportPdf')
     await generateWeeklyReportPdf({
       period,
       generatedAt: new Date().toISOString(),
