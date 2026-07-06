@@ -6,6 +6,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InboxZeroReward } from '../../components/ui/InboxZeroReward'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { DesktopAlertsCard } from '../../components/shared/DesktopAlertsCard'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { useToast } from '../../components/ui/ToastProvider'
@@ -229,6 +230,8 @@ export default function OpsAlerts() {
           </span>
         }
       />
+
+      <DesktopAlertsCard />
 
       {alertsQ.error && (
         <ErrorBanner

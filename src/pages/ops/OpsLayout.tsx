@@ -14,6 +14,7 @@ import type { Command } from '../../components/ui/CommandPalette'
 import { Drawer } from '../../components/ui/Drawer'
 import { ToastProvider } from '../../components/ui/ToastProvider'
 import { DesignerDetail } from '../../components/shared/DesignerDetail'
+import { DesktopAlertsProvider } from '../../components/shared/DesktopAlerts'
 import { SyncStatus } from '../../components/shared/SyncStatus'
 import { useKeepFresh } from '../../hooks/useKeepFresh'
 import { clickupListUrl } from '../../lib/queries'
@@ -110,12 +111,14 @@ export default function OpsLayout() {
 
   return (
     <ToastProvider>
-      <AppShell title="Studio Pulse Ops" nav={nav} commands={commands}>
-        <div className="mb-6 flex justify-end">
-          <SyncStatus syncing={fresh.syncing} lastSyncIso={fresh.lastSyncIso} onRefresh={fresh.syncNow} />
-        </div>
-        <Outlet />
-      </AppShell>
+      <DesktopAlertsProvider>
+        <AppShell title="Studio Pulse Ops" nav={nav} commands={commands}>
+          <div className="mb-6 flex justify-end">
+            <SyncStatus syncing={fresh.syncing} lastSyncIso={fresh.lastSyncIso} onRefresh={fresh.syncNow} />
+          </div>
+          <Outlet />
+        </AppShell>
+      </DesktopAlertsProvider>
       {/* Generic chrome title — DesignerDetail's own header carries the
           name + team once, so the drawer never says it twice. */}
       <Drawer open={designerId != null} onClose={closeDesigner} title="Designer details" wide>
