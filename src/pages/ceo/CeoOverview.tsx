@@ -22,6 +22,7 @@ import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { CornerTip, HeroMetric, Reveal, RevealItem } from './ceoKit'
 import {
   ageMinutes,
+  agingDelay,
   pipelineBottleneck,
   summarizeDesigner,
   workloadForecast,
@@ -34,7 +35,6 @@ import { fmtClock, fmtDate, fmtDuration, fmtDurationLong, fmtPct } from '../../l
 import {
   TEAMS,
   activeDesigners,
-  agingThresholdMin,
   cancelledInPeriod,
   constraintRead,
   firstName,
@@ -219,9 +219,11 @@ export default function CeoOverview() {
     }
 
     // (b) The pipeline constraint, read in one line from the aging picture.
-    const aging = openQ.data.filter(
-      (t) => !t.deleted && ageMinutes(t, now) > agingThresholdMin(t.current_status, cfg),
-    )
+    const aging = openQ.data.filter((t) => {
+      if (t.deleted) return false
+      const d = agingDelay(t.current_status, cfg)
+      return d.ages && ageMinutes(t, now) >= d.thresholdMin
+    })
     if (aging.length > 0) {
       const byTeam = new Map<string, typeof aging>()
       for (const t of aging) {

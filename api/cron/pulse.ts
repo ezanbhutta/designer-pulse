@@ -7,9 +7,11 @@
  *     and creation date don't matter). A shortfall is idle paid capacity —
  *     attributed to the PM/assignment team, never the designer. The proposed
  *     action is a ClickUp deep link, never a write (spec §22.1).
- *  2. Task aging: open tasks past aging_days_default in their current status
- *     (aging_days_client_response for `client response`) → warning; past 2×
- *     the threshold → escalated to critical.
+ *  2. Task aging: routed through the shared agingDelay() ownership model.
+ *     Designer-owned stalls warn (past 2× the threshold → critical) and are
+ *     attributed to the designer; the team handoff (revision complete = ready
+ *     to send) warns but is attributed to the team lead; client-owned waits
+ *     (deliver to client, client response) never alert, only heal silently.
  *  3. Attendance: recompute today + yesterday for all active designers so
  *     post-midnight shifts land on the right day and forgotten checkouts
  *     auto-close after shift end (spec §9.2).
@@ -20,8 +22,10 @@ import { addDays, pktDateOf, pktInstant, pktToday } from '../../shared/pkt'
 import { STATUS_LABELS } from '../../shared/statuses'
 import {
   ageMinutes,
+  agingDelay,
   expectedQuotaOn,
   scheduleFor,
+  type AgingOwner,
   type QuotaContext,
 } from '../../shared/aggregate'
 import type {
@@ -241,12 +245,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       message: string
       days: number
       thresholdDays: number
+      owner: AgingOwner
     }
     const candidates: AgedCandidate[] = []
-    // Waiting on the client is NEVER an error — clients reply late, that's
-    // the business — so client-response tasks can't become alert candidates.
-    // Long client waits are still silently verified against ClickUp so rows
-    // frozen by old imports heal without ever flagging anyone.
+    // Client-owned waits (deliver to client, client response) are NEVER an error
+    // — clients reply late, that's the business — so they can't become alert
+    // candidates; they are only silently verified against ClickUp so rows frozen
+    // by old imports heal without ever flagging anyone. Ownership comes from the
+    // one shared agingDelay() model, so designer- and team-owned tasks age.
     const silentVerify: TaskState[] = []
     for (const t of openTasks) {
       if (!t.current_status) {
@@ -256,17 +262,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         silentVerify.push(t)
         continue
       }
+      const delay = agingDelay(t.current_status, cfg)
       const age = ageMinutes(t, now)
-      if (t.current_status === 'client response') {
-        if (age >= cfg.aging_days_client_response * 1440) silentVerify.push(t)
+      if (delay.owner === 'client') {
+        // Waiting on the client is never an alert; still verify old rows so
+        // frozen imports heal (covers deliver to client AND client response).
+        if (age >= delay.thresholdMin) silentVerify.push(t)
         continue
       }
-      const thresholdDays = cfg.aging_days_default
-      if (age < thresholdDays * 1440) continue
+      if (!delay.ages || age < delay.thresholdMin) continue
+      const thresholdDays = Math.round(delay.thresholdMin / 1440)
       const days = Math.floor(age / 1440)
-      const severity = age >= thresholdDays * 2 * 1440 ? 'critical' : 'warning'
-      const message = `"${t.name ?? t.task_id}" has sat ${days}d in ${STATUS_LABELS[t.current_status]}`
-      candidates.push({ t, severity, message, days, thresholdDays })
+      const severity = age >= delay.thresholdMin * 2 ? 'critical' : 'warning'
+      const message =
+        delay.owner === 'team'
+          ? `"${t.name ?? t.task_id}" has been ready to send to the client for ${days}d`
+          : `"${t.name ?? t.task_id}" has been at the ${STATUS_LABELS[t.current_status]} stage for ${days}d — worth another look`
+      candidates.push({ t, severity, message, days, thresholdDays, owner: delay.owner ?? 'designer' })
     }
 
     // Verified set shrinks agedTaskIds only via CONFIRMED heals/ghosts, so a
@@ -299,6 +311,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
           status: c.t.current_status,
           age_days: c.days,
           threshold_days: c.thresholdDays,
+          owner: c.owner,
         },
       })
       if (result.fired || result.escalated) agingAlerts++

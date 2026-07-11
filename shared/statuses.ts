@@ -87,7 +87,7 @@ export const STATUS_LABELS: Record<CanonicalStatus, string> = {
   'in progress': 'Working',
   'deliver to client': 'First design sent',
   revision: 'Changes requested',
-  'revision complete': 'Changes done',
+  'revision complete': 'Ready to send',
   'client response': 'With the client',
   'final files': 'Final files',
   cancelled: 'Cancelled',
@@ -102,7 +102,8 @@ export const STATUS_EXPLAINERS: Record<CanonicalStatus, string> = {
   'deliver to client': 'The first design is ready and has gone to the client to look over.',
   revision:
     'The client or one of our checkers asked for a few changes, and the designer is taking care of them.',
-  'revision complete': 'The changes are finished, and the work has gone back for another look.',
+  'revision complete':
+    "The changes the client asked for are finished, and this is now waiting to be shared with the client. Sending it on is the team lead's job, not the designer's.",
   'client response':
     'The work is now with the client while they take their time to look it over. Clients reply on their own schedule, so this is a normal and healthy part of the job, and it never counts against the designer.',
   'final files':

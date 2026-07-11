@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import type { Alert, Designer } from '../../shared/types'
 import { STATUS_LABELS, canonicalizeStatus } from '../../shared/statuses'
+import { agingOwner, type AgingOwner } from '../../shared/aggregate'
 import { fmtDate } from './format'
 import { clickupListUrl, clickupTaskUrl } from './queries'
 
@@ -123,18 +124,35 @@ export function presentAlert(alert: Alert, designers: Designer[]): AlertPresenta
           return mins != null ? Math.floor(mins / 1440) : null
         })()
       const aged = days != null ? `for ${plural(days, 'day')}` : 'for too long'
-      const isClientResponse = status === 'client response'
+      const owner = (ctxStr(alert, 'owner') as AgingOwner | null) ?? agingOwner(status)
+      const hrefLabel = taskHref ? 'Open task in ClickUp' : null
+      if (owner === 'client') {
+        return {
+          title: `${what} has been with the client ${aged}`,
+          suggestion: `This waiting is on the client, not on ${name}. A gentle nudge${
+            days != null ? ` after ${plural(days, 'day')}` : ''
+          } is fine, but nothing here is late.`,
+          href: taskHref,
+          hrefLabel,
+          icon,
+          tone,
+        }
+      }
+      if (owner === 'team') {
+        return {
+          title: `${what} has been ready to send to the client ${aged}`,
+          suggestion: `${name} finished the requested changes — sending it on to the client is the team lead's job, not ${name}'s. It may be worth a nudge so this finished work goes out.`,
+          href: taskHref,
+          hrefLabel,
+          icon,
+          tone,
+        }
+      }
       return {
-        title: isClientResponse
-          ? `${what} has been waiting for the client ${aged}`
-          : `${what} has been stuck in ${statusLabel} ${aged}`,
-        suggestion: isClientResponse
-          ? `It may be worth a gentle nudge, since the client has not replied${
-              days != null ? ` in ${plural(days, 'day')}` : ''
-            } yet. This waiting is on the client, not on ${name}.`
-          : `It may be worth checking in with ${name}, since this one seems stuck and could need help to move.`,
+        title: `${what} has been stuck in ${statusLabel} ${aged}`,
+        suggestion: `It may be worth checking in with ${name}, since this one seems stuck and could need help to move.`,
         href: taskHref,
-        hrefLabel: taskHref ? 'Open task in ClickUp' : null,
+        hrefLabel,
         icon,
         tone,
       }

@@ -33,7 +33,7 @@ import {
   qk,
 } from '../../lib/queries'
 import { addDays, pktDateOf, pktInstant, pktToday, startOfWeek } from '../../../shared/pkt'
-import { burnoutComposite, median } from '../../../shared/aggregate'
+import { agingOwner, burnoutComposite, median, type AgingOwner } from '../../../shared/aggregate'
 import type { DesignerPeriodSummary, QuotaContext } from '../../../shared/aggregate'
 import { STATUS_LABELS, type CanonicalStatus } from '../../../shared/statuses'
 import { CONFIG_DEFAULTS } from '../../../shared/types'
@@ -352,14 +352,15 @@ export interface ConstraintRead {
   line: string
 }
 
-const STATUS_OWNER: Record<string, ConstraintRead['owner']> = {
-  'pickup your projects': 'the design work itself',
-  'in progress': 'the design work itself',
-  revision: 'the design work itself',
-  'deliver to client': 'our checking step',
-  'revision complete': 'our checking step',
-  'final files': 'our checking step',
-  'client response': 'the client',
+// Derived from the ONE shared aging-ownership helper so this can never drift
+// from the model: designer work -> the design work itself, team handoff -> our
+// checking step, client wait -> the client. (Fixes the old hand-maintained map,
+// which wrongly put 'deliver to client' on our checking step and 'final files'
+// off the design work.)
+const OWNER_LABEL: Record<AgingOwner, ConstraintRead['owner']> = {
+  designer: 'the design work itself',
+  team: 'our checking step',
+  client: 'the client',
 }
 
 /**
@@ -375,7 +376,7 @@ export function constraintRead(
     .sort((a, b) => (b.medianAgeMin ?? 0) - (a.medianAgeMin ?? 0))
   const top = ranked[0]
   if (!top) return null
-  const owner = STATUS_OWNER[top.status] ?? 'the design work itself'
+  const owner = OWNER_LABEL[agingOwner(top.status) ?? 'designer']
   return {
     status: top.status,
     owner,
@@ -453,11 +454,3 @@ export function burnoutRisk(
   }
 }
 
-// ── Aging threshold (§11 T3) ──────────────────────────────────────────────────
-
-// Waiting on the client is NEVER stuck (clients reply late — that's normal),
-// so `client response` gets an infinite threshold everywhere.
-export function agingThresholdMin(status: CanonicalStatus | null, cfg: Config): number {
-  if (status === 'client response') return Infinity
-  return cfg.aging_days_default * 24 * 60
-}

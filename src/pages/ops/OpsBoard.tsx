@@ -26,7 +26,7 @@ import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { clickupListUrl, clickupTaskUrl } from '../../lib/queries'
 import { fmtClock, fmtDate, fmtDateTime, fmtDurationLong } from '../../lib/format'
 import { pktToday } from '../../../shared/pkt'
-import { ageMinutes, expectedQuotaOn, scheduleFor } from '../../../shared/aggregate'
+import { ageMinutes, agingDelay, expectedQuotaOn, scheduleFor } from '../../../shared/aggregate'
 import {
   STATUSES,
   STATUS_EXPLAINERS,
@@ -37,7 +37,6 @@ import {
 } from '../../../shared/statuses'
 import type { Designer, TaskState } from '../../../shared/types'
 import {
-  agingThresholdMin,
   closedOn,
   createdOn,
   firstName,
@@ -235,9 +234,10 @@ export default function OpsBoard() {
         return { d, expected, filled, gapLive: expected > 0 && filled < expected && since != null && since >= cfg.assignment_gap_check_offset_min }
       })
 
-    const agingCount = openTasks.filter(
-      (t) => ageMinutes(t, now) >= agingThresholdMin(t.current_status, cfg),
-    ).length
+    const agingCount = openTasks.filter((t) => {
+      const d = agingDelay(t.current_status, cfg)
+      return d.ages && ageMinutes(t, now) >= d.thresholdMin
+    }).length
     const clientWait = openTasks.filter((t) => t.current_status === 'client response').length
 
     return { byStatus, unmapped, assignedToday, gapRows, agingCount, clientWait }

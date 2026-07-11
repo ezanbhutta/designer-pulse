@@ -207,17 +207,6 @@ export function slotsFilledToday(
 }
 
 /**
- * Aging threshold in minutes for a task's current status (spec §11 T3).
- * Waiting on the client is NEVER stuck — clients reply late, that's the
- * business — so `client response` gets an infinite threshold and can never
- * appear in a stuck list or wear an aging badge.
- */
-export function agingThresholdMin(status: CanonicalStatus | null, cfg: Config): number {
-  if (status === 'client response') return Infinity
-  return cfg.aging_days_default * 24 * 60
-}
-
-/**
  * Minutes since today's scheduled shift start (negative = shift not started).
  * null when the designer has no schedule for today.
  */

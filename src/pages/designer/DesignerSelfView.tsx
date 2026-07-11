@@ -69,6 +69,7 @@ import {
 } from '../../../shared/pkt'
 import {
   ageMinutes,
+  agingDelay,
   expectedQuotaOn,
   scheduleFor,
   summarizeDesigner,
@@ -1126,16 +1127,26 @@ function agingNote(
 ): { text: string; mine: boolean } | null {
   if (!task.current_status) return null
   const days = Math.floor(ageMinutes(task, now) / (60 * 24))
-  if (task.current_status === 'client response') {
-    if (days < agingDaysClientResponse) return null
+  const delay = agingDelay(task.current_status, {
+    aging_days_default: agingDaysDefault,
+    aging_days_client_response: agingDaysClientResponse,
+  })
+  const threshold = Math.round(delay.thresholdMin / 1440)
+  if (delay.owner === 'client') {
+    if (days < threshold) return null
     return {
-      text: `The client has had this for ${days} days now. That is completely normal, and it never counts against you.`,
+      text: `This has been with the client for ${days} day${days === 1 ? '' : 's'} now. That is completely normal, and it never counts against you.`,
       mine: false,
     }
   }
-  const designerOwned = ['pickup your projects', 'in progress', 'revision', 'final files']
-  if (!designerOwned.includes(task.current_status)) return null
-  if (days < agingDaysDefault) return null
+  if (days < threshold) return null
+  if (delay.owner === 'team') {
+    return {
+      text: `You finished the changes on this ${days} day${days === 1 ? '' : 's'} ago; it is now with the team to send to the client — that part is on them, not on you.`,
+      mine: false,
+    }
+  }
+  if (delay.owner !== 'designer') return null
   const label = STATUS_LABELS[task.current_status]
   return {
     text: `This has been at the “${label}” stage for ${days} day${days === 1 ? '' : 's'} now, so it might be worth another look.`,

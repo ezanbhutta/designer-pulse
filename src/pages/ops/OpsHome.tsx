@@ -43,13 +43,13 @@ import { fmtClock, fmtDate, fmtDurationLong, fmtPct, fmtShiftTime } from '../../
 import { addDays, pktInstant, pktToday } from '../../../shared/pkt'
 import {
   ageMinutes,
+  agingDelay,
   expectedQuotaOn,
   scheduleFor,
 } from '../../../shared/aggregate'
 import { STATUS_LABELS } from '../../../shared/statuses'
 import type { TaskState } from '../../../shared/types'
 import {
-  agingThresholdMin,
   closedOn,
   createdOn,
   firstName,
@@ -174,8 +174,11 @@ export default function OpsHome() {
     })
 
     const agingTasks = openTasks
-      .map((t) => ({ task: t, age: ageMinutes(t, now), threshold: agingThresholdMin(t.current_status, cfg) }))
-      .filter((x) => x.age >= x.threshold)
+      .map((t) => {
+        const d = agingDelay(t.current_status, cfg)
+        return { task: t, age: ageMinutes(t, now), threshold: d.thresholdMin, owner: d.owner, ages: d.ages }
+      })
+      .filter((x) => x.ages && x.age >= x.threshold)
       .sort((a, b) => b.age - a.age)
 
     const totalExpected = rows.reduce((s, r) => s + r.expected, 0)
@@ -245,19 +248,26 @@ export default function OpsHome() {
       })
     }
 
-    // 2. Aging open tasks, worst first. Tasks waiting on the client are never
-    // here — waiting for a reply is normal, not an error.
-    for (const { task, age, threshold } of derived.agingTasks.slice(0, 5)) {
+    // 2. Aging open tasks, worst first. Client-owned waits are never here
+    // (waiting for a reply is normal). Designer-owned stalls read as "stuck";
+    // team-owned (revision complete) reads as "ready to send", on the team lead.
+    for (const { task, age, threshold, owner } of derived.agingTasks.slice(0, 5)) {
       const d = task.designer_id ? designerById.get(task.designer_id) : undefined
       const href = clickupTaskUrl(task.task_id)
       items.push({
         id: `age-${task.task_id}`,
         kind: 'stuck',
         severity: age >= threshold * 2 ? 'critical' : 'warning',
-        text: `"${task.name ?? task.task_id}" has been stuck in ${
-          task.current_status ? STATUS_LABELS[task.current_status] : 'one stage'
-        } for ${fmtDurationLong(age)}`,
-        detail: `${d?.name ?? 'No one yet'}, flagged after ${Math.round(threshold / (24 * 60))} days without moving`,
+        text:
+          owner === 'team'
+            ? `"${task.name ?? task.task_id}" has been ready to send to the client for ${fmtDurationLong(age)}`
+            : `"${task.name ?? task.task_id}" has been stuck in ${
+                task.current_status ? STATUS_LABELS[task.current_status] : 'one stage'
+              } for ${fmtDurationLong(age)}`,
+        detail:
+          owner === 'team'
+            ? `Finished by ${d?.name ?? 'the designer'} — waiting on the team lead to send it to the client, flagged after ${Math.round(threshold / (24 * 60))} days`
+            : `${d?.name ?? 'No one yet'}, flagged after ${Math.round(threshold / (24 * 60))} days without moving`,
         action: href ? { label: 'Open in ClickUp', href } : undefined,
       })
     }
@@ -766,7 +776,7 @@ export default function OpsHome() {
               <EmptyState
                 icon={CheckCircle2}
                 title="Nothing is stuck"
-                hint={`Nothing has sat still for more than ${cfg.aging_days_default} days. Waiting for a client never counts as stuck.`}
+                hint={`Nothing designer-owned has been waiting more than ${cfg.aging_days_default} days. Waiting on the client, and work that is ready to send, are never counted as stuck.`}
               />
             ) : (
               derived.agingTasks.slice(0, 5).map(({ task }) => (

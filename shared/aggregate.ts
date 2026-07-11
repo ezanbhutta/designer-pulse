@@ -10,6 +10,7 @@ import { addDays, dateRange, dowOf, pktDateOf } from './pkt'
 import { leaveCovers } from './attendance'
 import type {
   AttendanceDaily,
+  Config,
   DesignerSchedule,
   Holiday,
   HolidayWorker,
@@ -446,6 +447,65 @@ export function utilizationPct(
 ): number | null {
   if (todayQuota <= 0) return null
   return Math.round((dueOnDay(tasks, designerId, day) / todayQuota) * 100)
+}
+
+export type AgingOwner = 'designer' | 'team' | 'client'
+
+// Who must act NEXT on an open task, for AGING/DELAY purposes ONLY. This is
+// deliberately NOT the delivery/quota model (DELIVERED_STATUSES / CSR_CAUGHT_SOURCES
+// stay exactly as they are): a task can be "delivered" and still be owned by the
+// client for the next move.
+//   designer = the designer must do the work (nudge them if slow)
+//   team     = the designer is DONE; the CSR/team lead must SEND it to the client
+//              (a long wait here IS a real delay, but it is NOT the designer's fault)
+//   client   = we are waiting on the client (normal, never a fault, never "stuck")
+const AGING_OWNER: Partial<Record<CanonicalStatus, AgingOwner>> = {
+  'pickup your projects': 'designer',
+  'in progress': 'designer',
+  revision: 'designer',
+  'final files': 'designer',
+  'revision complete': 'team',
+  'deliver to client': 'client',
+  'client response': 'client',
+}
+
+/** Aging ownership bucket for a status (no Config needed). null = terminal/unknown. */
+export function agingOwner(status: CanonicalStatus | null): AgingOwner | null {
+  return status ? AGING_OWNER[status] ?? null : null
+}
+
+export interface AgingDelay {
+  /** Who must act next; null when the task can't age (no/terminal status). */
+  owner: AgingOwner | null
+  /** Minutes it may sit before it counts as a delay. Infinity = never. */
+  thresholdMin: number
+  /**
+   * True only when a wait past thresholdMin is a REAL delay worth flagging on the
+   * ops/CEO delay lists and firing an ownership-attributed alert. Designer- and
+   * team-owned waits age; client-owned waits are normal and never "stuck".
+   */
+  ages: boolean
+}
+
+/**
+ * Single source of truth for aging eligibility + threshold + ownership. Every
+ * surface (ops, CEO, designer self-view, the pulse cron, alert presentation, task
+ * cards) MUST route through this so the model can never drift. Client-owned states
+ * use the shorter client threshold and ages=false (a client wait is normal, never a
+ * fault). Designer- and team-owned states use aging_days_default; team delays
+ * (revision complete = finished, waiting to be sent to the client) belong to the
+ * team lead, not the designer.
+ */
+export function agingDelay(
+  status: CanonicalStatus | null,
+  cfg: Pick<Config, 'aging_days_default' | 'aging_days_client_response'>,
+): AgingDelay {
+  const owner = agingOwner(status)
+  if (owner === 'client')
+    return { owner, thresholdMin: cfg.aging_days_client_response * 1440, ages: false }
+  if (owner === 'designer' || owner === 'team')
+    return { owner, thresholdMin: cfg.aging_days_default * 1440, ages: true }
+  return { owner: null, thresholdMin: Infinity, ages: false }
 }
 
 /** Minutes a task has sat in its current status. */

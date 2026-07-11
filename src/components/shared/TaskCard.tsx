@@ -4,7 +4,7 @@ import { Clock, Flag, Layers } from 'lucide-react'
 import { StatusBadge } from '../ui/StatusBadge'
 import { STALE_ANALYTICS, fetchConfig, qk } from '../../lib/queries'
 import { fmtAgeShort } from '../../lib/format'
-import { ageMinutes } from '../../../shared/aggregate'
+import { ageMinutes, agingDelay } from '../../../shared/aggregate'
 import { STATUS_LABELS, TERMINAL_STATUSES } from '../../../shared/statuses'
 import { CONFIG_DEFAULTS } from '../../../shared/types'
 import type { TaskState } from '../../../shared/types'
@@ -49,11 +49,19 @@ export const TaskCard = memo(function TaskCard({
   const status = task.current_status
   const isOpen = status != null && !TERMINAL_STATUSES.includes(status)
   const age = ageMinutes(task)
-  // Waiting on the client is never "stuck" — clients reply late, that's
-  // normal — so client-response tasks never wear the aging badge.
-  const thresholdMin = status === 'client response' ? Infinity : agingDays * 24 * 60
-  const aging = isOpen && age >= thresholdMin
-  const severe = isOpen && age >= thresholdMin * 2
+  // The "stuck" badge lives on the DESIGNER's card, so only a designer-owned
+  // stall reddens it. Waiting on the client, and the team handoff (revision
+  // complete = ready to send), are never the designer's fault, so they never
+  // wear the badge here — the team delay still surfaces, correctly attributed,
+  // in the alerts. The shared helper is the single source of that ownership.
+  const cfg = config ?? CONFIG_DEFAULTS
+  const delay = agingDelay(status, {
+    aging_days_default: agingDays,
+    aging_days_client_response: cfg.aging_days_client_response,
+  })
+  const stuckOwned = delay.owner === 'designer'
+  const aging = isOpen && stuckOwned && age >= delay.thresholdMin
+  const severe = isOpen && stuckOwned && age >= delay.thresholdMin * 2
   const priority = task.priority?.toLowerCase() ?? null
 
   const body = (
