@@ -5,7 +5,7 @@
  * never counts against a designer (spec §4.1).
  */
 
-import { CSR_CAUGHT_SOURCES, canonicalizeStatus, type CanonicalStatus } from './statuses'
+import { canonicalizeStatus, type CanonicalStatus } from './statuses'
 import { minutesBetween } from './pkt'
 
 export interface TransitionEvent {
@@ -80,8 +80,13 @@ export function computeTaskMetrics(
     }
     if (to === 'revision') {
       revisionRounds += 1
-      if (CSR_CAUGHT_SOURCES.includes(from)) csrCaught += 1
-      else if (from === 'client response') clientCaught += 1
+      // Every round is attributed so the split always reconciles with the total
+      // (owner's rule: "by us" + "by the client" must equal the changes count).
+      // Only a change that came straight from the client's reply is the client's;
+      // a change from any of our own stages (deliver to client, revision complete,
+      // in progress, final files …) is our own team's catch.
+      if (from === 'client response') clientCaught += 1
+      else csrCaught += 1
     }
 
     current = to

@@ -205,7 +205,6 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
   const delivered = sum((s) => s.delivered)
   const clean = sum((s) => s.firstPassClean)
   const revisions = sum((s) => s.revisionRounds)
-  const csrCaught = sum((s) => s.csrCaughtRounds)
   const clientCaught = sum((s) => s.clientCaughtRounds)
   const cancelled = sum((s) => s.cancelled)
   const studioAtt = expected > 0 ? Math.round((completed / expected) * 100) : null
@@ -330,16 +329,12 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
     const numStr = studioAtt == null ? 'not set' : String(studioAtt)
     doc.text(numStr, PX, heroY)
     const nw = doc.getTextWidth(numStr)
-    let capX = PX + nw + 12
-    if (studioAtt != null) {
-      T('%', PX + nw + 4, heroY, { font: RF.frauncesBlack, size: 39, color: INK })
-      doc.setFont(RF.frauncesBlack, 'normal')
-      doc.setFontSize(39)
-      capX = PX + nw + 4 + doc.getTextWidth('%') + 16
-    }
-    const capLines = wrap('of the studio target was met this week', 84, RF.inter, 9.5)
-    const capTop = heroY - 12 - (capLines.length - 1) * 12
-    capLines.forEach((ln, i) => T(ln, capX, capTop + i * 12, { font: RF.inter, size: 9.5, color: MUTED }))
+    if (studioAtt != null) T('%', PX + nw + 4, heroY, { font: RF.frauncesBlack, size: 39, color: INK })
+    // Caption sits BELOW the number, so it can never run into the stat block on
+    // the right whatever the number's width (a three digit 100 is much wider
+    // than a two digit one).
+    const capLines = wrap('of the studio target was met this week', 200, RF.inter, 9.5)
+    capLines.forEach((ln, i) => T(ln, PX, heroY + 22 + i * 13, { font: RF.inter, size: 9.5, color: MUTED }))
 
     // right-side stat rows
     const stats: Array<[string, string, RGB]> = [
@@ -375,7 +370,7 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
       [
         { label: 'Delivered', value: String(completed), caption: `of the ${assigned} projects that were due` },
         { label: 'Right first time', value: pct(studioFpq), caption: `${clean} of ${delivered} accepted with no changes` },
-        { label: 'Changes asked', value: String(revisions), caption: `${csrCaught} by our team, ${clientCaught} by clients` },
+        { label: 'Changes asked', value: String(revisions), caption: `${Math.max(0, revisions - clientCaught)} by our team, ${clientCaught} by clients` },
         {
           label: 'Cancelled',
           value: String(cancelled),
@@ -426,9 +421,11 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
   }
 
   // ════════════════════════ 02 — EVERYONE (standings) ════════════════════════
-  newPage()
-  runHead(period_)
-  {
+  // Only worth its own page when there is more than one designer to rank —
+  // otherwise it just repeats the single designer's own page.
+  if (rows.length > 1) {
+    newPage()
+    runHead(period_)
     sectionHead('02', 'Everyone', `${plural(rows.length, 'designer')}, hardest week first`, 108)
     let y = 150
     const cols = { name: PX, team: PX + 150, del: PX + 250, met: PX + 340, rft: W - PX }
@@ -506,13 +503,14 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
         caption: 'on or before the due date',
       },
       { label: 'Right first time', value: pct(r.firstPassQualityPct), caption: r.delivered > 0 ? `${r.firstPassClean} of ${r.delivered}, no changes asked` : 'nothing sent yet' },
-      { label: 'Changes', value: String(r.revisionRounds), caption: `${r.csrCaughtRounds} by us, ${r.clientCaughtRounds} by the client` },
+      { label: 'Changes', value: String(r.revisionRounds), caption: `${Math.max(0, r.revisionRounds - r.clientCaughtRounds)} by us, ${r.clientCaughtRounds} by the client` },
     ])
     y += 62 + 34
 
     // Time at work
     groupLabel('Time at work', PX, y)
     y += 12
+    let summaryEndY: number
     if (tk) {
       const workedHours = Math.round(tk.workedMinutes / 60)
       statLine(y, [
@@ -532,38 +530,35 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
         },
         { label: 'Total worked', value: String(workedHours), small: 'hours', caption: 'across the whole week' },
       ])
+      summaryEndY = y + 62
     } else {
       rule(PX, y, W - PX, INK, 1.1)
       T('Attendance was not recorded for this period.', PX, y + 22, { font: RF.frauncesReg, size: 12, color: MUTED })
+      summaryEndY = y + 34
     }
 
-    // ── projects page ──
-    newPage()
-    runHead(`${d.name}, ${teamLabel}`)
-    drawProjectsPage(r, lines, { onTime, early, late, openCount })
-
-    // note (per-designer), on the projects page if room, else its own
+    // Projects flow straight after the summary (no blank page), paginating when
+    // full so a light designer fits on one page and a busy one never spills into
+    // the footer.
     const mine = notes.filter((n) => n.designer_id === d.id)
-    if (mine.length) {
-      const ny = (doc as unknown as { __lastY?: number }).__lastY ?? H - 200
-      if (ny < H - 130) noteBlock(ny + 20, mine)
-    }
+    drawProjectsSection(`${d.name}, ${teamLabel}`, summaryEndY + 34, r, lines, { onTime, early, late, openCount }, mine)
   }
 
   drawFooters()
 
-  // ── the project table + total band for one designer ──
-  function drawProjectsPage(
+  // ── the project table + total band + note for one designer, flowing from
+  //    startY and paginating (re-drawing the header) so it never overflows ──
+  function drawProjectsSection(
+    heading: string,
+    startY: number,
     r: DesignerPeriodSummary,
     lines: ProjectLine[],
     counts: { onTime: number; early: number; late: number; openCount: number },
+    mine: DayNote[],
   ): void {
     const TX = 42 // wider table area (mock 56px)
     const TW = W - TX * 2
-    let y = 108
-    groupLabel('Every project she was meant to deliver', TX, y)
-    y += 22
-
+    const SAFE = H - 58 // content must stop above the footer
     // column boundaries by fraction: name, due, first sent, to first design,
     // changes, where. Date and duration columns get the room they need so their
     // values never spill into a neighbour.
@@ -575,16 +570,32 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
     const rightOf = (i: number) => bx[i + 1] - pad
     const leftOf = (i: number) => bx[i] + (i === 0 ? 0 : pad)
 
-    const headTop = y
-    T('Project', leftOf(0), y, { font: RF.interSemi, size: 6.7, color: MUTED, spacing: 0.5, upper: true })
-    T('Due', rightOf(1), y, { font: RF.interSemi, size: 6.7, color: MUTED, spacing: 0.5, upper: true, align: 'right' })
-    T('First sent', rightOf(2), y, { font: RF.interSemi, size: 6.7, color: MUTED, spacing: 0.5, upper: true, align: 'right' })
-    T('To first design', rightOf(3), y, { font: RF.interSemi, size: 6.7, color: MUTED, spacing: 0.5, upper: true, align: 'right' })
-    T('Changes', rightOf(4), y, { font: RF.interSemi, size: 6.7, color: MUTED, spacing: 0.5, upper: true, align: 'right' })
-    T('Where it is now', leftOf(5), y, { font: RF.interSemi, size: 6.7, color: MUTED, spacing: 0.5, upper: true })
-    rule(TX, y + 6, W - TX, INK, 1.1)
-    y += 6
-    const bodyTop = y
+    const drawHead = (yy: number): number => {
+      T('Project', leftOf(0), yy, { font: RF.interSemi, size: 6.7, color: MUTED, spacing: 0.5, upper: true })
+      T('Due', rightOf(1), yy, { font: RF.interSemi, size: 6.7, color: MUTED, spacing: 0.5, upper: true, align: 'right' })
+      T('First sent', rightOf(2), yy, { font: RF.interSemi, size: 6.7, color: MUTED, spacing: 0.5, upper: true, align: 'right' })
+      T('To first design', rightOf(3), yy, { font: RF.interSemi, size: 6.7, color: MUTED, spacing: 0.5, upper: true, align: 'right' })
+      T('Changes', rightOf(4), yy, { font: RF.interSemi, size: 6.7, color: MUTED, spacing: 0.5, upper: true, align: 'right' })
+      T('Where it is now', leftOf(5), yy, { font: RF.interSemi, size: 6.7, color: MUTED, spacing: 0.5, upper: true })
+      rule(TX, yy + 6, W - TX, INK, 1.1)
+      return yy + 6
+    }
+    const closeSeg = (segTop: number, yy: number) => {
+      for (let i = 1; i <= 5; i++) vrule(bx[i], segTop, yy, LINE, 0.5)
+    }
+
+    // Start where the summary left off; if there isn't room for the label,
+    // header and a first row, begin on a fresh page instead.
+    let y = startY
+    if (y + 96 > SAFE) {
+      newPage()
+      runHead(heading)
+      y = 96
+    }
+    groupLabel('Every project she was meant to deliver', TX, y)
+    y += 22
+    let segTop = drawHead(y)
+    y = segTop
 
     if (lines.length === 0) {
       T('No projects were due for her in this period.', leftOf(0), y + 22, { font: RF.frauncesReg, size: 12, color: MUTED })
@@ -594,6 +605,15 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
     for (const l of lines) {
       const nameLines = wrap(l.name, bx[1] - bx[0] - pad, RF.interSemi, 10).slice(0, 2)
       const rowH = 18 + nameLines.length * 13 + (l.priority ? 10 : 0)
+      // Page break: close this page's column rules, start a new page, redraw head.
+      if (y + rowH > SAFE) {
+        closeSeg(segTop, y)
+        newPage()
+        runHead(heading)
+        y = 96
+        segTop = drawHead(y)
+        y = segTop
+      }
       const top = y
       const cy = top + 16 // first text baseline
       // name + priority
@@ -637,13 +657,25 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
       rule(TX, y, W - TX, HAIR, 0.5)
     }
 
-    // column separators (continuous, header bottom to table bottom)
-    for (let i = 1; i <= 5; i++) vrule(bx[i], bodyTop, y, LINE, 0.5)
-    void headTop
+    // column separators for the last page segment
+    closeSeg(segTop, y)
 
-    // total band (dark)
-    y += 26
+    // total band (dark) + note, kept together as one block so a small note never
+    // lands alone on an otherwise blank page — new page only if the pair will
+    // not fit whole below the table.
     const bandH = 82
+    let noteH = 0
+    if (mine.length) {
+      noteH = 24
+      for (const n of mine) noteH += wrap(n.note, CW - 16, RF.frauncesReg, 12.5).length * 18 + 6
+    }
+    if (y + 26 + bandH + noteH > SAFE) {
+      newPage()
+      runHead(heading)
+      y = 96
+    } else {
+      y += 26
+    }
     fill(INK)
     doc.roundedRect(TX, y, TW, bandH, 4, 4, 'F')
     const tb: Array<[string, string, string]> = [
@@ -658,7 +690,7 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
         counts.late > 0 ? `${counts.late} delivered late` : 'none delivered late',
       ],
       ['Usual first design', dur(r.productionMedianMin), 'client waiting not counted'],
-      ['Usual fix time', dur(r.revisionTurnaroundMedianMin), `${plural(r.revisionRounds, 'round')}, ${r.csrCaughtRounds} ours, ${r.clientCaughtRounds} client`],
+      ['Usual fix time', dur(r.revisionTurnaroundMedianMin), `${plural(r.revisionRounds, 'round')}, ${Math.max(0, r.revisionRounds - r.clientCaughtRounds)} ours, ${r.clientCaughtRounds} client`],
     ]
     const bcw = TW / 4
     tb.forEach(([l, v, c], i) => {
@@ -671,7 +703,9 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
       cLines.forEach((ln, li) => T(ln, cx, y + 66 + li * 10, { font: RF.inter, size: 7, color: [150, 145, 160] }))
     })
     y += bandH
-    ;(doc as unknown as { __lastY?: number }).__lastY = y
+
+    // note (per-designer) — guaranteed to fit here by the band+note block check.
+    if (mine.length) noteBlock(y + 20, mine)
   }
 }
 
