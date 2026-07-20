@@ -31,11 +31,12 @@ import { insertShiftMark } from '../../lib/queries'
 import { DOW_LABELS, fmtClock, fmtDate, fmtDuration, fmtDurationLong, fmtShiftTime, fmtTime } from '../../lib/format'
 import { addDays, dateRange, pktInstant, pktToday } from '../../../shared/pkt'
 import { expectedQuotaOn, median, scheduleFor } from '../../../shared/aggregate'
-import type {
-  AttendanceDaily,
-  AttendanceStatus,
-  Designer,
-  DesignerSchedule,
+import {
+  isPerProject,
+  type AttendanceDaily,
+  type AttendanceStatus,
+  type Designer,
+  type DesignerSchedule,
 } from '../../../shared/types'
 import {
   deleteManualShiftMark,
@@ -114,9 +115,12 @@ export default function OpsAttendance() {
     [],
   )
   const allActive = useActiveDesigners()
+  // Per project designers have no shift and no attendance, so they never appear
+  // on the attendance page — not in the rows, the week grid, or the filter.
+  const attEligible = useMemo(() => allActive.filter((d) => !isPerProject(d)), [allActive])
   const designers = useMemo(
-    () => (selectedIds.length ? allActive.filter((d) => selectedIds.includes(d.id)) : allActive),
-    [allActive, selectedIds],
+    () => (selectedIds.length ? attEligible.filter((d) => selectedIds.includes(d.id)) : attEligible),
+    [attEligible, selectedIds],
   )
   const rowsByKey = useMemo(() => {
     const map = new Map<string, AttendanceDaily>()
@@ -503,7 +507,7 @@ export default function OpsAttendance() {
               )}
             </span>
             <span className="flex items-center gap-1">
-              <DesignerFilter designers={allActive} selected={selectedIds} onChange={setSelectedIds} />
+              <DesignerFilter designers={attEligible} selected={selectedIds} onChange={setSelectedIds} />
               <InfoTip text="Focus on one or more people. Leave it on everyone to see the whole team." />
             </span>
           </>

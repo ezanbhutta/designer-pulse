@@ -78,7 +78,7 @@ import {
 } from '../../../shared/aggregate'
 import { leaveCovers } from '../../../shared/attendance'
 import { STATUS_EXPLAINERS, STATUS_LABELS } from '../../../shared/statuses'
-import { CONFIG_DEFAULTS } from '../../../shared/types'
+import { CONFIG_DEFAULTS, isPerProject } from '../../../shared/types'
 import type {
   AttendanceDaily,
   AttendanceStatus,
@@ -318,6 +318,10 @@ function SelfViewBody() {
     () => (designersQ.data ?? []).find((d) => d.id === designerId) ?? null,
     [designersQ.data, designerId],
   )
+  // Per project designers have no shift, no daily target and no attendance —
+  // their own dashboard drops the check in, attendance and time off cards and
+  // speaks in terms of finishing what they are handed, not meeting a target.
+  const perProject = isPerProject(designer)
   const mySchedules = useMemo(
     () => (schedulesQ.data ?? []).filter((s) => s.designer_id === designerId),
     [schedulesQ.data, designerId],
@@ -557,7 +561,9 @@ function SelfViewBody() {
   )
 
   const dayOffReason: 'holiday' | 'leave' | 'weekly_off' | 'none' | null = useMemo(() => {
-    if (!designerId || expectedToday > 0) return null
+    // Per project designers are never "off" against a target — they simply have
+    // none. Their honest line handles the wording instead of a rest message.
+    if (!designerId || expectedToday > 0 || perProject) return null
     const isHoliday = holidays.some((h) => h.the_date === active.workDate)
     const volunteers = quota.holidayWorkers.some((w) => w.the_date === active.workDate)
     if (isHoliday && !volunteers) return 'holiday'
@@ -677,19 +683,23 @@ function SelfViewBody() {
       )}
 
       <div className="mt-8 flex flex-col gap-8">
-        {/* ── 2. Check-in / check-out — most prominent when unmarked (§13.3) ── */}
-        <CheckInCard
-          loading={checkInLoading}
-          phase={phase}
-          active={active}
-          today={today}
-          now={now}
-          dayOff={dayOffReason != null}
-          lastCheckIn={lastCheckIn?.marked_at ?? null}
-          firstCheckIn={firstCheckIn?.marked_at ?? null}
-          lastMarkAt={lastMark?.marked_at ?? null}
-          onMark={mark}
-        />
+        {/* ── 2. Check-in / check-out — most prominent when unmarked (§13.3).
+               Per project designers keep no attendance, so there is no day to
+               start or end. ── */}
+        {!perProject && (
+          <CheckInCard
+            loading={checkInLoading}
+            phase={phase}
+            active={active}
+            today={today}
+            now={now}
+            dayOff={dayOffReason != null}
+            lastCheckIn={lastCheckIn?.marked_at ?? null}
+            firstCheckIn={firstCheckIn?.marked_at ?? null}
+            lastMarkAt={lastMark?.marked_at ?? null}
+            onMark={mark}
+          />
+        )}
 
         {/* ── 3. One honest line about the day (§13.3). When the LAST due-today
                project lands in this session, the line becomes the reward
@@ -707,6 +717,7 @@ function SelfViewBody() {
             prevSum={prevSum}
             expectedToday={expectedToday}
             dayOffReason={dayOffReason}
+            perProject={perProject}
             active={active}
             openTasks={myOpenTasks}
             listUrl={clickupListUrl(designer?.clickup_list_id)}
@@ -734,23 +745,28 @@ function SelfViewBody() {
           trendBaseline={trend.baseline}
         />
 
-        {/* ── 6. My attendance + time off ──────────────────────────────────── */}
-        <AttendanceSection
-          loading={attendanceQ.isLoading}
-          activeAtt={activeAtt}
-          phase={phase}
-          liveCheckIn={firstCheckIn?.marked_at ?? null}
-          workedWeekMin={workedWeekMin}
-          lateWeekMin={lateWeekMin}
-        />
+        {/* ── 6. My attendance + time off — only for salaried designers, who
+               keep a shift and a schedule. Per project designers have neither. ── */}
+        {!perProject && (
+          <>
+            <AttendanceSection
+              loading={attendanceQ.isLoading}
+              activeAtt={activeAtt}
+              phase={phase}
+              liveCheckIn={firstCheckIn?.marked_at ?? null}
+              workedWeekMin={workedWeekMin}
+              lateWeekMin={lateWeekMin}
+            />
 
-        <TimeOffSection
-          loading={leavesQ.isLoading || holidaysQ.isLoading}
-          leaves={myLeaves}
-          holidays={holidays}
-          today={today}
-          designerId={designerId}
-        />
+            <TimeOffSection
+              loading={leavesQ.isLoading || holidaysQ.isLoading}
+              leaves={myLeaves}
+              holidays={holidays}
+              today={today}
+              designerId={designerId}
+            />
+          </>
+        )}
       </div>
       </main>
     </>
@@ -979,6 +995,7 @@ function HonestLine({
   prevSum,
   expectedToday,
   dayOffReason,
+  perProject,
   active,
   openTasks,
   listUrl,
@@ -989,6 +1006,7 @@ function HonestLine({
   prevSum: DesignerPeriodSummary | null
   expectedToday: number
   dayOffReason: 'holiday' | 'leave' | 'weekly_off' | 'none' | null
+  perProject: boolean
   active: ActiveShift
   openTasks: TaskState[]
   listUrl: string | null
@@ -1014,7 +1032,15 @@ function HonestLine({
   // Day-off and no-target days deserve one calm, whole sentence — no ring, and
   // nothing to chase.
   let restMessage: string | null = null
-  if (dayOffReason === 'holiday') {
+  if (perProject) {
+    // No daily target — the honest read is about finishing what was handed over.
+    const doneToday = daySum.completed
+    restMessage =
+      'You are paid for each project you finish, so whatever is handed to you today is meant to be done today.' +
+      (doneToday > 0
+        ? ` You have finished ${doneToday} ${doneToday === 1 ? 'project' : 'projects'} so far.`
+        : '')
+  } else if (dayOffReason === 'holiday') {
     restMessage = 'It is a company holiday. Nothing is expected of you today, so enjoy it.'
   } else if (dayOffReason === 'leave') {
     restMessage = 'You are on leave today, so rest well. Nothing is expected of you.'

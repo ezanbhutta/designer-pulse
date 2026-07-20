@@ -28,6 +28,7 @@ import { pktToday } from '../../../../shared/pkt'
 import type {
   Designer,
   DesignerSchedule,
+  PayModel,
   QuotaException,
   Team,
 } from '../../../../shared/types'
@@ -111,6 +112,7 @@ interface EditorForm {
   name: string
   team: Team
   specialty: string
+  pay_model: PayModel
   order_index: string
   clickup_list_id: string
   clickup_user_id: string
@@ -174,6 +176,7 @@ export function DesignerEditor({
     name: designer?.name ?? '',
     team: designer?.team ?? initialTeam ?? 'Logo',
     specialty: designer?.specialty ?? '',
+    pay_model: designer?.pay_model ?? 'salary',
     order_index: String(designer?.order_index ?? 0),
     clickup_list_id: designer?.clickup_list_id ?? '',
     clickup_user_id: designer?.clickup_user_id != null ? String(designer.clickup_user_id) : '',
@@ -252,6 +255,12 @@ export function DesignerEditor({
     )
   }, [form, currentSchedule])
 
+  // Per-project designers have no fixed shift or daily target, so a schedule
+  // period is never opened for them — the whole "Work schedule" section is
+  // skipped. Only salaried designers get applyScheduleChange.
+  const perProject = form.pay_model === 'per_project'
+  const willApplySchedule = !perProject && (!designer || scheduleChanged)
+
   // ── Save ────────────────────────────────────────────────────────────────────
 
   const saveMutation = useMutation({
@@ -261,11 +270,12 @@ export function DesignerEditor({
         name: form.name.trim(),
         team: form.team,
         specialty: form.specialty.trim() || null,
+        pay_model: form.pay_model,
         clickup_list_id: trimmedListId || null,
         clickup_user_id: form.clickup_user_id.trim() === '' ? null : Number(form.clickup_user_id),
         order_index: Math.max(0, Math.round(Number(form.order_index) || 0)),
       })
-      if (!designer || scheduleChanged) {
+      if (willApplySchedule) {
         await applyScheduleChange({
           designer_id: saved.id,
           effective_from: form.effective_from,
@@ -284,10 +294,12 @@ export function DesignerEditor({
       invalidateRoster()
       toast({
         message: designer
-          ? scheduleChanged
+          ? willApplySchedule
             ? `${saved.name} saved. The new schedule starts ${fmtDate(form.effective_from)}.`
             : `${saved.name} saved`
-          : `${saved.name} added to the ${form.team} team`,
+          : perProject
+            ? `${saved.name} added to the ${form.team} team as a per project designer`
+            : `${saved.name} added to the ${form.team} team`,
       })
       onClose()
     },
@@ -302,9 +314,12 @@ export function DesignerEditor({
       errs.clickup_list_id = 'List IDs are numbers only. Copy it from the list URL.'
     const userId = form.clickup_user_id.trim()
     if (userId && !/^\d+$/.test(userId)) errs.clickup_user_id = 'User IDs are numbers only.'
-    if (!form.shift_start) errs.shift_start = 'Please pick a start time.'
-    if (!form.shift_end) errs.shift_end = 'Please pick an end time.'
-    if (!form.effective_from) errs.effective_from = 'Please pick a date.'
+    // The shift and effective-from fields only exist for salaried designers.
+    if (!perProject) {
+      if (!form.shift_start) errs.shift_start = 'Please pick a start time.'
+      if (!form.shift_end) errs.shift_end = 'Please pick an end time.'
+      if (!form.effective_from) errs.effective_from = 'Please pick a date.'
+    }
     setErrors(errs)
     const firstInvalid = (
       [
@@ -456,6 +471,13 @@ export function DesignerEditor({
         : 'border-border bg-surface text-muted hover:text-fg'
     }`
 
+  const payChip = (active: boolean) =>
+    `min-h-11 rounded-xl border px-3 text-caption font-medium transition-colors duration-150 ease-out motion-safe:active:scale-[0.98] ${
+      active
+        ? 'border-brand bg-brand-soft text-brand'
+        : 'border-border bg-surface text-muted hover:text-fg'
+    }`
+
   const id = (k: string) => `${uid}-${k}`
 
   return (
@@ -479,6 +501,38 @@ export function DesignerEditor({
               className={inputCls(!!errors.name)}
             />
           </Field>
+          <div>
+            <span className="flex items-center gap-1.5 text-caption font-medium text-fg">
+              How they&rsquo;re paid
+              <InfoTip
+                text="Monthly salary means a set daily target and fixed hours. Per project means paid for each project they finish, with no daily target and no fixed hours."
+                label="About how they're paid"
+              />
+            </span>
+            <div role="group" aria-label="How they're paid" className="mt-1.5 grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                aria-pressed={form.pay_model === 'salary'}
+                onClick={() => patch({ pay_model: 'salary' })}
+                className={payChip(form.pay_model === 'salary')}
+              >
+                Monthly salary
+              </button>
+              <button
+                type="button"
+                aria-pressed={form.pay_model === 'per_project'}
+                onClick={() => patch({ pay_model: 'per_project' })}
+                className={payChip(form.pay_model === 'per_project')}
+              >
+                Per project
+              </button>
+            </div>
+            <p className="mt-1.5 text-label font-normal leading-relaxed tracking-normal text-muted">
+              {perProject
+                ? 'Paid for each project they finish. No daily target and no set hours, so the work schedule is skipped.'
+                : 'A monthly salary with a daily target and set hours.'}
+            </p>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <Field id={id('team')} label="Team" required>
               <select
@@ -596,7 +650,20 @@ export function DesignerEditor({
           </Field>
         </section>
 
-        {/* ── 3 · Work schedule (effective-dated, §8.3) ── */}
+        {/* ── 3 · Work schedule (effective-dated, §8.3) — salaried only ── */}
+        {perProject ? (
+          <section aria-label="Work schedule" className="space-y-3">
+            <SectionHeading
+              title="Work schedule"
+              tip="Salaried designers have a daily target and set hours. Per project designers are paid for what they finish, so neither applies."
+            />
+            <p className="rounded-xl bg-surface-2 px-3.5 py-3 text-caption font-normal leading-relaxed tracking-normal text-muted">
+              Per project designers have no daily target and no set hours, so there
+              is nothing to schedule here. They are judged on the projects they
+              finish, and whatever is assigned for a day should be done that day.
+            </p>
+          </section>
+        ) : (
         <section ref={scheduleSectionRef} aria-label="Work schedule" className="scroll-mt-4 space-y-4">
           <SectionHeading
             title="Work schedule"
@@ -778,9 +845,10 @@ export function DesignerEditor({
             </p>
           )}
         </section>
+        )}
 
-        {/* ── 4 · Special days (existing designers only) ── */}
-        {designer && (
+        {/* ── 4 · Special days (salaried, existing designers only) ── */}
+        {designer && !perProject && (
           <section
             aria-label="Special days"
             className="space-y-4"

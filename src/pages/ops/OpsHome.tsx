@@ -48,7 +48,7 @@ import {
   scheduleFor,
 } from '../../../shared/aggregate'
 import { STATUS_LABELS } from '../../../shared/statuses'
-import type { TaskState } from '../../../shared/types'
+import { isPerProject, type TaskState } from '../../../shared/types'
 import {
   closedOn,
   createdOn,
@@ -181,9 +181,16 @@ export default function OpsHome() {
       .filter((x) => x.ages && x.age >= x.threshold)
       .sort((a, b) => b.age - a.age)
 
-    const totalExpected = rows.reduce((s, r) => s + r.expected, 0)
-    const totalAssignedToday = rows.reduce((s, r) => s + r.assigned, 0)
-    const totalFilled = rows.reduce((s, r) => s + r.filled, 0)
+    // "Busy level" and "Given out today" are target relative — measured against
+    // the daily target. Per project designers carry no target, so their due and
+    // assigned work would inflate the ratio (numerator up, zero target out of
+    // the denominator). The studio target aggregates stay salaried only; per
+    // project throughput still shows in "Finished today" and on the board.
+    const salariedRows = rows.filter((r) => !isPerProject(r.designer))
+    const totalExpected = salariedRows.reduce((s, r) => s + r.expected, 0)
+    const totalAssignedToday = salariedRows.reduce((s, r) => s + r.assigned, 0)
+    const totalFilled = salariedRows.reduce((s, r) => s + r.filled, 0)
+    const salariedCount = salariedRows.length
 
     // Like-for-like deltas: today-so-far is compared with yesterday UP TO THE
     // SAME TIME OF DAY, never with all of yesterday — otherwise every morning
@@ -208,6 +215,7 @@ export default function OpsHome() {
       totalExpected,
       totalAssignedToday,
       totalFilled,
+      salariedCount,
       assignedYesterday,
       completedTodayTasks,
       completedYesterday,
@@ -660,8 +668,8 @@ export default function OpsHome() {
             tip="How full today's plates are. Only projects due today count, measured against today's total target."
             icon={Gauge}
             value={fmtPct(utilization)}
-            cause={`${derived.totalFilled} projects due today across ${designers.length} ${
-              designers.length === 1 ? 'person' : 'people'
+            cause={`${derived.totalFilled} projects due today across ${derived.salariedCount} ${
+              derived.salariedCount === 1 ? 'person' : 'people'
             }`}
             reference={
               heaviest && heaviest.util != null

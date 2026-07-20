@@ -28,15 +28,16 @@ import {
   type AgingOwner,
   type QuotaContext,
 } from '../../shared/aggregate'
-import type {
-  Designer,
-  DesignerSchedule,
-  HalfDay,
-  Holiday,
-  HolidayWorker,
-  Leave,
-  QuotaException,
-  TaskState,
+import {
+  isPerProject,
+  type Designer,
+  type DesignerSchedule,
+  type HalfDay,
+  type Holiday,
+  type HolidayWorker,
+  type Leave,
+  type QuotaException,
+  type TaskState,
 } from '../../shared/types'
 import { createSafetyResponder, requireCronAuth } from '../_lib/http'
 import { expectOk, supabaseAdmin } from '../_lib/supabaseAdmin'
@@ -170,6 +171,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     let gapAlerts = 0
     for (const d of designers) {
       if (!d.clickup_list_id) continue
+      // Per-project designers have no daily target, so "slots open" never applies.
+      if (isPerProject(d)) continue
       for (const workDate of [today, addDays(today, -1)]) {
         try {
           const schedule = scheduleFor(schedules, d.id, workDate)
@@ -431,8 +434,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       holidayWorkers: quota.holidayWorkers,
       halfDays: (halfRes.data ?? []) as HalfDay[],
     }
-    const offset = designers.length ? Math.floor(now.getTime() / 900_000) % designers.length : 0
-    const rotated = [...designers.slice(offset), ...designers.slice(0, offset)]
+    // Per-project designers have no fixed shift, so there is no attendance to
+    // recompute for them (no lateness, no forgotten checkout).
+    const attDesigners = designers.filter((d) => !isPerProject(d))
+    const offset = attDesigners.length ? Math.floor(now.getTime() / 900_000) % attDesigners.length : 0
+    const rotated = [...attDesigners.slice(offset), ...attDesigners.slice(0, offset)]
     for (let i = 0; i < rotated.length; i += ATT_PARALLEL) {
       if (outOfTime()) {
         attendancePartial = true

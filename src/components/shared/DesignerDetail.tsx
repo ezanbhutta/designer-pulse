@@ -56,11 +56,12 @@ import {
   type DesignerPeriodSummary,
   type QuotaContext,
 } from '../../../shared/aggregate'
-import type {
-  AttendanceDaily,
-  AttendanceStatus,
-  TaskMetrics,
-  TaskState,
+import {
+  isPerProject,
+  type AttendanceDaily,
+  type AttendanceStatus,
+  type TaskMetrics,
+  type TaskState,
 } from '../../../shared/types'
 
 export interface DesignerDetailProps {
@@ -247,6 +248,8 @@ export function DesignerMetricsPanel({
   const p = summaries.prev
   const vs = period.vs
   const pts = (abs: number) => `${abs} points`
+  const designer = (designersQ.data ?? []).find((d) => d.id === designerId) ?? null
+  const perProject = isPerProject(designer)
   const metricsLoading =
     (!tasksProp && tasksQ.isLoading) || (!metricsProp && metricsQ.isLoading)
 
@@ -279,25 +282,40 @@ export function DesignerMetricsPanel({
 
       {/* ── Metric grid (§20.2: delta + cause on every number) ── */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <StatTile
-          eyebrow="Target met"
-          tip="Of the projects this designer was expected to take on, how many they finished."
-          icon={Gauge}
-          value={fmtPct(s.attainmentPct)}
-          delta={metricDelta(s.attainmentPct, p.attainmentPct, 'up', pts, vs)}
-          cause={`finished ${s.completed} of the ${s.expectedQuota} expected`}
-          reference={teamRef?.attainment != null ? `usual for the team: ${teamRef.attainment}%` : null}
-          state={
-            s.attainmentPct == null
-              ? null
-              : s.attainmentPct >= 85
-                ? 'ok'
-                : s.attainmentPct >= 60
-                  ? 'watch'
-                  : 'flag'
-          }
-          loading={metricsLoading}
-        />
+        {perProject ? (
+          // Per project designers carry no daily target, so "Target met" is
+          // meaningless — show what they actually finished, each one payable.
+          <StatTile
+            eyebrow="Projects finished"
+            tip="How many projects this designer finished in this period. They are paid for each one, with no daily target."
+            icon={Gauge}
+            value={String(s.completed)}
+            delta={metricDelta(s.completed, p.completed, 'up', (abs) => `${abs}`, vs)}
+            cause={`out of ${s.assigned} handed over, paid per project`}
+            state={null}
+            loading={metricsLoading}
+          />
+        ) : (
+          <StatTile
+            eyebrow="Target met"
+            tip="Of the projects this designer was expected to take on, how many they finished."
+            icon={Gauge}
+            value={fmtPct(s.attainmentPct)}
+            delta={metricDelta(s.attainmentPct, p.attainmentPct, 'up', pts, vs)}
+            cause={`finished ${s.completed} of the ${s.expectedQuota} expected`}
+            reference={teamRef?.attainment != null ? `usual for the team: ${teamRef.attainment}%` : null}
+            state={
+              s.attainmentPct == null
+                ? null
+                : s.attainmentPct >= 85
+                  ? 'ok'
+                  : s.attainmentPct >= 60
+                    ? 'watch'
+                    : 'flag'
+            }
+            loading={metricsLoading}
+          />
+        )}
         <StatTile
           eyebrow="Right first time"
           tip="How many designs the client accepted without asking for a single change. The higher, the better."
@@ -367,16 +385,20 @@ export function DesignerMetricsPanel({
           state={s.cancelled > 0 ? 'flag' : 'ok'}
           loading={metricsLoading}
         />
-        <StatTile
-          eyebrow="Time to get going"
-          tip="The gap between the start of the day and the first real piece of work in ClickUp."
-          icon={LogIn}
-          value={fmtDuration(warmup.cur)}
-          delta={metricDelta(warmup.cur, warmup.prev, 'down', fmtDuration, vs)}
-          cause="the usual gap between the start of the day and the first real piece of work"
-          state={warmup.cur == null ? null : warmup.cur > 60 ? 'flag' : warmup.cur > 30 ? 'watch' : 'ok'}
-          loading={!attendanceProp && attendanceQ.isLoading}
-        />
+        {/* Warm up gap is measured from the shift start, which per project
+            designers do not have — omit the tile for them. */}
+        {!perProject && (
+          <StatTile
+            eyebrow="Time to get going"
+            tip="The gap between the start of the day and the first real piece of work in ClickUp."
+            icon={LogIn}
+            value={fmtDuration(warmup.cur)}
+            delta={metricDelta(warmup.cur, warmup.prev, 'down', fmtDuration, vs)}
+            cause="the usual gap between the start of the day and the first real piece of work"
+            state={warmup.cur == null ? null : warmup.cur > 60 ? 'flag' : warmup.cur > 30 ? 'watch' : 'ok'}
+            loading={!attendanceProp && attendanceQ.isLoading}
+          />
+        )}
       </div>
 
       {/* ── Defect source split (§4.2) ── */}
@@ -509,6 +531,7 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
   }
 
   const listUrl = clickupListUrl(designer.clickup_list_id)
+  const perProject = isPerProject(designer)
   const trailTask = trailTaskId ? myOpenTasks.find((t) => t.task_id === trailTaskId) : undefined
   const stripDates = dateRange(stripStart, today)
   const attendanceByDate = new Map(myAttendance.map((a) => [a.work_date, a]))
@@ -527,7 +550,9 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
         )}
         <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
           <CalendarDays className="h-4 w-4" aria-hidden="true" />
-          {schedule ? (
+          {perProject ? (
+            <span>Paid for each project they finish, with no daily target and no set hours.</span>
+          ) : schedule ? (
             <span>
               {schedule.daily_quota} projects a day, from {fmtShiftTime(schedule.shift_start)} to{' '}
               {fmtShiftTime(schedule.shift_end)} Pakistan time
@@ -547,22 +572,28 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
           )}
           {scope === 'ops' && (
             <>
-              <Button
-                variant="secondary"
-                onClick={() => markMutation.mutate('check_in')}
-                disabled={markMutation.isPending}
-              >
-                <LogIn className="h-4 w-4" aria-hidden="true" />
-                Start their day for them
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => markMutation.mutate('check_out')}
-                disabled={markMutation.isPending}
-              >
-                <LogOut className="h-4 w-4" aria-hidden="true" />
-                End their day for them
-              </Button>
+              {/* Per project designers keep no attendance, so there is no day to
+                  start or end on their behalf. */}
+              {!perProject && (
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={() => markMutation.mutate('check_in')}
+                    disabled={markMutation.isPending}
+                  >
+                    <LogIn className="h-4 w-4" aria-hidden="true" />
+                    Start their day for them
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => markMutation.mutate('check_out')}
+                    disabled={markMutation.isPending}
+                  >
+                    <LogOut className="h-4 w-4" aria-hidden="true" />
+                    End their day for them
+                  </Button>
+                </>
+              )}
               <Link
                 to="/ops/roster"
                 className="inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-caption font-medium text-brand underline-offset-2 hover:underline"
@@ -624,7 +655,8 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
         </div>
       </section>
 
-      {/* ── Recent attendance ── */}
+      {/* ── Recent attendance — per project designers keep none ── */}
+      {!perProject && (
       <section>
         <h4 className="eyebrow inline-flex items-center gap-1">
           Attendance over the last 7 days
@@ -659,6 +691,7 @@ export function DesignerDetail({ designerId, scope }: DesignerDetailProps) {
           finished.
         </p>
       </section>
+      )}
 
       {/* ── Task trail drawer ── */}
       <Drawer

@@ -27,7 +27,7 @@ import {
   type DesignerPeriodSummary,
 } from '../../../shared/aggregate'
 import { pktToday } from '../../../shared/pkt'
-import type { Designer, Team } from '../../../shared/types'
+import { isPerProject, type Designer, type Team } from '../../../shared/types'
 import { fmtClock, fmtDate, fmtDuration, fmtDurationLong, fmtPct } from '../../lib/format'
 import {
   TEAMS,
@@ -125,8 +125,13 @@ export default function CeoTeams() {
         ? Math.round((trendValues.reduce((s, v) => s + v, 0) / trendValues.length) * 10) / 10
         : null
 
-      // Owner's rule: today's plate = projects DUE today, nothing else.
-      const loadNow = members.reduce((s, d) => s + dueOnDay(openQ.data!, d.id, today), 0)
+      // Owner's rule: today's plate = projects DUE today, nothing else. The
+      // busy level is target relative, so per project designers (no target) are
+      // left out of both the load and the planned slots.
+      const loadNow = members.reduce(
+        (s, d) => s + (isPerProject(d) ? 0 : dueOnDay(openQ.data!, d.id, today)),
+        0,
+      )
       const quotaToday = members.reduce((s, d) => s + expectedQuotaOn(d.id, today, quota), 0)
 
       const rows: DesignerRow[] = members

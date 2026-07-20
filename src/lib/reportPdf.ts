@@ -16,7 +16,7 @@ import { BRAND_MARK_PATH, BRAND_VIOLET } from '../components/ui/BrandLogo'
 import { registerReportFonts, RF } from './reportFonts'
 import { fmtClock } from './format'
 import type { DesignerPeriodSummary, DesignerTimekeeping, ProjectLine } from '../../shared/aggregate'
-import type { Designer, DayNote, Team } from '../../shared/types'
+import { isPerProject, type Designer, type DayNote, type Team } from '../../shared/types'
 import { STATUS_LABELS, STATUS_TONES, type CanonicalStatus } from '../../shared/statuses'
 
 // ── Args ──────────────────────────────────────────────────────────────────────
@@ -198,7 +198,15 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
   const prepared = `Prepared ${fmtDayYear(generatedAt)}, ${fmtClock(generatedAt)} Pakistan time`
 
   // ── studio totals ──
-  const sum = (pick: (s: DesignerPeriodSummary) => number) => rows.reduce((a, r) => a + pick(r), 0)
+  // The studio spread and team bars measure the SALARIED team against its
+  // target; per project designers carry no target, so counting their delivered
+  // work here (numerator) while their zero target sits out of the denominator
+  // would over-read every percentage. They keep their standings line and their
+  // own page — the studio rollups stay salaried-only. With no per project
+  // designers present these totals are identical to before.
+  const studioRows = rows.filter((r) => !isPerProject(byId.get(r.designerId)))
+  const sum = (pick: (s: DesignerPeriodSummary) => number) =>
+    studioRows.reduce((a, r) => a + pick(r), 0)
   const completed = sum((s) => s.completed)
   const expected = sum((s) => s.expectedQuota)
   const assigned = sum((s) => s.assigned)
@@ -209,7 +217,7 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
   const cancelled = sum((s) => s.cancelled)
   const studioAtt = expected > 0 ? Math.round((completed / expected) * 100) : null
   const studioFpq = delivered > 0 ? Math.round((clean / delivered) * 100) : null
-  const teamCount = new Set(rows.map((r) => byId.get(r.designerId)?.team).filter(Boolean)).size
+  const teamCount = new Set(studioRows.map((r) => byId.get(r.designerId)?.team).filter(Boolean)).size
 
   const ranked = [...rows].sort((a, b) => (a.attainmentPct ?? Infinity) - (b.attainmentPct ?? Infinity))
 
@@ -362,7 +370,7 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
   newPage()
   runHead(period_)
   {
-    sectionHead('01', 'The studio this week', `${plural(rows.length, 'designer')}, ${plural(teamCount, 'team')}`, 108)
+    sectionHead('01', 'The studio this week', `${plural(studioRows.length, 'designer')}, ${plural(teamCount, 'team')}`, 108)
 
     // KPI row (bigger values)
     statLine(
@@ -386,7 +394,7 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
     groupLabel('Where the work went', PX, y)
     y += 22
     const teamStats = TEAM_ORDER.map((team) => {
-      const teamRows = rows.filter((r) => byId.get(r.designerId)?.team === team)
+      const teamRows = studioRows.filter((r) => byId.get(r.designerId)?.team === team)
       return {
         team,
         designers: teamRows.length,
@@ -444,12 +452,24 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
         y = 80
       }
       const d = byId.get(r.designerId)
+      const rowPerProject = isPerProject(d)
       T(d?.name ?? 'Unknown', cols.name, y, { font: RF.interSemi, size: 11, color: INK })
       T(d ? TEAM_LABEL[d.team] : 'not set', cols.team, y, { font: RF.inter, size: 9.5, color: MUTED })
-      T(`${r.completed} of ${r.expectedQuota}`, cols.del, y, { font: RF.inter, size: 9.5, color: SOFT, align: 'right' })
-      const att = r.attainmentPct
-      const attC = att == null ? FAINT : att < 60 ? BAD : att < 85 ? WARN : GOOD
-      T(pct(att), cols.met, y, { font: RF.frauncesSemi, size: 12, color: attC, align: 'right' })
+      // Per project designers have no target, so "X of 0" and a target percent
+      // would be nonsense — show the finished count on its own and a plain tag.
+      T(rowPerProject ? String(r.completed) : `${r.completed} of ${r.expectedQuota}`, cols.del, y, {
+        font: RF.inter,
+        size: 9.5,
+        color: SOFT,
+        align: 'right',
+      })
+      if (rowPerProject) {
+        T('per project', cols.met, y, { font: RF.inter, size: 8.5, color: MUTED, align: 'right' })
+      } else {
+        const att = r.attainmentPct
+        const attC = att == null ? FAINT : att < 60 ? BAD : att < 85 ? WARN : GOOD
+        T(pct(att), cols.met, y, { font: RF.frauncesSemi, size: 12, color: attC, align: 'right' })
+      }
       T(pct(r.firstPassQualityPct), cols.rft, y, { font: RF.inter, size: 9.5, color: SOFT, align: 'right' })
       y += 15
       rule(PX, y - 6, W - PX, HAIR, 0.5)
@@ -460,8 +480,11 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
   for (const r of ranked) {
     const d = byId.get(r.designerId)
     if (!d) continue
+    const perProject = isPerProject(d)
     const lines = projectsByDesigner[r.designerId] ?? []
-    const tk = timekeepingByDesigner[r.designerId]
+    // Per project designers keep no schedule, so their attendance summary is
+    // empty and meaningless — never draw it for them.
+    const tk = perProject ? undefined : timekeepingByDesigner[r.designerId]
     const first = firstNameOf(d.name)
     const teamLabel = `${TEAM_LABEL[d.team]} team`
 
@@ -475,7 +498,12 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
     runHead(`${d.name}, ${teamLabel}`)
     T('03', PX, 104, { font: RF.frauncesReg, size: 25, color: FAINT })
     T('Designer in focus', PX + 40, 104, { font: RF.frauncesSemi, size: 15, color: MUTED })
-    T(`Target met ${pct(r.attainmentPct)}`, W - PX, 100, { font: RF.inter, size: 8.6, color: MUTED, align: 'right' })
+    T(perProject ? 'Per project' : `Target met ${pct(r.attainmentPct)}`, W - PX, 100, {
+      font: RF.inter,
+      size: 8.6,
+      color: MUTED,
+      align: 'right',
+    })
     T(d.name, PX - 2, 150, { font: RF.frauncesBlack, size: 44, color: INK })
 
     // deck
@@ -485,7 +513,11 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
         : ''
     const lateMornings =
       tk && tk.lateDays > 0 ? ` ${plural(tk.lateDays, 'late morning')}, otherwise a steady week.` : ' A steady week.'
-    const deck = `${first} delivered ${r.completed} of the ${plural(r.assigned, 'project')} that were due this week${cleanClause}.${lateMornings}`
+    // Per project designers are paid for what they finish, with no set hours, so
+    // their deck talks about finished work, never attendance.
+    const deck = perProject
+      ? `${first} finished ${r.completed} of the ${plural(r.assigned, 'project')} handed over this week${cleanClause}. Paid for each project finished, with no set hours.`
+      : `${first} delivered ${r.completed} of the ${plural(r.assigned, 'project')} that were due this week${cleanClause}.${lateMornings}`
     const deckLines = wrap(deck, CW * 0.82, RF.frauncesReg, 15.5)
     deckLines.forEach((ln, i) => T(ln, PX, 186 + i * 22, { font: RF.frauncesReg, size: 15.5, color: SOFT }))
     let y = 186 + deckLines.length * 22 + 26
@@ -507,41 +539,61 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
     ])
     y += 62 + 34
 
-    // Time at work
-    groupLabel('Time at work', PX, y)
-    y += 12
+    // Time at work — replaced by "How they are paid" for per project designers,
+    // who keep no set hours and are paid for what they finish.
     let summaryEndY: number
-    if (tk) {
-      const workedHours = Math.round(tk.workedMinutes / 60)
-      statLine(y, [
-        { label: 'Days present', value: String(tk.presentDays), small: `of ${tk.scheduledDays}`, caption: 'the days she was scheduled' },
-        {
-          label: 'Arrived late',
-          value: String(tk.lateDays),
-          small: tk.lateDays === 1 ? 'day' : 'days',
-          valueColor: tk.lateDays > 0 ? BAD : INK,
-          caption: tk.lateMinutes > 0 ? `${dur(tk.lateMinutes)} in total` : 'always on time',
-        },
-        {
-          label: 'Left early',
-          value: String(tk.earlyDays),
-          small: tk.earlyDays === 1 ? 'day' : 'days',
-          caption: tk.earlyMinutes > 0 ? `${dur(tk.earlyMinutes)} in total` : 'stayed the full shift',
-        },
-        { label: 'Total worked', value: String(workedHours), small: 'hours', caption: 'across the whole week' },
-      ])
-      summaryEndY = y + 62
-    } else {
+    if (perProject) {
+      groupLabel('How they are paid', PX, y)
+      y += 12
       rule(PX, y, W - PX, INK, 1.1)
-      T('Attendance was not recorded for this period.', PX, y + 22, { font: RF.frauncesReg, size: 12, color: MUTED })
-      summaryEndY = y + 34
+      T(`${plural(r.completed, 'project')} finished this week, each one payable.`, PX, y + 24, {
+        font: RF.frauncesSemi,
+        size: 15,
+        color: INK,
+      })
+      const payNote = wrap(
+        'Per project designers are paid for what they finish, not the hours they keep. There is no daily target and no fixed shift, so whatever is handed over for a day should be finished that day.',
+        CW * 0.92,
+        RF.inter,
+        9.5,
+      )
+      payNote.forEach((ln, i) => T(ln, PX, y + 42 + i * 13, { font: RF.inter, size: 9.5, color: MUTED }))
+      summaryEndY = y + 42 + payNote.length * 13
+    } else {
+      groupLabel('Time at work', PX, y)
+      y += 12
+      if (tk) {
+        const workedHours = Math.round(tk.workedMinutes / 60)
+        statLine(y, [
+          { label: 'Days present', value: String(tk.presentDays), small: `of ${tk.scheduledDays}`, caption: 'the days she was scheduled' },
+          {
+            label: 'Arrived late',
+            value: String(tk.lateDays),
+            small: tk.lateDays === 1 ? 'day' : 'days',
+            valueColor: tk.lateDays > 0 ? BAD : INK,
+            caption: tk.lateMinutes > 0 ? `${dur(tk.lateMinutes)} in total` : 'always on time',
+          },
+          {
+            label: 'Left early',
+            value: String(tk.earlyDays),
+            small: tk.earlyDays === 1 ? 'day' : 'days',
+            caption: tk.earlyMinutes > 0 ? `${dur(tk.earlyMinutes)} in total` : 'stayed the full shift',
+          },
+          { label: 'Total worked', value: String(workedHours), small: 'hours', caption: 'across the whole week' },
+        ])
+        summaryEndY = y + 62
+      } else {
+        rule(PX, y, W - PX, INK, 1.1)
+        T('Attendance was not recorded for this period.', PX, y + 22, { font: RF.frauncesReg, size: 12, color: MUTED })
+        summaryEndY = y + 34
+      }
     }
 
     // Projects flow straight after the summary (no blank page), paginating when
     // full so a light designer fits on one page and a busy one never spills into
     // the footer.
     const mine = notes.filter((n) => n.designer_id === d.id)
-    drawProjectsSection(`${d.name}, ${teamLabel}`, summaryEndY + 34, r, lines, { onTime, early, late, openCount }, mine)
+    drawProjectsSection(`${d.name}, ${teamLabel}`, summaryEndY + 34, r, lines, { onTime, early, late, openCount }, mine, perProject)
   }
 
   drawFooters()
@@ -555,6 +607,7 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
     lines: ProjectLine[],
     counts: { onTime: number; early: number; late: number; openCount: number },
     mine: DayNote[],
+    perProject: boolean,
   ): void {
     const TX = 42 // wider table area (mock 56px)
     const TW = W - TX * 2
@@ -592,13 +645,20 @@ export function renderReport(doc: jsPDF, args: WeeklyReportArgs, markPng: string
       runHead(heading)
       y = 96
     }
-    groupLabel('Every project she was meant to deliver', TX, y)
+    groupLabel(perProject ? 'Every project handed over' : 'Every project she was meant to deliver', TX, y)
     y += 22
     let segTop = drawHead(y)
     y = segTop
 
     if (lines.length === 0) {
-      T('No projects were due for her in this period.', leftOf(0), y + 22, { font: RF.frauncesReg, size: 12, color: MUTED })
+      T(
+        perProject
+          ? 'No projects were handed over in this period.'
+          : 'No projects were due for her in this period.',
+        leftOf(0),
+        y + 22,
+        { font: RF.frauncesReg, size: 12, color: MUTED },
+      )
       y += 40
     }
 

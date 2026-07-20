@@ -42,7 +42,7 @@ import {
   type ProjectLine,
 } from '../../../shared/aggregate'
 import { pktToday } from '../../../shared/pkt'
-import type { Config, Designer } from '../../../shared/types'
+import { isPerProject, type Config, type Designer } from '../../../shared/types'
 import { fmtClock, fmtDate, fmtDuration, fmtDurationLong, fmtPct } from '../../lib/format'
 import {
   TEAMS,
@@ -151,10 +151,14 @@ export default function CeoReports() {
       productionMedianInPeriod(metrics, activeIds, prior),
       active,
     )
-    // Hero totals — the studio's week in one number, vs the week before.
-    const heroCompleted = rows.reduce((s, r) => s + r.cur.completed, 0)
-    const heroPrevCompleted = rows.reduce((s, r) => s + r.prev.completed, 0)
-    const heroExpected = rows.reduce((s, r) => s + r.cur.expectedQuota, 0)
+    // Hero totals — the studio's week in one number, vs the week before. This
+    // is a target measure (finished of planned), and per project designers have
+    // no target, so they sit out both sides of the ratio — matching the PDF
+    // cover and every other target rollup. Their work shows on their own card.
+    const salariedRows = rows.filter((r) => !isPerProject(r.designer))
+    const heroCompleted = salariedRows.reduce((s, r) => s + r.cur.completed, 0)
+    const heroPrevCompleted = salariedRows.reduce((s, r) => s + r.prev.completed, 0)
+    const heroExpected = salariedRows.reduce((s, r) => s + r.cur.expectedQuota, 0)
     return { rows, summary, active, heroCompleted, heroPrevCompleted, heroExpected }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, designersQ.data, tasksQ.data, metricsQ.data, openQ.data, quota, cfg, period.start, period.end, selectedIds])
@@ -487,8 +491,12 @@ function buildWeeklySummary(
 ): string | null {
   if (rows.length === 0) return null
   const total = (pick: (r: ReportRow) => number) => rows.reduce((s, r) => s + pick(r), 0)
-  const completed = total((r) => r.cur.completed)
-  const expected = total((r) => r.cur.expectedQuota)
+  // "Finished of planned" is target relative — salaried designers only, so per
+  // project work never inflates the studio's target percentage.
+  const salariedTotal = (pick: (r: ReportRow) => number) =>
+    rows.filter((r) => !isPerProject(r.designer)).reduce((s, r) => s + pick(r), 0)
+  const completed = salariedTotal((r) => r.cur.completed)
+  const expected = salariedTotal((r) => r.cur.expectedQuota)
   const delivered = total((r) => r.cur.delivered)
   const clean = total((r) => r.cur.firstPassClean)
   const prevDelivered = total((r) => r.prev.delivered)

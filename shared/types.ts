@@ -6,6 +6,15 @@ export type Role = 'admin' | 'manager' | 'pm' | 'hr' | 'ceo' | 'designer'
 
 export type Team = 'Logo' | 'Branding' | 'Animation' | 'PPT' | 'Canva'
 
+/**
+ * How a designer is paid, and the rules that follow from it.
+ *  - salary: monthly salary; a daily target and a fixed shift apply.
+ *  - per_project: paid for what they complete in the month; no daily target,
+ *    no fixed shift. The quota, attendance and assignment-gap machinery skips
+ *    them. Absent/undefined is treated as salary, so existing rows are unchanged.
+ */
+export type PayModel = 'salary' | 'per_project'
+
 export interface Designer {
   id: string
   clickup_list_id: string | null
@@ -16,8 +25,14 @@ export interface Designer {
   timezone: string
   status: 'active' | 'archived' | 'deleted'
   order_index: number
+  pay_model: PayModel
   created_at: string
   updated_at: string
+}
+
+/** True for a per-project (piecework) designer. Undefined pay_model = salary. */
+export function isPerProject(d: { pay_model?: PayModel } | null | undefined): boolean {
+  return d?.pay_model === 'per_project'
 }
 
 export interface DesignerSchedule {

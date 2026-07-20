@@ -13,7 +13,7 @@ import { qk, setDesignerStatus } from '../../lib/queries'
 import { fmtClock } from '../../lib/format'
 import { pktToday } from '../../../shared/pkt'
 import { scheduleFor } from '../../../shared/aggregate'
-import type { Designer, DesignerSchedule, Team } from '../../../shared/types'
+import { isPerProject, type Designer, type DesignerSchedule, type Team } from '../../../shared/types'
 import { useDesignerDrawer, useDesigners, useQuotaCtx } from './opsData'
 import { DesignerRow } from './roster/DesignerRow'
 import { DesignerEditor, TEAMS } from './roster/DesignerEditor'
@@ -81,7 +81,9 @@ export default function OpsRoster() {
     const issues: AttentionIssue[] = []
     for (const d of designers.filter((x) => x.status === 'active')) {
       const unlinked = !d.clickup_list_id
-      const unscheduled = !scheduleFor(ctx.schedules, d.id, today)
+      // Per project designers have no schedule by design, so a missing one is
+      // never a gap for them — only a missing ClickUp link is.
+      const unscheduled = !isPerProject(d) && !scheduleFor(ctx.schedules, d.id, today)
       if (unlinked || unscheduled) issues.push({ designer: d, unlinked, unscheduled })
     }
     return issues

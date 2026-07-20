@@ -10,16 +10,17 @@
 import { addDays, pktInstant } from '../../shared/pkt'
 import { computeAttendance, leaveCovers, type AttendanceResult } from '../../shared/attendance'
 import { scheduleFor } from '../../shared/aggregate'
-import type {
-  AttendanceDaily,
-  Config,
-  Designer,
-  DesignerSchedule,
-  HalfDay,
-  Holiday,
-  HolidayWorker,
-  Leave,
-  ShiftMark,
+import {
+  isPerProject,
+  type AttendanceDaily,
+  type Config,
+  type Designer,
+  type DesignerSchedule,
+  type HalfDay,
+  type Holiday,
+  type HolidayWorker,
+  type Leave,
+  type ShiftMark,
 } from '../../shared/types'
 import { expectOk, type SupabaseAdmin } from './supabaseAdmin'
 import { fireAlert } from './alerts'
@@ -57,6 +58,28 @@ export async function computeAttendanceFor(
   config: Config,
   preloaded: AttendancePreload = {},
 ): Promise<AttendanceResult> {
+  // Per-project designers have no fixed shift, so there is no attendance to
+  // compute — no lateness, no early leave, no forgotten checkout. Return a blank
+  // result and write nothing.
+  if (isPerProject(designer)) {
+    return {
+      work_date: workDate,
+      declared_in: null,
+      declared_out: null,
+      first_activity: null,
+      last_activity: null,
+      scheduled_in: null,
+      scheduled_out: null,
+      worked_minutes: 0,
+      warmup_gap_min: null,
+      late_minutes: 0,
+      early_leave_minutes: 0,
+      is_half_day: false,
+      needs_review: false,
+      checkout_source: null,
+      status: null,
+    }
+  }
   const now = new Date()
   // Collection span [workDate−1d, workDate+2d] comfortably covers the engine's
   // overnight window (scheduled_in − buffer → scheduled_out + buffer); the

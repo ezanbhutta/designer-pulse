@@ -13,7 +13,7 @@ import { Badge } from '../../../components/ui/Badge'
 import { InfoTip } from '../../../components/ui/InfoTip'
 import { clickupListUrl } from '../../../lib/queries'
 import { DOW_LABELS, fmtShiftTime } from '../../../lib/format'
-import type { Designer, DesignerSchedule } from '../../../../shared/types'
+import { isPerProject, type Designer, type DesignerSchedule } from '../../../../shared/types'
 
 /** Deterministic initials — the same name always draws the same avatar. */
 function initialsOf(name: string): string {
@@ -49,12 +49,15 @@ export function DesignerRow({
 }: DesignerRowProps) {
   const archived = d.status === 'archived'
   const linked = Boolean(d.clickup_list_id)
+  const perProject = isPerProject(d)
   const listUrl = clickupListUrl(d.clickup_list_id)
   const overnight = schedule != null && schedule.shift_end <= schedule.shift_start
 
   const stop = (e: MouseEvent) => e.stopPropagation()
 
   // Status glyph — always paired with a screen-reader label (§20.10).
+  // Per-project designers have no schedule by design, so a missing schedule is
+  // never a warning for them — being linked is all they need.
   let glyph: ReactNode
   if (archived) {
     glyph = (
@@ -70,7 +73,7 @@ export function DesignerRow({
         <span className="sr-only">Not linked to ClickUp</span>
       </>
     )
-  } else if (!schedule) {
+  } else if (!schedule && !perProject) {
     glyph = (
       <>
         <CalendarClock className="h-4 w-4 text-warning" aria-hidden="true" />
@@ -81,7 +84,7 @@ export function DesignerRow({
     glyph = (
       <>
         <CircleCheck className="h-4 w-4 text-success" aria-hidden="true" />
-        <span className="sr-only">Linked and scheduled</span>
+        <span className="sr-only">{perProject ? 'Linked, per project' : 'Linked and scheduled'}</span>
       </>
     )
   }
@@ -114,7 +117,15 @@ export function DesignerRow({
 
       {/* (c) schedule at a glance — quiet labeled chips */}
       <span className="col-span-2 col-start-2 flex flex-wrap items-center gap-1.5 lg:col-span-1 lg:col-start-auto">
-        {schedule ? (
+        {perProject ? (
+          <Badge tone="neutral">
+            Per project
+            <InfoTip
+              text="Paid for each project they finish. No daily target and no set hours."
+              label="What does per project mean?"
+            />
+          </Badge>
+        ) : schedule ? (
           <>
             <Badge tone="neutral">
               <span className="tnum">
