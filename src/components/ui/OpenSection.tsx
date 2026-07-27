@@ -52,7 +52,7 @@ export function OpenSection({
           type="button"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
-          className="group inline-flex min-h-11 items-center gap-2.5 rounded-lg text-card text-fg transition-colors duration-150 ease-out hover:text-muted"
+          className="group inline-flex min-h-11 items-center gap-2.5 rounded-lg text-subhead text-fg transition-colors duration-150 ease-out hover:text-muted"
         >
           {open ? (
             <ChevronDown className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />

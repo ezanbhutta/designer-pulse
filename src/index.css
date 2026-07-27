@@ -49,6 +49,10 @@
     0 1px 1px rgba(30, 15, 60, 0.04),
     0 8px 24px -8px rgba(60, 30, 120, 0.16),
     0 34px 60px -28px rgba(60, 30, 120, 0.24);
+  /* Cockpit elevation: one hairline plus one short, neutral drop. */
+  --shadow-card:
+    0 1px 2px rgba(16, 12, 28, 0.04),
+    0 1px 1px rgba(16, 12, 28, 0.03);
 }
 
 /* Dark theme — the all-day Ops/CEO cockpit default. The Void substrate:
@@ -90,6 +94,8 @@
     0 1px 1px rgba(0, 0, 0, 0.5),
     0 10px 30px -8px rgba(0, 0, 0, 0.55),
     0 40px 70px -30px rgba(0, 0, 0, 0.7);
+  /* Dark elevation comes from the surface tint, not a drop shadow. */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 /* Tactile grain (manifesto pillar 14): 2% SVG noise over the void prevents
@@ -138,12 +144,16 @@
      brand-cast shadow, and a backdrop blur so the aurora glows through. A later
      `bg-*` utility still wins, so nested opaque sections stay opaque. */
   .card {
-    border-radius: 1.125rem;
-    background: var(--glass-card);
-    border: 1px solid var(--glass-brd);
-    box-shadow: var(--shadow-glass);
-    -webkit-backdrop-filter: blur(16px) saturate(1.3);
-    backdrop-filter: blur(16px) saturate(1.3);
+    /* Solid, crisp, functional. A management surface is read at speed, so it
+       wants a hairline edge and a shadow that only separates it from the page,
+       not a frosted pane. Radius steps DOWN as you nest (12 outer, 10, 8), the
+       detail that separates a considered system from a rounded-everything one.
+       The richer glass material still exists as .glass-card for the designer
+       self view, which genuinely has an aurora behind it. */
+    border-radius: 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-card);
   }
   /* Aurora-glass card: the elevated, airier material for hero moments (the
      frosted, translucent pane that lets the aurora glow through, edged with a

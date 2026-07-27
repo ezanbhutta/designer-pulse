@@ -38,6 +38,8 @@ export default {
       fontSize: {
         label: ['0.75rem', { lineHeight: '1rem', letterSpacing: '0.04em', fontWeight: '500' }],
         caption: ['0.875rem', { lineHeight: '1.25rem', letterSpacing: '0.01em', fontWeight: '400' }],
+        read: ['0.9375rem', { lineHeight: '1.375rem', letterSpacing: '0', fontWeight: '400' }],
+        subhead: ['1.0625rem', { lineHeight: '1.5rem', letterSpacing: '-0.011em', fontWeight: '600' }],
         body: ['1.125rem', { lineHeight: '1.75rem', letterSpacing: '-0.01em', fontWeight: '400' }],
         card: ['1.5rem', { lineHeight: '2rem', letterSpacing: '-0.02em', fontWeight: '600' }],
         section: ['2rem', { lineHeight: '2.5rem', letterSpacing: '-0.03em', fontWeight: '600' }],
@@ -47,10 +49,13 @@ export default {
         sans: ['"Inter Variable"', 'Inter', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
-        xl: '0.875rem',
-        '2xl': '1.125rem',
+        /* Nested radii step down: 12 outer card, 10 inner, 8 controls. */
+        lg: '0.5rem',
+        xl: '0.625rem',
+        '2xl': '0.75rem',
       },
       boxShadow: {
+        card: 'var(--shadow-card)',
         soft: 'var(--shadow-soft)',
         raised: 'var(--shadow-raised)',
         edge: 'var(--shadow-edge)',

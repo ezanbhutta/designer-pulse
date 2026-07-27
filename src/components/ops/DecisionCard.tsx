@@ -46,10 +46,38 @@ export interface Decision {
   context: string
 }
 
-const URGENCY: Record<Decision['urgency'], { chip: string; label: string }> = {
-  critical: { chip: 'bg-danger-soft text-danger', label: 'Urgent' },
-  warning: { chip: 'bg-warning-soft text-warning', label: 'Needs a look' },
-  info: { chip: 'bg-brand-soft text-brand', label: 'For your awareness' },
+/**
+ * Severity is carried by the ROW, not by the button.
+ *
+ * The first pass gave every decision the same solid dark action, which put
+ * five identical black pills down the right edge. Squint at that and the
+ * buttons are the loudest thing on the page, so the eye lands on "there are
+ * five buttons" rather than "one of these is an order we just lost". Weight
+ * now tracks urgency: a coloured rule down the row, a tinted chip, and a solid
+ * action only where it is genuinely urgent. Everything else asks quietly.
+ */
+const URGENCY: Record<
+  Decision['urgency'],
+  { chip: string; label: string; rule: string; solid: boolean }
+> = {
+  critical: {
+    chip: 'bg-danger-soft text-danger',
+    label: 'Urgent',
+    rule: 'before:bg-danger',
+    solid: true,
+  },
+  warning: {
+    chip: 'bg-warning-soft text-warning',
+    label: 'Needs a look',
+    rule: 'before:bg-warning/60',
+    solid: false,
+  },
+  info: {
+    chip: 'bg-brand-soft text-brand',
+    label: 'For your awareness',
+    rule: 'before:bg-border',
+    solid: false,
+  },
 }
 
 function sinceWords(iso: string, now: Date): string {
@@ -86,28 +114,34 @@ export function DecisionCard({
   const Icon = d.icon
   const resolved = followUp.kind === 'moved'
 
-  const stepClasses =
-    'inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-fg px-4 text-caption font-semibold text-bg transition-opacity duration-150 ease-out hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg motion-safe:active:scale-[0.98]'
+  // One solid action per screenful at most: the urgent one. The rest are
+  // bordered, so they still read as the next step without shouting over the
+  // sentence that explains why they exist.
+  const stepClasses = u.solid
+    ? 'inline-flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-fg px-3.5 text-caption font-semibold text-bg transition-opacity duration-150 ease-out hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg motion-safe:active:scale-[0.98]'
+    : 'inline-flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-surface px-3.5 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:border-fg/25 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg motion-safe:active:scale-[0.98]'
 
   return (
     <motion.li
       variants={reduced ? undefined : staggerItem}
-      className="flex flex-wrap items-start gap-x-4 gap-y-3 p-5 sm:p-6"
+      className={`relative flex flex-wrap items-start gap-x-4 gap-y-3 py-4 pl-6 pr-4 before:absolute before:left-0 before:top-0 before:h-full before:w-[3px] sm:pl-7 ${
+        resolved ? 'before:bg-success' : u.rule
+      }`}
     >
       <span
-        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+        className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
           resolved ? 'bg-success-soft text-success' : u.chip
         }`}
       >
         {resolved ? (
-          <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
         ) : (
-          <Icon className="h-5 w-5" aria-hidden="true" />
+          <Icon className="h-4 w-4" aria-hidden="true" />
         )}
       </span>
 
       <div className="min-w-0 flex-[1_1_18rem]">
-        <p className="text-caption font-semibold leading-snug text-fg">
+        <p className="text-read font-semibold leading-snug text-fg">
           <span className="sr-only">{u.label}: </span>
           {d.headline}
         </p>

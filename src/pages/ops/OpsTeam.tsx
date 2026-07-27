@@ -47,7 +47,7 @@ export default function OpsTeam() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <nav aria-label="Team views" className="flex flex-wrap gap-1.5">
         {VIEWS.map((v) => {
           const Icon = v.icon

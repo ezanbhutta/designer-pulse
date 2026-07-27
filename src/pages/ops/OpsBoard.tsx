@@ -318,7 +318,7 @@ export default function OpsBoard() {
     derived.agingCount === 0 && underQuota.length === 0 && derived.unmapped.length === 0
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         breadcrumbs={['Ops', 'Work']}
         title="Work"
@@ -459,7 +459,7 @@ export default function OpsBoard() {
         // ── One cause, opened on its own from the navigation ──
         <section aria-label={focusMeta.label} className="space-y-3">
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <h2 className="inline-flex items-center gap-2.5 text-card text-fg">
+            <h2 className="inline-flex items-center gap-2.5 text-subhead text-fg">
               {focusMeta.label}
               <Badge tone={focusMeta.tone}>
                 <span className="tnum">{focusRows.length}</span>
@@ -523,12 +523,12 @@ export default function OpsBoard() {
             return (
               <section key={b} aria-label={meta.label}>
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <h2 className="inline-flex items-center gap-2.5 text-card text-fg">
+                  <h2 className="inline-flex items-center gap-2.5 text-subhead text-fg">
                     <button
                       type="button"
                       onClick={() => setOpenBuckets({ ...openBuckets, [b]: !openBuckets[b] })}
                       aria-expanded={openBuckets[b]}
-                      className="inline-flex min-h-11 items-center gap-2 rounded-lg text-card text-fg transition-colors duration-150 hover:text-muted"
+                      className="inline-flex min-h-11 items-center gap-2 rounded-lg text-subhead text-fg transition-colors duration-150 hover:text-muted"
                     >
                       {openBuckets[b] ? (
                         <ChevronDown className="h-4 w-4 text-muted" aria-hidden="true" />

@@ -395,7 +395,7 @@ export default function OpsHome() {
   const inboxLoading = loading || alertsQ.isLoading
 
   return (
-    <div className="mx-auto w-full max-w-[1080px] space-y-10">
+    <div className="mx-auto w-full max-w-[1180px] space-y-7">
       <PageHeader
         breadcrumbs={['Ops', 'Command Center']}
         title="Command Center"
@@ -432,7 +432,7 @@ export default function OpsHome() {
       {/* ── 1 · THE INBOX — the reason this page exists ─────────────────────── */}
       <section aria-label="Decisions that need you">
         <div className="mb-6 flex items-baseline justify-between gap-4">
-          <h2 className="inline-flex items-center gap-2.5 text-card text-fg">
+          <h2 className="inline-flex items-center gap-2.5 text-subhead text-fg">
             {inboxLoading || decisions.length === 0
               ? 'Decisions'
               : `${decisions.length} decision${decisions.length === 1 ? '' : 's'} need${decisions.length === 1 ? 's' : ''} you`}
@@ -535,6 +535,11 @@ export default function OpsHome() {
         )}
       </section>
 
+      <div className="flex items-center gap-3 pt-1">
+        <p className="eyebrow shrink-0">Work to chase</p>
+        <span className="h-px flex-1 bg-border" aria-hidden="true" />
+      </div>
+
       {/* ── Everything behind the decisions ─────────────────────────────────
           Split by what you would DO about each one, not lumped into a single
           list. "106 things have stopped moving" is a wall; a project nobody is
@@ -595,6 +600,11 @@ export default function OpsHome() {
       >
         <TaskList rows={unknownStatus} empty="Every open project has a status the app understands." designerById={designerById} onOpen={setTrailTask} />
       </OpenSection>
+
+      <div className="flex items-center gap-3 pt-2">
+        <p className="eyebrow shrink-0">People and throughput</p>
+        <span className="h-px flex-1 bg-border" aria-hidden="true" />
+      </div>
 
       <OpenSection
         title="Who has room for more"
@@ -708,9 +718,13 @@ export default function OpsHome() {
       </OpenSection>
 
       {/* ── 2 · Today's pulse — monitoring, pushed below the action layer ───── */}
+      <div className="flex items-center gap-3 pt-2">
+        <p className="eyebrow shrink-0">Today's numbers</p>
+        <span className="h-px flex-1 bg-border" aria-hidden="true" />
+      </div>
       <section aria-label="Today's pulse">
         <div className="mb-6 flex items-baseline gap-2">
-          <h2 className="inline-flex items-center gap-2 text-card text-fg">
+          <h2 className="inline-flex items-center gap-2 text-subhead text-fg">
             Today's pulse
             <InfoTip text="Today's numbers at a glance. Each one shows how it compares with yesterday, and why." />
           </h2>
