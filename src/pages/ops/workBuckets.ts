@@ -26,6 +26,67 @@ import { fmtDurationLong } from '../../lib/format'
 
 export type WorkBucket = 'needs-action' | 'at-risk' | 'waiting' | 'healthy'
 
+/**
+ * A focused view: one cause, opened on its own from the navigation.
+ * A bucket answers "how urgent", a cause answers "what kind of job this is".
+ * Both matter, so both are reachable, and each opens as its own page rather
+ * than as a fold inside a longer one.
+ */
+export type WorkFocus =
+  | 'stuck-designer'
+  | 'ready-to-send'
+  | 'unassigned'
+  | 'unknown-status'
+
+export const FOCUS_META: Record<
+  WorkFocus,
+  { label: string; blurb: string; tone: 'danger' | 'warning' }
+> = {
+  'stuck-designer': {
+    label: 'Stuck with the designer',
+    blurb: 'Gone quiet while a designer has them. A nudge usually clears it.',
+    tone: 'warning',
+  },
+  'ready-to-send': {
+    label: 'Ready to send, waiting on us',
+    blurb: 'Finished work waiting for someone to pass it to the client. This delay is ours.',
+    tone: 'warning',
+  },
+  unassigned: {
+    label: 'Nobody is on it',
+    blurb: 'No active designer, so these cannot move until someone picks them up.',
+    tone: 'danger',
+  },
+  'unknown-status': {
+    label: 'Status ClickUp does not recognise',
+    blurb: 'The status name matches no stage the app knows, so none of these are being counted.',
+    tone: 'danger',
+  },
+}
+
+/** Which focused view a project belongs to, if any. One project, one answer. */
+export function focusOf(bt: BucketedTask): WorkFocus | null {
+  if (!bt.task.current_status) return 'unknown-status'
+  if (bt.reason.startsWith('No active designer')) return 'unassigned'
+  if (bt.bucket !== 'needs-action') return null
+  return bt.owner === 'team' ? 'ready-to-send' : 'stuck-designer'
+}
+
+/** Counts for every focused view, computed over the whole board. */
+export function focusCounts(all: BucketedTask[]): Record<WorkFocus, number> {
+  const out: Record<WorkFocus, number> = {
+    'stuck-designer': 0,
+    'ready-to-send': 0,
+    unassigned: 0,
+    'unknown-status': 0,
+  }
+  for (const bt of all) {
+    const f = focusOf(bt)
+    if (f) out[f] += 1
+  }
+  return out
+}
+
 export const BUCKET_ORDER: WorkBucket[] = ['needs-action', 'at-risk', 'waiting', 'healthy']
 
 export const BUCKET_META: Record<

@@ -18,7 +18,7 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { MultiSelectFilter } from '../../components/ui/MultiSelectFilter'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
-import { BUCKET_META, BUCKET_ORDER, bucketWork } from './workBuckets'
+import { BUCKET_META, BUCKET_ORDER, FOCUS_META, bucketWork, focusOf, type WorkFocus } from './workBuckets'
 import { SortMenu } from '../../components/ui/SortMenu'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { TaskCard } from '../../components/shared/TaskCard'
@@ -305,6 +305,15 @@ export default function OpsBoard() {
     [openTasks, designerById, cfg, today, now],
   )
 
+  // A focused view opened from the navigation: one cause, on its own page,
+  // rather than a fold inside a longer one. The counts stay whole board.
+  const focus = searchParams.get('focus') as WorkFocus | null
+  const focusMeta = focus && FOCUS_META[focus] ? FOCUS_META[focus] : null
+  const focusRows = useMemo(
+    () => (focusMeta && focus ? buckets.all.filter((bt) => focusOf(bt) === focus) : []),
+    [buckets.all, focus, focusMeta],
+  )
+
   const healthy =
     derived.agingCount === 0 && underQuota.length === 0 && derived.unmapped.length === 0
 
@@ -446,6 +455,55 @@ export default function OpsBoard() {
             </div>
           ))}
         </div>
+      ) : focusMeta && focus ? (
+        // ── One cause, opened on its own from the navigation ──
+        <section aria-label={focusMeta.label} className="space-y-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 className="inline-flex items-center gap-2.5 text-card text-fg">
+              {focusMeta.label}
+              <Badge tone={focusMeta.tone}>
+                <span className="tnum">{focusRows.length}</span>
+              </Badge>
+            </h2>
+            <button
+              type="button"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams)
+                next.delete('focus')
+                setSearchParams(next, { replace: true })
+              }}
+              className="text-label font-medium text-brand underline-offset-2 transition-colors duration-150 hover:underline"
+            >
+              Show all work instead
+            </button>
+          </div>
+          <p className="max-w-prose text-caption text-muted">{focusMeta.blurb}</p>
+          {focusRows.length === 0 ? (
+            <p className="rounded-xl bg-surface-2/50 px-4 py-3 text-caption text-muted">
+              Nothing here right now.
+            </p>
+          ) : (
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {focusRows
+                .filter((bt) => passesFilter(bt.task) && matchesStatusFilter(bt.task))
+                .map((bt) => (
+                  <li key={bt.task.task_id}>
+                    <TaskCard
+                      task={bt.task}
+                      designerName={
+                        bt.task.designer_id ? designerById.get(bt.task.designer_id)?.name : undefined
+                      }
+                      agingDaysDefault={cfg.aging_days_default}
+                      onOpen={() => setTrailTask(bt.task)}
+                    />
+                    <p className="mt-1 px-1 text-label font-normal leading-relaxed tracking-normal text-muted">
+                      {bt.reason}
+                    </p>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </section>
       ) : groupBy === 'buckets' ? (
         // ── What needs doing: the default read. Four buckets, worst first,
         // each counted across the WHOLE board so a filter can narrow the list

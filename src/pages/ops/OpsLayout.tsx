@@ -10,7 +10,16 @@ import { DesktopAlertsProvider } from '../../components/shared/DesktopAlerts'
 import { SyncStatus } from '../../components/shared/SyncStatus'
 import { useKeepFresh } from '../../hooks/useKeepFresh'
 import { clickupListUrl } from '../../lib/queries'
-import { useActiveDesigners, useOpenAlerts } from './opsData'
+import {
+  useActiveDesigners,
+  useConfigValues,
+  useDesigners,
+  useOpenAlerts,
+  useOpenTasks,
+  useQuotaCtx,
+} from './opsData'
+import { bucketWork, focusCounts } from './workBuckets'
+import { pktToday } from '../../../shared/pkt'
 
 /**
  * The Ops cockpit shell (spec §22.3): persistent nav with the attention surface
@@ -28,6 +37,27 @@ export default function OpsLayout() {
   const openAlertCount = (alertsQ.data ?? []).filter((a) => a.status === 'open').length
   const active = useActiveDesigners()
 
+  // Live counts for the focused views, so the navigation itself says where the
+  // work is rather than making someone open a page to find out. Computed over
+  // the whole board, exactly like every other count in the app.
+  const cfg = useConfigValues()
+  const designersQ = useDesigners()
+  const openTasksQ = useOpenTasks()
+  const { ctx } = useQuotaCtx()
+  const counts = useMemo(() => {
+    const designerById = new Map((designersQ.data ?? []).map((d) => [d.id, d]))
+    const now = new Date()
+    const b = bucketWork({
+      openTasks: openTasksQ.data ?? [],
+      designerById,
+      cfg,
+      today: pktToday(now),
+      now,
+    })
+    return { ...focusCounts(b.all), needsAction: b.counts['needs-action'], atRisk: b.counts['at-risk'] }
+    // ctx is unused by bucketWork but keeps this in step with the quota loads.
+  }, [openTasksQ.data, designersQ.data, cfg, ctx])
+
   const designerId = searchParams.get('d')
 
   const closeDesigner = () => {
@@ -44,8 +74,28 @@ export default function OpsLayout() {
   // starts naming the four things a manager actually does here.
   const nav: NavItem[] = [
     { to: '/ops', label: 'Command Center', icon: Home },
-    { to: '/ops/work', label: 'Work', icon: Kanban, badge: openAlertCount || undefined },
-    { to: '/ops/team', label: 'Team', icon: Users },
+    {
+      to: '/ops/work',
+      label: 'Work',
+      icon: Kanban,
+      badge: openAlertCount || undefined,
+      children: [
+        { to: '/ops/work?focus=unassigned', label: 'Nobody is on it', count: counts.unassigned, tone: 'danger' },
+        { to: '/ops/work?focus=ready-to-send', label: 'Ready to send', count: counts['ready-to-send'], tone: 'warning' },
+        { to: '/ops/work?focus=stuck-designer', label: 'Stuck with the designer', count: counts['stuck-designer'], tone: 'warning' },
+        { to: '/ops/work?focus=unknown-status', label: 'Unknown status', count: counts['unknown-status'], tone: 'danger' },
+      ],
+    },
+    {
+      to: '/ops/team',
+      label: 'Team',
+      icon: Users,
+      children: [
+        { to: '/ops/team?view=today', label: 'Who is here today' },
+        { to: '/ops/team?view=time-off', label: 'Time off' },
+        { to: '/ops/team?view=onsite', label: 'Onsite team' },
+      ],
+    },
     { to: '/ops/reports', label: 'Insights', icon: FileText },
   ]
 
@@ -60,8 +110,10 @@ export default function OpsLayout() {
     // The palette answers management questions, not just "which page". Each of
     // these lands on the exact reading that answers the question asked.
     const questions: Command[] = [
-      { id: 'q-blocked', label: 'Show blocked work', hint: 'projects our clock is running on', keywords: 'blocked stuck needs action not moving stalled overdue', run: go('/ops/work') },
+      { id: 'q-blocked', label: 'Show blocked work', hint: 'projects our clock is running on', keywords: 'blocked stuck needs action not moving stalled overdue', run: go('/ops/work?focus=stuck-designer') },
       { id: 'q-at-risk', label: 'What is at risk today', hint: 'due today and not sent yet', keywords: 'at risk today due deadline miss late', run: go('/ops/work') },
+      { id: 'q-unassigned', label: 'What has nobody on it', hint: 'no active designer, cannot move', keywords: 'unassigned nobody no designer orphan', run: go('/ops/work?focus=unassigned') },
+      { id: 'q-ready', label: 'What is ready to send', hint: 'finished, waiting on us', keywords: 'ready send deliver waiting on us finished', run: go('/ops/work?focus=ready-to-send') },
       { id: 'q-waiting', label: 'What is waiting on clients', hint: 'their clock, not ours', keywords: 'waiting client response hear back', run: go('/ops/work') },
       { id: 'q-capacity', label: 'Who has capacity', hint: 'room for more work today', keywords: 'capacity room free spare who can take more slots open', run: go('/ops/team') },
       { id: 'q-here', label: 'Who is here today', hint: 'presence and late starts', keywords: 'here present attendance who is in late checked in', run: go('/ops/team?view=today') },

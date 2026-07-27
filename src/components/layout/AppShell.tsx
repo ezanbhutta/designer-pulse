@@ -16,6 +16,14 @@ export interface NavItem {
   label: string
   icon: LucideIcon
   badge?: number
+  /**
+   * Focused views that live inside this destination. A count large enough to
+   * matter deserves its own place in the navigation rather than an accordion
+   * buried on another page: 138 projects nobody is assigned to is a job of its
+   * own, not a fold. Children render indented under their parent and carry
+   * their own live counts.
+   */
+  children?: Array<{ to: string; label: string; count?: number; tone?: 'danger' | 'warning' | 'success' }>
 }
 
 export interface AppShellProps {
@@ -183,33 +191,68 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
     nav.map((item) => {
       const Icon = item.icon
       return (
-        <NavLink
-          key={item.to}
-          to={item.to}
-          end={item.to === '/ops' || item.to === '/ceo' || item.to === '/me'}
-          className={navLinkClass(dense)}
-          aria-label={navLinkLabel(item)}
-          title={item.label}
-          onClick={onNavigate}
-        >
-          {({ isActive }) => (
-            <>
-              {/* 2px indicator bar — the active row is physically marked. */}
-              {isActive && (
-                <span
-                  className="absolute -left-1 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-brand"
+        <div key={item.to}>
+          <NavLink
+            to={item.to}
+            end={item.to === '/ops' || item.to === '/ceo' || item.to === '/me'}
+            className={navLinkClass(dense)}
+            aria-label={navLinkLabel(item)}
+            title={item.label}
+            onClick={onNavigate}
+          >
+            {({ isActive }) => (
+              <>
+                {/* 2px indicator bar — the active row is physically marked. */}
+                {isActive && (
+                  <span
+                    className="absolute -left-1 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-brand"
+                    aria-hidden="true"
+                  />
+                )}
+                <Icon
+                  className={dense ? 'h-4 w-4 shrink-0 opacity-80' : 'h-5 w-5 shrink-0'}
                   aria-hidden="true"
                 />
-              )}
-              <Icon
-                className={dense ? 'h-4 w-4 shrink-0 opacity-80' : 'h-5 w-5 shrink-0'}
-                aria-hidden="true"
-              />
-              <span className="truncate">{item.label}</span>
-              <NavBadge count={item.badge ?? 0} dense={dense} />
-            </>
+                <span className="truncate">{item.label}</span>
+                <NavBadge count={item.badge ?? 0} dense={dense} />
+              </>
+            )}
+          </NavLink>
+          {item.children && item.children.length > 0 && (
+            <div className="mb-1 ml-[1.4rem] flex flex-col gap-0.5 border-l border-border pl-2">
+              {item.children.map((c) => (
+                <NavLink
+                  key={c.to}
+                  to={c.to}
+                  className={({ isActive }) =>
+                    `flex ${dense ? 'min-h-8' : 'min-h-11'} items-center gap-2 rounded-md px-2 text-label font-medium tracking-normal transition-colors duration-150 ${
+                      isActive ? 'bg-brand-soft text-brand' : 'text-muted hover:bg-surface-2 hover:text-fg'
+                    }`
+                  }
+                  onClick={onNavigate}
+                  title={c.label}
+                >
+                  <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                  {c.count != null && c.count > 0 && (
+                    <span
+                      className={`tnum shrink-0 rounded-full px-1.5 text-label font-semibold ${
+                        c.tone === 'danger'
+                          ? 'bg-danger-soft text-danger'
+                          : c.tone === 'warning'
+                            ? 'bg-warning-soft text-warning'
+                            : c.tone === 'success'
+                              ? 'bg-success-soft text-success'
+                              : 'bg-surface-2 text-muted'
+                      }`}
+                    >
+                      {c.count}
+                    </span>
+                  )}
+                </NavLink>
+              ))}
+            </div>
           )}
-        </NavLink>
+        </div>
       )
     })
 
