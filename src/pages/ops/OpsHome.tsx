@@ -64,6 +64,87 @@ import {
   useTasksSince,
 } from './opsData'
 
+
+/** Shared class for the quiet "Open in Work" link on a section header. */
+const openInWork =
+  'text-label font-medium text-brand underline-offset-2 transition-colors duration-150 hover:underline'
+
+/** Group rows under a heading, biggest group first, so long lists read in parts. */
+function byTeam<T>(rows: T[], key: (r: T) => string): Array<[string, T[]]> {
+  const map = new Map<string, T[]>()
+  for (const r of rows) {
+    const k = key(r)
+    map.set(k, [...(map.get(k) ?? []), r])
+  }
+  return [...map.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+}
+
+/** How many rows a long list shows before asking to be opened further. */
+const PAGE = 15
+
+/**
+ * A list of projects that pages rather than dumping. Opening a section that
+ * holds a hundred projects should not put a hundred rows on the screen: the
+ * first page is enough to judge, and the rest is one button away.
+ */
+function TaskList({
+  rows,
+  empty,
+  designerById,
+  onOpen,
+}: {
+  rows: Array<{ task: TaskState; age: number }>
+  empty: string
+  designerById: Map<string, { name: string }>
+  onOpen: (t: TaskState) => void
+}) {
+  const [shown, setShown] = useState(PAGE)
+  if (rows.length === 0) {
+    return <p className="card px-5 py-4 text-caption text-muted">{empty}</p>
+  }
+  const visible = rows.slice(0, shown)
+  return (
+    <>
+      <ul className="card divide-y divide-border/60 overflow-hidden">
+        {visible.map(({ task, age }) => (
+          <li key={task.task_id}>
+            <button
+              type="button"
+              onClick={() => onOpen(task)}
+              className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors duration-150 hover:bg-surface-2/60"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-caption font-medium text-fg">
+                  {task.name ?? task.task_id}
+                </span>
+                <span className="block truncate text-label font-normal tracking-normal text-muted">
+                  {task.designer_id
+                    ? (designerById.get(task.designer_id)?.name ?? 'No designer')
+                    : 'No designer'}
+                  {task.current_status ? `, in ${STATUS_LABELS[task.current_status]}` : ''}
+                </span>
+              </span>
+              <span className="tnum shrink-0 text-caption font-medium text-muted">
+                {fmtDurationLong(age)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {rows.length > shown && (
+        <button
+          type="button"
+          onClick={() => setShown(shown + PAGE * 4)}
+          className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-border bg-surface px-3.5 text-caption font-medium text-fg transition-colors duration-150 hover:bg-surface-2"
+        >
+          <ChevronDown className="h-4 w-4" aria-hidden="true" />
+          Show more, {rows.length - shown} still to see
+        </button>
+      )}
+    </>
+  )
+}
+
 /**
  * THE ACTION INBOX (manifesto pillar 6, adapted to real data): the page exists
  * so the Ops manager can fix blockages. The ranked verdict items ARE the page —
@@ -275,6 +356,36 @@ export default function OpsHome() {
     .filter((r) => r.util != null)
     .sort((a, b) => (b.util ?? 0) - (a.util ?? 0))[0]
 
+  // Split by cause, because each cause is a different job: a project a
+  // designer has gone quiet on, one that is finished and waiting on us to
+  // send it, one nobody is assigned to, and one whose ClickUp status the app
+  // cannot read at all.
+  const stalled = useMemo(() => {
+    const designer: typeof derived.agingTasks = []
+    const team: typeof derived.agingTasks = []
+    for (const row of derived.agingTasks) {
+      if (row.owner === 'team') team.push(row)
+      else designer.push(row)
+    }
+    return { designer, team }
+  }, [derived.agingTasks])
+
+  const unassigned = useMemo(
+    () =>
+      openTasks
+        .filter((t) => {
+          const d = t.designer_id ? designerById.get(t.designer_id) : undefined
+          return !d || d.status !== 'active'
+        })
+        .map((t) => ({ task: t, age: ageMinutes(t, now) })),
+    [openTasks, designerById, now],
+  )
+
+  const unknownStatus = useMemo(
+    () => openTasks.filter((t) => !t.current_status).map((t) => ({ task: t, age: ageMinutes(t, now) })),
+    [openTasks, now],
+  )
+
   const spareRows = useMemo(
     () => derived.rows.filter((r) => r.expected > 0).sort((a, b) => b.spare - a.spare),
     [derived.rows],
@@ -424,7 +535,67 @@ export default function OpsHome() {
         )}
       </section>
 
-      {/* ── Everything behind the decisions, each openable ─────────────────── */}
+      {/* ── Everything behind the decisions ─────────────────────────────────
+          Split by what you would DO about each one, not lumped into a single
+          list. "106 things have stopped moving" is a wall; a project nobody is
+          assigned to, one a designer has gone quiet on, and one that is
+          finished and waiting on us to send it are three different jobs. Each
+          gets its own section, its own count, and its own list. ────────── */}
+
+      <OpenSection
+        title="Stuck with the designer"
+        count={stalled.designer.length}
+        tone={stalled.designer.length > 0 ? 'warning' : 'success'}
+        storageKey="pulse.ops.home.stuckDesigner"
+        defaultOpen={false}
+        tip="Projects that have gone quiet while a designer has them. A nudge is usually all it takes."
+        trailing={
+          <button type="button" onClick={() => navigate('/ops/work')} className={openInWork}>
+            Open in Work
+          </button>
+        }
+      >
+        <TaskList rows={stalled.designer} empty="Nothing has gone quiet on a designer." designerById={designerById} onOpen={setTrailTask} />
+      </OpenSection>
+
+      <OpenSection
+        title="Ready to send, waiting on us"
+        count={stalled.team.length}
+        tone={stalled.team.length > 0 ? 'warning' : 'success'}
+        storageKey="pulse.ops.home.stuckTeam"
+        defaultOpen={false}
+        tip="Finished work sitting with the team, waiting for someone to pass it to the client. This delay is ours, not the designer's."
+        trailing={
+          <button type="button" onClick={() => navigate('/ops/work')} className={openInWork}>
+            Open in Work
+          </button>
+        }
+      >
+        <TaskList rows={stalled.team} empty="Nothing finished is waiting to be sent." designerById={designerById} onOpen={setTrailTask} />
+      </OpenSection>
+
+      <OpenSection
+        title="Nobody is on it"
+        count={unassigned.length}
+        tone={unassigned.length > 0 ? 'danger' : 'success'}
+        storageKey="pulse.ops.home.unassigned"
+        defaultOpen={false}
+        tip="Open projects with no active designer. These cannot move at all until someone picks them up."
+      >
+        <TaskList rows={unassigned} empty="Every open project has someone on it." designerById={designerById} onOpen={setTrailTask} />
+      </OpenSection>
+
+      <OpenSection
+        title="Status ClickUp does not recognise"
+        count={unknownStatus.length}
+        tone={unknownStatus.length > 0 ? 'danger' : 'success'}
+        storageKey="pulse.ops.home.unknown"
+        defaultOpen={false}
+        tip="The status name on these does not match any stage the app knows, so none of their numbers are being counted. Renaming the status in ClickUp fixes it."
+      >
+        <TaskList rows={unknownStatus} empty="Every open project has a status the app understands." designerById={designerById} onOpen={setTrailTask} />
+      </OpenSection>
+
       <OpenSection
         title="Who has room for more"
         count={spareRows.length}
@@ -433,111 +604,64 @@ export default function OpsHome() {
         tip="People who can take more projects today. Only projects due today fill a plate, whatever their status. Giving them the work is the team lead's job, not theirs."
         blurb="most free first"
       >
-        <ul className="card divide-y divide-border/60 overflow-hidden">
+        <div className="space-y-4">
           {spareRows.length === 0 ? (
-            <li className="px-5 py-4 text-caption text-muted">
+            <p className="card px-5 py-4 text-caption text-muted">
               Nobody is scheduled to work today. This happens on holidays, days off and leave.
-            </li>
+            </p>
           ) : (
-            spareRows.map((r) => {
-              const href = clickupListUrl(r.designer.clickup_list_id)
-              return (
-                <li key={r.designer.id} className="flex items-center gap-3 px-5 py-3">
-                  <button
-                    type="button"
-                    onClick={() => openDesigner(r.designer.id)}
-                    className="min-h-11 min-w-0 flex-1 text-left"
-                    aria-label={`Open ${r.designer.name}'s details`}
-                  >
-                    <p className="truncate text-caption font-medium text-fg">
-                      {r.designer.name}
-                      <span className="ml-2 text-label font-normal tracking-normal text-muted">
-                        {r.designer.team}
-                      </span>
-                    </p>
-                    <p className="tnum text-label font-normal tracking-normal text-muted">
-                      {r.filled} due today, target {r.expected}
-                      {r.spare > 0
-                        ? `, room for ${r.spare} more`
-                        : r.spare < 0
-                          ? `, ${-r.spare} over their target`
-                          : ', right at their target'}
-                    </p>
-                  </button>
-                  <span
-                    className={`tnum text-caption font-medium ${
-                      r.spare > 0 ? 'text-success' : r.spare < 0 ? 'text-danger' : 'text-muted'
-                    }`}
-                  >
-                    {fmtPct(r.util)}
-                  </span>
-                  {href && (
-                    <a
-                      href={href}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={`Open ${r.designer.name}'s list in ClickUp`}
-                      className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg"
-                    >
-                      <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                    </a>
-                  )}
-                </li>
-              )
-            })
-          )}
-        </ul>
-      </OpenSection>
-
-      <OpenSection
-        title="Everything that has stopped moving"
-        count={derived.agingTasks.length}
-        tone={derived.agingTasks.length > 0 ? 'warning' : 'success'}
-        storageKey="pulse.ops.home.stuck"
-        defaultOpen={false}
-        tip="Every project past the point where it should have moved on, oldest first. Open one to read its full history."
-        trailing={
-          <button
-            type="button"
-            onClick={() => navigate('/ops/work')}
-            className="text-label font-medium text-brand underline-offset-2 transition-colors duration-150 hover:underline"
-          >
-            Open in Work
-          </button>
-        }
-      >
-        <ul className="card divide-y divide-border/60 overflow-hidden">
-          {derived.agingTasks.length === 0 ? (
-            <li className="px-5 py-4 text-caption text-muted">
-              Nothing has gone quiet. Every project is still moving.
-            </li>
-          ) : (
-            derived.agingTasks.map(({ task, age }) => (
-              <li key={task.task_id}>
-                <button
-                  type="button"
-                  onClick={() => setTrailTask(task)}
-                  className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors duration-150 hover:bg-surface-2/60"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-caption font-medium text-fg">
-                      {task.name ?? task.task_id}
-                    </span>
-                    <span className="block truncate text-label font-normal tracking-normal text-muted">
-                      {task.designer_id
-                        ? (designerById.get(task.designer_id)?.name ?? 'No designer')
-                        : 'No designer'}
-                      {task.current_status ? `, in ${STATUS_LABELS[task.current_status]}` : ''}
-                    </span>
-                  </span>
-                  <span className="tnum shrink-0 text-caption font-medium text-warning">
-                    {fmtDurationLong(age)}
-                  </span>
-                </button>
-              </li>
+            byTeam(spareRows, (r) => r.designer.team).map(([team, rows]) => (
+              <div key={team}>
+                <p className="eyebrow mb-1.5">
+                  {team} <span className="tnum text-muted">{rows.length}</span>
+                </p>
+                <ul className="card divide-y divide-border/60 overflow-hidden">
+                  {rows.map((r) => {
+                    const href = clickupListUrl(r.designer.clickup_list_id)
+                    return (
+                      <li key={r.designer.id} className="flex items-center gap-3 px-5 py-3">
+                        <button
+                          type="button"
+                          onClick={() => openDesigner(r.designer.id)}
+                          className="min-h-11 min-w-0 flex-1 text-left"
+                          aria-label={`Open ${r.designer.name}'s details`}
+                        >
+                          <p className="truncate text-caption font-medium text-fg">{r.designer.name}</p>
+                          <p className="tnum text-label font-normal tracking-normal text-muted">
+                            {r.filled} due today, target {r.expected}
+                            {r.spare > 0
+                              ? `, room for ${r.spare} more`
+                              : r.spare < 0
+                                ? `, ${-r.spare} over their target`
+                                : ', right at their target'}
+                          </p>
+                        </button>
+                        <span
+                          className={`tnum text-caption font-medium ${
+                            r.spare > 0 ? 'text-success' : r.spare < 0 ? 'text-danger' : 'text-muted'
+                          }`}
+                        >
+                          {fmtPct(r.util)}
+                        </span>
+                        {href && (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`Open ${r.designer.name}'s list in ClickUp`}
+                            className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg"
+                          >
+                            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                          </a>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
             ))
           )}
-        </ul>
+        </div>
       </OpenSection>
 
       <OpenSection
@@ -546,32 +670,41 @@ export default function OpsHome() {
         tone="success"
         storageKey="pulse.ops.home.done"
         defaultOpen={false}
-        tip="Everything closed as done today, newest first."
+        tip="Everything closed as done today, grouped by the person who finished it."
       >
-        <ul className="card divide-y divide-border/60 overflow-hidden">
+        <div className="space-y-4">
           {derived.completedTodayTasks.length === 0 ? (
-            <li className="px-5 py-4 text-caption text-muted">Nothing has finished yet today.</li>
+            <p className="card px-5 py-4 text-caption text-muted">Nothing has finished yet today.</p>
           ) : (
-            derived.completedTodayTasks.map((t) => (
-              <li key={t.task_id}>
-                <button
-                  type="button"
-                  onClick={() => setTrailTask(t)}
-                  className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors duration-150 hover:bg-surface-2/60"
-                >
-                  <span className="min-w-0 flex-1 truncate text-caption font-medium text-fg">
-                    {t.name ?? t.task_id}
-                  </span>
-                  <span className="shrink-0 text-label font-normal tracking-normal text-muted">
-                    {t.designer_id
-                      ? (designerById.get(t.designer_id)?.name ?? 'No designer')
-                      : 'No designer'}
-                  </span>
-                </button>
-              </li>
+            byTeam(derived.completedTodayTasks, (t) =>
+              t.designer_id ? (designerById.get(t.designer_id)?.name ?? 'No designer') : 'No designer',
+            ).map(([who, list]) => (
+              <div key={who}>
+                <p className="eyebrow mb-1.5">
+                  {who} <span className="tnum text-muted">{list.length}</span>
+                </p>
+                <ul className="card divide-y divide-border/60 overflow-hidden">
+                  {list.map((t) => (
+                    <li key={t.task_id}>
+                      <button
+                        type="button"
+                        onClick={() => setTrailTask(t)}
+                        className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors duration-150 hover:bg-surface-2/60"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-caption font-medium text-fg">
+                          {t.name ?? t.task_id}
+                        </span>
+                        <span className="shrink-0 text-label font-normal tracking-normal text-muted">
+                          see history
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))
           )}
-        </ul>
+        </div>
       </OpenSection>
 
       {/* ── 2 · Today's pulse — monitoring, pushed below the action layer ───── */}
