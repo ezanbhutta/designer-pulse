@@ -395,7 +395,7 @@ export default function OpsHome() {
   const inboxLoading = loading || alertsQ.isLoading
 
   return (
-    <div className="mx-auto w-full max-w-[1180px] space-y-7">
+    <div className="mx-auto w-full max-w-[1440px] space-y-7">
       <PageHeader
         breadcrumbs={['Ops', 'Command Center']}
         title="Command Center"
@@ -535,6 +535,8 @@ export default function OpsHome() {
         )}
       </section>
 
+      <div className="grid grid-cols-1 gap-x-10 gap-y-7 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="min-w-0 space-y-7">
       <div className="flex items-center gap-3 pt-1">
         <p className="eyebrow shrink-0">Work to chase</p>
         <span className="h-px flex-1 bg-border" aria-hidden="true" />
@@ -601,7 +603,12 @@ export default function OpsHome() {
         <TaskList rows={unknownStatus} empty="Every open project has a status the app understands." designerById={designerById} onOpen={setTrailTask} />
       </OpenSection>
 
-      <div className="flex items-center gap-3 pt-2">
+      </div>
+
+      {/* The rail: today's numbers and the lighter people sections, beside the
+          spine rather than a screen below it. */}
+      <aside className="min-w-0 space-y-7">
+      <div className="flex items-center gap-3 pt-1">
         <p className="eyebrow shrink-0">People and throughput</p>
         <span className="h-px flex-1 bg-border" aria-hidden="true" />
       </div>
@@ -718,7 +725,10 @@ export default function OpsHome() {
       </OpenSection>
 
       {/* ── 2 · Today's pulse — monitoring, pushed below the action layer ───── */}
-      <div className="flex items-center gap-3 pt-2">
+      </aside>
+      </div>
+
+      <div className="flex items-center gap-3 pt-1">
         <p className="eyebrow shrink-0">Today's numbers</p>
         <span className="h-px flex-1 bg-border" aria-hidden="true" />
       </div>
@@ -731,7 +741,7 @@ export default function OpsHome() {
         </div>
         {/* 2-up inside the 1000px reading column — labels never truncate and
             each number gets breathing room (whitespace pillar). */}
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <StatTile
             eyebrow="Given out today"
             tip="How many new projects were handed to designers today, out of the team's total for the day."

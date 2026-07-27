@@ -72,6 +72,42 @@ export function focusOf(bt: BucketedTask): WorkFocus | null {
   return bt.owner === 'team' ? 'ready-to-send' : 'stuck-designer'
 }
 
+/**
+ * WHY a project has nobody on it. The difference matters enormously: work that
+ * is genuinely unassigned is a backlog to hand out, but a project whose ClickUp
+ * list was never linked to a roster designer is a wiring gap, and those are far
+ * worse. A wiring gap means the work IS being done and the app cannot see it,
+ * so the designer gets no credit, the age inflates the stuck counts, and every
+ * capacity percentage is computed without them. One is a management problem,
+ * the other quietly corrupts every number in the product.
+ */
+export type UnassignedCause = 'list-not-linked' | 'designer-archived' | 'no-designer-set'
+
+export const UNASSIGNED_CAUSE: Record<UnassignedCause, { label: string; fix: string }> = {
+  'list-not-linked': {
+    label: 'Their ClickUp list is not linked to anyone',
+    fix: 'Link the list to a designer on the roster, and all of these become visible at once.',
+  },
+  'designer-archived': {
+    label: 'The designer who had these is archived',
+    fix: 'Either restore them, or move the work to someone active in ClickUp.',
+  },
+  'no-designer-set': {
+    label: 'Genuinely unassigned in ClickUp',
+    fix: 'These need handing to someone before they can move.',
+  },
+}
+
+export function unassignedCause(
+  t: TaskState,
+  designerById: Map<string, Designer>,
+): UnassignedCause {
+  if (!t.designer_id) return 'list-not-linked'
+  const d = designerById.get(t.designer_id)
+  if (!d) return 'list-not-linked'
+  return d.status === 'active' ? 'no-designer-set' : 'designer-archived'
+}
+
 /** Counts for every focused view, computed over the whole board. */
 export function focusCounts(all: BucketedTask[]): Record<WorkFocus, number> {
   const out: Record<WorkFocus, number> = {

@@ -18,7 +18,17 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { MultiSelectFilter } from '../../components/ui/MultiSelectFilter'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
-import { BUCKET_META, BUCKET_ORDER, FOCUS_META, bucketWork, focusOf, type WorkFocus } from './workBuckets'
+import {
+  BUCKET_META,
+  BUCKET_ORDER,
+  FOCUS_META,
+  UNASSIGNED_CAUSE,
+  bucketWork,
+  focusOf,
+  unassignedCause,
+  type UnassignedCause,
+  type WorkFocus,
+} from './workBuckets'
 import { SortMenu } from '../../components/ui/SortMenu'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { TaskCard } from '../../components/shared/TaskCard'
@@ -478,6 +488,64 @@ export default function OpsBoard() {
             </button>
           </div>
           <p className="max-w-prose text-caption text-muted">{focusMeta.blurb}</p>
+
+          {/* For the unassigned view, WHY matters more than the list itself.
+              Work nobody has been given is a backlog; work whose list was
+              never linked is a wiring gap that hides real effort from every
+              number in the app. Split them, and name the list to fix. */}
+          {focus === 'unassigned' && focusRows.length > 0 && (
+            <div className="space-y-2">
+              {(Object.keys(UNASSIGNED_CAUSE) as UnassignedCause[]).map((cause) => {
+                const rows = focusRows.filter(
+                  (bt) => unassignedCause(bt.task, designerById) === cause,
+                )
+                if (rows.length === 0) return null
+                const lists = [...new Set(rows.map((bt) => bt.task.list_id))]
+                return (
+                  <div
+                    key={cause}
+                    className="rounded-xl border border-border bg-surface-2/50 px-4 py-3"
+                  >
+                    <p className="text-caption font-semibold text-fg">
+                      <span className="tnum">{rows.length}</span>{' '}
+                      {UNASSIGNED_CAUSE[cause].label.toLowerCase()}
+                    </p>
+                    <p className="mt-0.5 text-label font-normal leading-relaxed tracking-normal text-muted">
+                      {UNASSIGNED_CAUSE[cause].fix}
+                    </p>
+                    {cause === 'list-not-linked' && (
+                      <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-label font-normal tracking-normal text-muted">
+                        <span>
+                          {lists.length === 1
+                            ? 'It comes from 1 ClickUp list:'
+                            : `They come from ${lists.length} ClickUp lists:`}
+                        </span>
+                        {lists.slice(0, 6).map((id) => {
+                          const url = clickupListUrl(id)
+                          return url ? (
+                            <a
+                              key={id}
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="tnum rounded-md bg-surface px-1.5 py-0.5 text-brand underline-offset-2 hover:underline"
+                            >
+                              {id}
+                            </a>
+                          ) : (
+                            <span key={id} className="tnum">
+                              {id}
+                            </span>
+                          )
+                        })}
+                        {lists.length > 6 && <span>and {lists.length - 6} more</span>}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
           {focusRows.length === 0 ? (
             <p className="rounded-xl bg-surface-2/50 px-4 py-3 text-caption text-muted">
               Nothing here right now.
