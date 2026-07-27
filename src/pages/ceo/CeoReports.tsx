@@ -310,7 +310,8 @@ export default function CeoReports() {
         TEAMS.map((team) => {
           const teamRows = model.rows
             .filter((r) => r.designer.team === team)
-            // Worst-first (§20.4): the designer who needs the conversation leads.
+            // The person who may most need support leads, so the conversation starts
+            // where it helps most. Order is a prompt to look closer, never a verdict.
             .sort((a, b) => (a.cur.attainmentPct ?? Infinity) - (b.cur.attainmentPct ?? Infinity))
           if (teamRows.length === 0) return null
           return (
@@ -527,7 +528,7 @@ function buildWeeklySummary(
   if (teamFpq.length >= 2) {
     const best = [...teamFpq].sort((a, b) => b.pct - a.pct)[0]
     const worst = [...teamFpq].sort((a, b) => a.pct - b.pct)[0]
-    sentences.push(`${best.team} had the best quality score (${best.pct}%); ${worst.team} had the lowest (${worst.pct}%).`)
+    sentences.push(`${best.team} had the highest quality score (${best.pct}%), and ${worst.team} has the most room to grow (${worst.pct}%).`)
   }
   if (cancelled > 0) {
     const names = rows

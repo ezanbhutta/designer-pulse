@@ -264,7 +264,7 @@ export default function OpsLeave() {
   return (
     <div className="mx-auto w-full max-w-[1200px] space-y-12">
       <PageHeader
-        breadcrumbs={['Ops', 'Leave']}
+        breadcrumbs={['Ops', 'Team', 'Leave']}
         title="Leave"
         titleAccessory={
           <InfoTip text="Record time off, half days and holidays here. Attendance and daily targets adjust on their own." />

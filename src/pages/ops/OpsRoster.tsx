@@ -122,7 +122,7 @@ export default function OpsRoster() {
     <div className="mx-auto w-full max-w-[1100px] space-y-12">
       {/* ── 1 · Header (4-question, §pillar 7) ── */}
       <PageHeader
-        breadcrumbs={['Ops', 'Roster']}
+        breadcrumbs={['Ops', 'Team', 'Roster']}
         title="Roster"
         titleAccessory={
           <InfoTip

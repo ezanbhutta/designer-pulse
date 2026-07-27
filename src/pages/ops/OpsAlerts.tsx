@@ -30,6 +30,9 @@ const TYPE_ORDER: AlertType[] = [
   'workload_forecast',
 ]
 
+/** A type the labels table has not learned yet still needs a readable heading. */
+const typeLabel = (t: AlertType): string => TYPE_LABELS[t] ?? 'Other alerts'
+
 const TYPE_LABELS: Record<AlertType, string> = {
   cancellation: 'Cancelled orders',
   assignment_gap: 'People needing work',
@@ -162,10 +165,14 @@ export default function OpsAlerts() {
           b.fired_at.localeCompare(a.fired_at),
       )
     }
-    return TYPE_ORDER.filter((t) => byType.has(t)).map((t) => ({
-      type: t,
-      alerts: byType.get(t) ?? [],
-    }))
+    // alert_type is free text in the schema, so a type the engine starts
+    // firing before this list learns about it must still be shown. Ordering
+    // known types first and appending the rest keeps the list complete: the
+    // old version filtered to TYPE_ORDER, which silently dropped unknown types
+    // from the page while they still counted in the header and the nav badge.
+    const known = TYPE_ORDER.filter((t) => byType.has(t))
+    const unknown = [...byType.keys()].filter((t) => !TYPE_ORDER.includes(t)).sort()
+    return [...known, ...unknown].map((t) => ({ type: t, alerts: byType.get(t) ?? [] }))
   }, [alerts])
 
   const openCount = alerts.filter((a) => a.status === 'open').length
@@ -281,13 +288,13 @@ export default function OpsAlerts() {
           )
         ) : (
           groups.map((group) => (
-            <section key={group.type} aria-label={TYPE_LABELS[group.type]}>
+            <section key={group.type} aria-label={typeLabel(group.type)}>
               <h2 className="eyebrow inline-flex items-center gap-1">
-                {TYPE_LABELS[group.type]}
+                {typeLabel(group.type)}
                 <span className="tnum ml-1 font-normal normal-case tracking-normal">
                   {group.alerts.length}
                 </span>
-                <InfoTip text={TYPE_EXPLAINERS[group.type]} />
+                <InfoTip text={TYPE_EXPLAINERS[group.type] ?? 'A newer kind of alert the app has started raising.'} />
               </h2>
               <div className="mt-3 space-y-2">
                 {group.alerts.map((a) => {

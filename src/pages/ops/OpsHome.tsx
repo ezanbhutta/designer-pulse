@@ -268,7 +268,7 @@ export default function OpsHome() {
   const inboxLoading = loading || alertsQ.isLoading
 
   return (
-    <div className="mx-auto w-full max-w-[1000px] space-y-16">
+    <div className="mx-auto w-full max-w-[1080px] space-y-10">
       <PageHeader
         breadcrumbs={['Ops', 'Command Center']}
         title="Command Center"

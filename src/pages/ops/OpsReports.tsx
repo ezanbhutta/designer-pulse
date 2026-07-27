@@ -241,7 +241,7 @@ export default function OpsReports() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1200px] space-y-12">
+    <div className="mx-auto w-full max-w-[1200px] space-y-8">
       <PageHeader
         breadcrumbs={['Ops', 'Reports']}
         title="Reports"

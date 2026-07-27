@@ -551,7 +551,14 @@ export default function CeoOverview() {
   )
 }
 
-/** Top-3 / bottom-3 compact list. Bottom half is worst-first — the eye lands on the problem. */
+/**
+ * The two ends of a week, framed as what a leader does about them rather than
+ * as a league table. The top of the list is people to recognise; the bottom is
+ * people who need support. A ranking implies a verdict on the person, and the
+ * numbers here cannot carry that: a hard brief, a difficult client or a week of
+ * cover all read as a low score. Naming the halves this way keeps the page
+ * useful for coaching instead of turning it into a scoreboard.
+ */
 function OutlierList({ title, tip, rows }: { title: string; tip: string; rows: OutlierRow[] }) {
   const heading = (
     <h3 className="inline-flex items-center gap-1 text-caption font-semibold text-fg">
@@ -571,7 +578,7 @@ function OutlierList({ title, tip, rows }: { title: string; tip: string; rows: O
   return (
     <div>
       {heading}
-      <p className="eyebrow mt-1.5 text-success">Best</p>
+      <p className="eyebrow mt-1.5 text-success">Worth recognising</p>
       <ul className="mt-1">
         {top.map((r) => (
           <OutlierItem key={r.designer.id} row={r} />
@@ -579,7 +586,7 @@ function OutlierList({ title, tip, rows }: { title: string; tip: string; rows: O
       </ul>
       {bottom.length > 0 && (
         <>
-          <p className="eyebrow mt-3 text-warning">Needs attention</p>
+          <p className="eyebrow mt-3 text-warning">May need support</p>
           <ul className="mt-1">
             {bottom.map((r) => (
               <OutlierItem key={r.designer.id} row={r} />

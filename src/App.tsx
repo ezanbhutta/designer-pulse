@@ -9,11 +9,8 @@ const LoginPage = lazy(() => import('./pages/auth/LoginPage'))
 const OpsLayout = lazy(() => import('./pages/ops/OpsLayout'))
 const OpsHome = lazy(() => import('./pages/ops/OpsHome'))
 const OpsBoard = lazy(() => import('./pages/ops/OpsBoard'))
-const OpsRoster = lazy(() => import('./pages/ops/OpsRoster'))
-const OpsAttendance = lazy(() => import('./pages/ops/OpsAttendance'))
-const OpsLeave = lazy(() => import('./pages/ops/OpsLeave'))
+const OpsTeam = lazy(() => import('./pages/ops/OpsTeam'))
 const OpsAlerts = lazy(() => import('./pages/ops/OpsAlerts'))
-const OpsOnsite = lazy(() => import('./pages/ops/OpsOnsite'))
 const OpsReports = lazy(() => import('./pages/ops/OpsReports'))
 const CeoLayout = lazy(() => import('./pages/ceo/CeoLayout'))
 const CeoOverview = lazy(() => import('./pages/ceo/CeoOverview'))
@@ -76,11 +73,15 @@ export default function App() {
           {/* The Board became the Work workspace. Existing links, bookmarks and
               the drill in from the Command Center all still land correctly. */}
           <Route path="board" element={<Navigate to="/ops/work" replace />} />
-          <Route path="roster" element={<OpsRoster />} />
-          <Route path="attendance" element={<OpsAttendance />} />
-          <Route path="leave" element={<OpsLeave />} />
+          <Route path="team" element={<OpsTeam />} />
+          {/* Roster, Attendance, Leave and Onsite became views of Team. Every
+              old link still lands on the right reading of the right page. */}
+          <Route path="roster" element={<Navigate to="/ops/team" replace />} />
+          <Route path="attendance" element={<Navigate to="/ops/team?view=today" replace />} />
+          <Route path="leave" element={<Navigate to="/ops/team?view=time-off" replace />} />
+          <Route path="onsite" element={<Navigate to="/ops/team?view=onsite" replace />} />
+          {/* Alerts folded into Work; the full log stays reachable by link. */}
           <Route path="alerts" element={<OpsAlerts />} />
-          <Route path="onsite" element={<OpsOnsite />} />
           <Route path="reports" element={<OpsReports />} />
         </Route>
 

@@ -214,7 +214,7 @@ export default function CeoTeams() {
     const worst = [...withFpq].sort((a, b) => (a.fpqPct ?? 0) - (b.fpqPct ?? 0))[0]
     if (best.team === worst.team)
       return `${best.team} is the only team that sent designs this week, and ${best.fpqPct}% were right first time.`
-    return `${best.team} has the best "right first time" score this week (${best.fpqPct}%), while ${worst.team} has the lowest (${worst.fpqPct}%). Coach within each team, and never compare raw output across teams.`
+    return `${best.team} has the highest "right first time" score this week (${best.fpqPct}%), while ${worst.team} has the most room to grow (${worst.fpqPct}%). Coach within each team, and never compare raw output across teams.`
   }, [teams])
 
   const plate = teams
@@ -414,7 +414,7 @@ function TeamCard({ model: t }: { model: TeamModel }) {
           </span>
           <span className="eyebrow inline-flex items-center justify-end gap-1 text-right">
             Notes{' '}
-            <InfoTip text="Quick signs from this week, good or worrying, with the person who most needs attention listed first." />
+            <InfoTip text="Quick signs from this week. Whoever may need the most support is listed first, so the conversation starts where it helps most. These are prompts to look closer, never a judgement on the person." />
           </span>
         </div>
         <ul>

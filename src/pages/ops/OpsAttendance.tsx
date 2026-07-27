@@ -439,7 +439,7 @@ export default function OpsAttendance() {
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-12">
       <PageHeader
-        breadcrumbs={['Ops', 'Attendance']}
+        breadcrumbs={['Ops', 'Team', 'Attendance']}
         title="Attendance"
         titleAccessory={
           <InfoTip text="Who is in, when they started and stopped, and how long after checking in they began real work." />

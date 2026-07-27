@@ -1,15 +1,6 @@
 import { useMemo } from 'react'
 import { Outlet, useNavigate, useSearchParams } from 'react-router-dom'
-import {
-  Bell,
-  CalendarDays,
-  FileText,
-  Headset,
-  Home,
-  Kanban,
-  UserCheck,
-  Users,
-} from 'lucide-react'
+import { FileText, Home, Kanban, Users } from 'lucide-react'
 import { AppShell, type NavItem } from '../../components/layout/AppShell'
 import type { Command } from '../../components/ui/CommandPalette'
 import { Drawer } from '../../components/ui/Drawer'
@@ -48,28 +39,34 @@ export default function OpsLayout() {
     setSearchParams(next, { replace: true })
   }
 
+  // Four destinations, not eight. Everything that used to be its own tab is a
+  // view inside one of these, so the nav stops being a filing cabinet and
+  // starts naming the four things a manager actually does here.
   const nav: NavItem[] = [
     { to: '/ops', label: 'Command Center', icon: Home },
-    { to: '/ops/work', label: 'Work', icon: Kanban },
-    { to: '/ops/roster', label: 'Roster', icon: Users },
-    { to: '/ops/attendance', label: 'Attendance', icon: UserCheck },
-    { to: '/ops/leave', label: 'Leave', icon: CalendarDays },
-    { to: '/ops/alerts', label: 'Alerts', icon: Bell, badge: openAlertCount || undefined },
-    { to: '/ops/onsite', label: 'Onsite team', icon: Headset },
-    { to: '/ops/reports', label: 'Reports', icon: FileText },
+    { to: '/ops/work', label: 'Work', icon: Kanban, badge: openAlertCount || undefined },
+    { to: '/ops/team', label: 'Team', icon: Users },
+    { to: '/ops/reports', label: 'Insights', icon: FileText },
   ]
 
   const commands: Command[] = useMemo(() => {
     const go = (path: string) => () => navigate(path)
     const pages: Command[] = [
-      { id: 'nav-home', label: 'Go to Command Center', hint: 'what needs you right now', keywords: 'home command center attention verdict today decisions', run: go('/ops') },
-      { id: 'nav-board', label: 'Go to Work', hint: 'what is blocked, at risk, waiting or healthy', keywords: 'work board kanban tasks status live blocked at risk waiting stuck', run: go('/ops/work') },
-      { id: 'nav-roster', label: 'Go to Roster', hint: 'people, daily targets, work hours', keywords: 'roster designers schedule quota shift', run: go('/ops/roster') },
-      { id: 'nav-attendance', label: 'Go to Attendance', hint: 'who is in and when they started', keywords: 'attendance presence check-in warmup', run: go('/ops/attendance') },
-      { id: 'nav-leave', label: 'Go to Leave', hint: 'time off, half days, holidays', keywords: 'leave holiday half-day calendar', run: go('/ops/leave') },
-      { id: 'nav-alerts', label: 'Go to Alerts', hint: openAlertCount ? `${openAlertCount} waiting` : 'nothing waiting', keywords: 'alerts inbox acknowledge resolve', run: go('/ops/alerts') },
-      { id: 'nav-onsite', label: 'Go to Onsite team', hint: 'CSR and project manager load', keywords: 'onsite csr project manager pm load handed out client', run: go('/ops/onsite') },
-      { id: 'nav-reports', label: 'Go to Reports', hint: 'how each person did, with a PDF', keywords: 'reports weekly pdf export attainment', run: go('/ops/reports') },
+      { id: 'nav-home', label: 'Go to Command Center', hint: 'what needs you right now', keywords: 'home command center attention today decisions', run: go('/ops') },
+      { id: 'nav-work', label: 'Go to Work', hint: 'what is blocked, at risk, waiting or healthy', keywords: 'work board kanban projects tasks', run: go('/ops/work') },
+      { id: 'nav-team', label: 'Go to Team', hint: 'people, availability, time off', keywords: 'team roster people designers', run: go('/ops/team') },
+      { id: 'nav-insights', label: 'Go to Insights', hint: 'how each person did, with a PDF', keywords: 'insights reports weekly pdf export', run: go('/ops/reports') },
+    ]
+    // The palette answers management questions, not just "which page". Each of
+    // these lands on the exact reading that answers the question asked.
+    const questions: Command[] = [
+      { id: 'q-blocked', label: 'Show blocked work', hint: 'projects our clock is running on', keywords: 'blocked stuck needs action not moving stalled overdue', run: go('/ops/work') },
+      { id: 'q-at-risk', label: 'What is at risk today', hint: 'due today and not sent yet', keywords: 'at risk today due deadline miss late', run: go('/ops/work') },
+      { id: 'q-waiting', label: 'What is waiting on clients', hint: 'their clock, not ours', keywords: 'waiting client response hear back', run: go('/ops/work') },
+      { id: 'q-capacity', label: 'Who has capacity', hint: 'room for more work today', keywords: 'capacity room free spare who can take more slots open', run: go('/ops/team') },
+      { id: 'q-here', label: 'Who is here today', hint: 'presence and late starts', keywords: 'here present attendance who is in late checked in', run: go('/ops/team?view=today') },
+      { id: 'q-timeoff', label: 'Who is off', hint: 'leave, half days and holidays', keywords: 'off leave holiday absent time off away', run: go('/ops/team?view=time-off') },
+      { id: 'q-alerts', label: 'Show every alert', hint: openAlertCount ? `${openAlertCount} waiting` : 'nothing waiting', keywords: 'alerts log everything full list acknowledge resolve', run: go('/ops/alerts') },
     ]
     // Frequent actions, one keystroke away (§20.6 / §21.6).
     const actions: Command[] = [
@@ -78,14 +75,14 @@ export default function OpsLayout() {
         label: 'Add leave',
         hint: 'record time off for someone',
         keywords: 'leave log record add time off holiday absence',
-        run: go('/ops/leave?new=leave'),
+        run: go('/ops/team?view=time-off&new=leave'),
       },
     ]
     const jumps: Command[] = active.map((d) => ({
       id: `designer-${d.id}`,
-      label: `Jump to ${d.name}`,
-      hint: d.team,
-      keywords: `designer ${d.name} ${d.team} ${d.specialty ?? ''}`,
+      label: `Open ${d.name}'s workload`,
+      hint: `${d.team}, their work, hours and trend`,
+      keywords: `designer workload ${d.name} ${d.team} ${d.specialty ?? ''} capacity performance`,
       run: () => {
         const next = new URLSearchParams(window.location.search)
         next.set('d', d.id)
@@ -109,7 +106,7 @@ export default function OpsLayout() {
         },
       ]
     })
-    return [...pages, ...actions, ...jumps, ...lists]
+    return [...pages, ...questions, ...actions, ...jumps, ...lists]
   }, [active, navigate, openAlertCount, setSearchParams])
 
   return (

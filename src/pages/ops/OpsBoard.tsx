@@ -306,7 +306,7 @@ export default function OpsBoard() {
     derived.agingCount === 0 && underQuota.length === 0 && derived.unmapped.length === 0
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-8">
       <PageHeader
         breadcrumbs={['Ops', 'Work']}
         title="Work"

@@ -3,7 +3,6 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
 import { LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react'
 import { BrandLogo } from '../ui/BrandLogo'
-import { Aurora } from '../ui/Aurora'
 import { useAuth } from '../../hooks/useAuth'
 import { syncThemeColorMeta } from '../../lib/themeColor'
 import { CommandPalette, OPEN_PALETTE_EVENT, type Command } from '../ui/CommandPalette'
@@ -28,7 +27,7 @@ export interface AppShellProps {
 
 /** Dense 32px control row for the precision sidebar (manifesto pillar 4). */
 const DENSE_ROW =
-  'flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg'
+  'flex h-9 w-full items-center gap-2.5 rounded-md px-2 text-caption font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg'
 /** 44px touch row for the mobile slide-over (pillar 12 — touch targets). */
 const TOUCH_ROW =
   'flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-caption font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg'
@@ -177,7 +176,7 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
     (dense: boolean) =>
     ({ isActive }: { isActive: boolean }) =>
       `group relative flex items-center rounded-md font-medium transition-colors duration-150 ${
-        dense ? 'h-8 gap-2.5 px-2 text-[13px]' : 'min-h-11 gap-3 rounded-lg px-3 text-caption'
+        dense ? 'h-9 gap-2.5 px-2 text-caption' : 'min-h-11 gap-3 rounded-lg px-3 text-caption'
       } ${isActive ? 'bg-brand-soft text-brand' : 'text-muted hover:bg-surface-2 hover:text-fg'}`
 
   const renderNavItems = (dense: boolean, onNavigate?: () => void) =>
@@ -219,7 +218,6 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
 
   return (
     <ToastProvider>
-      <Aurora />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-tip focus:rounded-xl focus:bg-surface focus:px-4 focus:py-2.5 focus:text-caption focus:font-medium focus:text-fg focus:shadow-raised"
@@ -229,13 +227,14 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
 
       <div className="relative z-10 flex min-h-screen selection:bg-brand-soft">
         {/* ── Sidebar: exactly 240px, dense 4px/8px rhythm (pillar 4).
-            Translucent so the Aurora glows behind the navigation. ────── */}
-        <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col border-r border-border bg-surface/70 px-3 py-4 backdrop-blur-xl md:flex">
+            Solid rather than translucent: management reading is scanning
+            work, and a plain surface is faster to scan than a blurred one. ── */}
+        <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col border-r border-border bg-surface px-3 py-4 md:flex">
           {/* Logo area: tight alignment */}
           <div className="flex items-center gap-2.5 px-2 pb-6">
             <BrandLogo className="h-6 w-6" />
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-semibold tracking-[-0.01em] text-fg">
+              <p className="truncate text-caption font-semibold tracking-[-0.01em] text-fg">
                 Studio Pulse
               </p>
             </div>
@@ -278,7 +277,7 @@ export function AppShell({ title, nav, commands, children }: AppShellProps) {
               >
                 {email.slice(0, 1)}
               </span>
-              <span className="truncate text-[13px] font-medium text-muted">{email}</span>
+              <span className="truncate text-caption font-medium text-muted">{email}</span>
             </div>
           </div>
         </aside>
