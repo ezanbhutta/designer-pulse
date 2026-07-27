@@ -465,7 +465,7 @@ export default function OpsHome() {
             loading={openTasksQ.isLoading}
             // Land on the stage-grouped board so the revision column is visible
             // no matter which grouping was used last.
-            onClick={() => navigate('/ops/board?group=status')}
+            onClick={() => navigate('/ops/work?group=status')}
           />
           <StatTile
             eyebrow="Busy level"

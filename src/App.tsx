@@ -72,7 +72,10 @@ export default function App() {
           }
         >
           <Route index element={<OpsHome />} />
-          <Route path="board" element={<OpsBoard />} />
+          <Route path="work" element={<OpsBoard />} />
+          {/* The Board became the Work workspace. Existing links, bookmarks and
+              the drill in from the Command Center all still land correctly. */}
+          <Route path="board" element={<Navigate to="/ops/work" replace />} />
           <Route path="roster" element={<OpsRoster />} />
           <Route path="attendance" element={<OpsAttendance />} />
           <Route path="leave" element={<OpsLeave />} />

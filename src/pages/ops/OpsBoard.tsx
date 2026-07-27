@@ -18,6 +18,7 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { MultiSelectFilter } from '../../components/ui/MultiSelectFilter'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
+import { BUCKET_META, BUCKET_ORDER, bucketWork } from './workBuckets'
 import { SortMenu } from '../../components/ui/SortMenu'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { TaskCard } from '../../components/shared/TaskCard'
@@ -51,7 +52,13 @@ import {
   useTasksSince,
 } from './opsData'
 
-type GroupBy = 'status' | 'designer'
+/**
+ * How the work is arranged. 'buckets' is the default and answers the manager's
+ * actual question (what is blocked, what will miss today, what is not ours to
+ * chase). The two original groupings stay as secondary views for when the
+ * filing question is the real one.
+ */
+type GroupBy = 'buckets' | 'status' | 'designer'
 type SortBy = 'oldest' | 'newest' | 'priority' | 'name'
 
 const OPEN_STATUSES = STATUSES.filter((s) => !TERMINAL_STATUSES.includes(s))
@@ -114,10 +121,15 @@ export default function OpsBoard() {
   const openTasksQ = useOpenTasks()
   const todayTasksQ = useTasksSince(today)
 
-  const [groupBy, setGroupBy] = useLocalStorage<GroupBy>('pulse.ops.board.group', 'status')
+  // Key bumped from 'pulse.ops.board.group' so everyone lands on the new
+  // default once, rather than inheriting a remembered kanban preference.
+  const [groupBy, setGroupBy] = useLocalStorage<GroupBy>('pulse.ops.work.group', 'buckets')
   // The disclosure remembers last use (§20.4), like the sibling group-by.
   const [showClosed, setShowClosed] = useLocalStorage<boolean>('pulse.ops.board.closed', false)
   const [trailTask, setTrailTask] = useState<TaskState | null>(null)
+  // The healthy bucket folds away by default; remembered like every other view
+  // preference so the page opens the way it was left.
+  const [healthyOpen, setHealthyOpen] = useLocalStorage<boolean>('pulse.ops.work.healthy', false)
 
   // Stage, priority and team filters (empty = everything), plus how cards
   // order within each column or group. These only decide what's SHOWN — the
@@ -282,16 +294,24 @@ export default function OpsBoard() {
     return grouped
   }, [designers])
 
+  // Buckets run on the WHOLE board, before any filter, so a narrowed view can
+  // never shrink a "needs action" count and hide a blockage (the invariant the
+  // header chips have always held to).
+  const buckets = useMemo(
+    () => bucketWork({ openTasks, designerById, cfg, today, now }),
+    [openTasks, designerById, cfg, today, now],
+  )
+
   const healthy =
     derived.agingCount === 0 && underQuota.length === 0 && derived.unmapped.length === 0
 
   return (
     <div className="space-y-12">
       <PageHeader
-        breadcrumbs={['Ops', 'Board']}
-        title="Board"
+        breadcrumbs={['Ops', 'Work']}
+        title="Work"
         titleAccessory={
-          <InfoTip text="Every open project, in columns. Each column is one stage of the work. The oldest problems rise to the top of each column." />
+          <InfoTip text="Every open project, arranged by what it needs from you: blocked on us, about to miss today, sitting with the client, or moving along fine." />
         }
         history={
           /* Verdict first (§20.1): the live health read, chips not prose. */
@@ -335,14 +355,15 @@ export default function OpsBoard() {
             <span className="flex items-center gap-1">
               <SegmentedControl<GroupBy>
                 options={[
+                  { value: 'buckets', label: 'What needs doing' },
                   { value: 'status', label: 'By stage' },
                   { value: 'designer', label: 'By person' },
                 ]}
                 value={groupBy}
                 onChange={setGroupBy}
-                ariaLabel="Group board by"
+                ariaLabel="Arrange work by"
               />
-              <InfoTip text="Choose how to group the board: by the stage each project is at, or by the person doing it." />
+              <InfoTip text="What needs doing sorts every project by whether it is blocked on us, about to miss today, or simply with the client. By stage and by person are the older views, kept for when you want to see the pipeline itself." />
             </span>
             <span className="flex items-center gap-1">
               <button
@@ -421,6 +442,97 @@ export default function OpsBoard() {
               </div>
             </div>
           ))}
+        </div>
+      ) : groupBy === 'buckets' ? (
+        // ── What needs doing: the default read. Four buckets, worst first,
+        // each counted across the WHOLE board so a filter can narrow the list
+        // without ever shrinking the number beside the heading. ──
+        <div className="space-y-8">
+          {BUCKET_ORDER.map((b) => {
+            const meta = BUCKET_META[b]
+            const whole = buckets.byBucket.get(b) ?? []
+            const shown = whole.filter(
+              (bt) => passesFilter(bt.task) && matchesStatusFilter(bt.task),
+            )
+            const hidden = whole.length - shown.length
+            // The quiet bucket stays folded until asked for: a manager should
+            // not scroll past everything that is fine to reach what is not.
+            const collapsed = b === 'healthy' && !healthyOpen
+            return (
+              <section key={b} aria-label={meta.label}>
+                <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h2 className="inline-flex items-center gap-2.5 text-card text-fg">
+                    {b === 'healthy' ? (
+                      <button
+                        type="button"
+                        onClick={() => setHealthyOpen(!healthyOpen)}
+                        aria-expanded={healthyOpen}
+                        className="inline-flex items-center gap-2 rounded-lg text-card text-fg transition-colors duration-150 hover:text-muted"
+                      >
+                        {healthyOpen ? (
+                          <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        {meta.label}
+                      </button>
+                    ) : (
+                      meta.label
+                    )}
+                    <Badge tone={meta.tone}>
+                      <span className="tnum">{whole.length}</span>
+                    </Badge>
+                  </h2>
+                  <p className="text-label font-normal tracking-normal text-muted">{meta.blurb}</p>
+                </div>
+
+                {collapsed ? null : whole.length === 0 ? (
+                  <p className="rounded-xl bg-surface-2/50 px-4 py-3 text-caption text-muted">
+                    {b === 'needs-action'
+                      ? 'Nothing is blocked on us right now.'
+                      : b === 'at-risk'
+                        ? 'Nothing due today is still waiting to go out.'
+                        : b === 'waiting'
+                          ? 'Nothing is sitting with a client.'
+                          : 'Nothing here yet.'}
+                  </p>
+                ) : shown.length === 0 ? (
+                  <p className="rounded-xl bg-surface-2/50 px-4 py-3 text-caption text-muted">
+                    All {whole.length} of these are hidden by the current filters.
+                  </p>
+                ) : (
+                  <>
+                    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {shown.map((bt) => (
+                        <li key={bt.task.task_id}>
+                          <TaskCard
+                            task={bt.task}
+                            designerName={
+                              bt.task.designer_id
+                                ? designerById.get(bt.task.designer_id)?.name
+                                : undefined
+                            }
+                            agingDaysDefault={cfg.aging_days_default}
+                            onOpen={() => setTrailTask(bt.task)}
+                          />
+                          {/* Why it is in this bucket, said once per project. */}
+                          <p className="mt-1 px-1 text-label font-normal leading-relaxed tracking-normal text-muted">
+                            {bt.reason}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                    {hidden > 0 && (
+                      <p className="mt-2 text-label font-normal tracking-normal text-muted">
+                        {hidden} more in this group {hidden === 1 ? 'is' : 'are'} hidden by the
+                        current filters. The count above always covers the whole board.
+                      </p>
+                    )}
+                  </>
+                )}
+              </section>
+            )
+          })}
         </div>
       ) : groupBy === 'status' ? (
         // ── Kanban by status: the columns row fills the viewport and scrolls
