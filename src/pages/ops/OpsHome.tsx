@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   ExternalLink,
   Gauge,
   PackagePlus,
@@ -13,6 +15,7 @@ import { Drawer } from '../../components/ui/Drawer'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InboxZeroReward } from '../../components/ui/InboxZeroReward'
 import { InfoTip } from '../../components/ui/InfoTip'
+import { OpenSection } from '../../components/ui/OpenSection'
 import { StatTile } from '../../components/ui/StatTile'
 import { staggerContainer } from '../../components/ui/motion'
 import { PageHeader } from '../../components/layout/PageHeader'
@@ -33,7 +36,7 @@ import {
   fetchCancelledTasks,
   qk,
 } from '../../lib/queries'
-import { fmtClock, fmtDate, fmtPct } from '../../lib/format'
+import { fmtClock, fmtDate, fmtDurationLong, fmtPct } from '../../lib/format'
 import { addDays, pktInstant, pktToday } from '../../../shared/pkt'
 import {
   ageMinutes,
@@ -41,6 +44,7 @@ import {
   expectedQuotaOn,
   scheduleFor,
 } from '../../../shared/aggregate'
+import { STATUS_LABELS } from '../../../shared/statuses'
 import { isPerProject, type TaskState } from '../../../shared/types'
 import {
   closedOn,
@@ -51,6 +55,7 @@ import {
   useActiveDesigners,
   useAttendanceRange,
   useConfigValues,
+  useDesignerDrawer,
   useDesigners,
   useMetricsSince,
   useOpenAlerts,
@@ -69,6 +74,7 @@ import {
  */
 export default function OpsHome() {
   const navigate = useNavigate()
+  const openDesigner = useDesignerDrawer()
   const cfg = useConfigValues()
   const reduced = useReducedMotion()
   // Minute tick so an unattended cockpit rolls over PKT midnight and task
@@ -197,7 +203,8 @@ export default function OpsHome() {
     })
   }, [recentCancelled, now])
 
-  const { decisions, heldBack } = useMemo(
+  const [showAllDecisions, setShowAllDecisions] = useState(false)
+  const { decisions: topDecisions, all: allDecisions, heldBack } = useMemo(
     () =>
       buildDecisions({
         rows: derived.rows,
@@ -218,7 +225,11 @@ export default function OpsHome() {
   // Studio Pulse cannot close anything in ClickUp, so the honest follow up is
   // to watch what happened after the manager went there. A decision that has
   // left the live list entirely is one that cleared.
-  const liveIds = useMemo(() => new Set(decisions.map((d) => d.id)), [decisions])
+  // Which list the page is showing right now.
+  const decisions = showAllDecisions ? allDecisions : topDecisions
+  // 'Cleared' is judged against EVERY live decision, never the visible slice,
+  // or collapsing the list would fake a resolution for the ones it hid.
+  const liveIds = useMemo(() => new Set(allDecisions.map((d) => d.id)), [allDecisions])
   const clearedSinceActing = useMemo(
     () => Object.values(acted).filter((r) => !liveIds.has(r.id)),
     [acted, liveIds],
@@ -263,6 +274,11 @@ export default function OpsHome() {
   const heaviest = [...derived.rows]
     .filter((r) => r.util != null)
     .sort((a, b) => (b.util ?? 0) - (a.util ?? 0))[0]
+
+  const spareRows = useMemo(
+    () => derived.rows.filter((r) => r.expected > 0).sort((a, b) => b.spare - a.spare),
+    [derived.rows],
+  )
 
   const loading = openTasksQ.isLoading || tasksQ.isLoading
   const inboxLoading = loading || alertsQ.isLoading
@@ -387,21 +403,176 @@ export default function OpsHome() {
           </ul>
         )}
 
-        {/* Never silently truncate: if candidates were held back, say so. */}
+        {/* Nothing is discarded: the rest open in place rather than sending
+            the manager to another page to find them. */}
         {!inboxLoading && heldBack > 0 && (
-          <p className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-label font-normal leading-relaxed tracking-normal text-muted">
-            {heldBack} smaller thing{heldBack === 1 ? '' : 's'} did not make the list, so the most
-            costly ones stay readable.
-            <button
-              type="button"
-              onClick={() => navigate('/ops/alerts')}
-              className="rounded-lg text-label font-medium text-brand underline-offset-2 transition-colors duration-150 hover:underline"
-            >
-              See everything
-            </button>
-          </p>
+          <button
+            type="button"
+            onClick={() => setShowAllDecisions(!showAllDecisions)}
+            aria-expanded={showAllDecisions}
+            className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-border bg-surface px-3.5 text-caption font-medium text-fg transition-colors duration-150 ease-out hover:bg-surface-2 motion-safe:active:scale-[0.98]"
+          >
+            {showAllDecisions ? (
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            )}
+            {showAllDecisions
+              ? 'Show only the most costly'
+              : `Show ${heldBack} more decision${heldBack === 1 ? '' : 's'}`}
+          </button>
         )}
       </section>
+
+      {/* ── Everything behind the decisions, each openable ─────────────────── */}
+      <OpenSection
+        title="Who has room for more"
+        count={spareRows.length}
+        storageKey="pulse.ops.home.room"
+        defaultOpen={false}
+        tip="People who can take more projects today. Only projects due today fill a plate, whatever their status. Giving them the work is the team lead's job, not theirs."
+        blurb="most free first"
+      >
+        <ul className="card divide-y divide-border/60 overflow-hidden">
+          {spareRows.length === 0 ? (
+            <li className="px-5 py-4 text-caption text-muted">
+              Nobody is scheduled to work today. This happens on holidays, days off and leave.
+            </li>
+          ) : (
+            spareRows.map((r) => {
+              const href = clickupListUrl(r.designer.clickup_list_id)
+              return (
+                <li key={r.designer.id} className="flex items-center gap-3 px-5 py-3">
+                  <button
+                    type="button"
+                    onClick={() => openDesigner(r.designer.id)}
+                    className="min-h-11 min-w-0 flex-1 text-left"
+                    aria-label={`Open ${r.designer.name}'s details`}
+                  >
+                    <p className="truncate text-caption font-medium text-fg">
+                      {r.designer.name}
+                      <span className="ml-2 text-label font-normal tracking-normal text-muted">
+                        {r.designer.team}
+                      </span>
+                    </p>
+                    <p className="tnum text-label font-normal tracking-normal text-muted">
+                      {r.filled} due today, target {r.expected}
+                      {r.spare > 0
+                        ? `, room for ${r.spare} more`
+                        : r.spare < 0
+                          ? `, ${-r.spare} over their target`
+                          : ', right at their target'}
+                    </p>
+                  </button>
+                  <span
+                    className={`tnum text-caption font-medium ${
+                      r.spare > 0 ? 'text-success' : r.spare < 0 ? 'text-danger' : 'text-muted'
+                    }`}
+                  >
+                    {fmtPct(r.util)}
+                  </span>
+                  {href && (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open ${r.designer.name}'s list in ClickUp`}
+                      className="flex h-11 w-11 items-center justify-center rounded-xl text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg"
+                    >
+                      <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                    </a>
+                  )}
+                </li>
+              )
+            })
+          )}
+        </ul>
+      </OpenSection>
+
+      <OpenSection
+        title="Everything that has stopped moving"
+        count={derived.agingTasks.length}
+        tone={derived.agingTasks.length > 0 ? 'warning' : 'success'}
+        storageKey="pulse.ops.home.stuck"
+        defaultOpen={false}
+        tip="Every project past the point where it should have moved on, oldest first. Open one to read its full history."
+        trailing={
+          <button
+            type="button"
+            onClick={() => navigate('/ops/work')}
+            className="text-label font-medium text-brand underline-offset-2 transition-colors duration-150 hover:underline"
+          >
+            Open in Work
+          </button>
+        }
+      >
+        <ul className="card divide-y divide-border/60 overflow-hidden">
+          {derived.agingTasks.length === 0 ? (
+            <li className="px-5 py-4 text-caption text-muted">
+              Nothing has gone quiet. Every project is still moving.
+            </li>
+          ) : (
+            derived.agingTasks.map(({ task, age }) => (
+              <li key={task.task_id}>
+                <button
+                  type="button"
+                  onClick={() => setTrailTask(task)}
+                  className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors duration-150 hover:bg-surface-2/60"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-caption font-medium text-fg">
+                      {task.name ?? task.task_id}
+                    </span>
+                    <span className="block truncate text-label font-normal tracking-normal text-muted">
+                      {task.designer_id
+                        ? (designerById.get(task.designer_id)?.name ?? 'No designer')
+                        : 'No designer'}
+                      {task.current_status ? `, in ${STATUS_LABELS[task.current_status]}` : ''}
+                    </span>
+                  </span>
+                  <span className="tnum shrink-0 text-caption font-medium text-warning">
+                    {fmtDurationLong(age)}
+                  </span>
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      </OpenSection>
+
+      <OpenSection
+        title="Finished today"
+        count={derived.completedTodayTasks.length}
+        tone="success"
+        storageKey="pulse.ops.home.done"
+        defaultOpen={false}
+        tip="Everything closed as done today, newest first."
+      >
+        <ul className="card divide-y divide-border/60 overflow-hidden">
+          {derived.completedTodayTasks.length === 0 ? (
+            <li className="px-5 py-4 text-caption text-muted">Nothing has finished yet today.</li>
+          ) : (
+            derived.completedTodayTasks.map((t) => (
+              <li key={t.task_id}>
+                <button
+                  type="button"
+                  onClick={() => setTrailTask(t)}
+                  className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors duration-150 hover:bg-surface-2/60"
+                >
+                  <span className="min-w-0 flex-1 truncate text-caption font-medium text-fg">
+                    {t.name ?? t.task_id}
+                  </span>
+                  <span className="shrink-0 text-label font-normal tracking-normal text-muted">
+                    {t.designer_id
+                      ? (designerById.get(t.designer_id)?.name ?? 'No designer')
+                      : 'No designer'}
+                  </span>
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      </OpenSection>
 
       {/* ── 2 · Today's pulse — monitoring, pushed below the action layer ───── */}
       <section aria-label="Today's pulse">

@@ -105,9 +105,12 @@ function rank(urgency: Decision['urgency'], type: DecisionType, degree = 1): num
 }
 
 export interface DecisionResult {
-  /** What the manager should act on now, worst first. */
+  /** The top few, worst first: what to act on without reading anything else. */
   decisions: Decision[]
-  /** How many real candidates did not make the cut, for the honest footnote. */
+  /** EVERY decision, worst first. Nothing is discarded, so the page can open
+   *  the full list on demand rather than sending the manager somewhere else. */
+  all: Decision[]
+  /** How many sit below the fold, for the button that reveals them. */
   heldBack: number
 }
 
@@ -298,8 +301,10 @@ export function buildDecisions(input: DecisionInput): DecisionResult {
   }
 
   scored.sort((a, b) => b.score - a.score)
+  const all = scored.map((s) => s.decision)
   return {
-    decisions: scored.slice(0, MAX_DECISIONS).map((s) => s.decision),
-    heldBack: Math.max(0, scored.length - MAX_DECISIONS),
+    decisions: all.slice(0, MAX_DECISIONS),
+    all,
+    heldBack: Math.max(0, all.length - MAX_DECISIONS),
   }
 }

@@ -127,9 +127,12 @@ export default function OpsBoard() {
   // The disclosure remembers last use (§20.4), like the sibling group-by.
   const [showClosed, setShowClosed] = useLocalStorage<boolean>('pulse.ops.board.closed', false)
   const [trailTask, setTrailTask] = useState<TaskState | null>(null)
-  // The healthy bucket folds away by default; remembered like every other view
-  // preference so the page opens the way it was left.
-  const [healthyOpen, setHealthyOpen] = useLocalStorage<boolean>('pulse.ops.work.healthy', false)
+  // Which buckets are open, remembered like every other view preference.
+  // Everything except Healthy starts open, and all four can be toggled.
+  const [openBuckets, setOpenBuckets] = useLocalStorage<Record<string, boolean>>(
+    'pulse.ops.work.openBuckets',
+    { 'needs-action': true, 'at-risk': true, waiting: true, healthy: false },
+  )
 
   // Stage, priority and team filters (empty = everything), plus how cards
   // order within each column or group. These only decide what's SHOWN — the
@@ -455,30 +458,27 @@ export default function OpsBoard() {
               (bt) => passesFilter(bt.task) && matchesStatusFilter(bt.task),
             )
             const hidden = whole.length - shown.length
-            // The quiet bucket stays folded until asked for: a manager should
-            // not scroll past everything that is fine to reach what is not.
-            const collapsed = b === 'healthy' && !healthyOpen
+            // Every bucket opens and closes, and remembers how it was left.
+            // Healthy starts folded so nobody scrolls past what is fine to
+            // reach what is not, but nothing is ever out of reach.
+            const collapsed = !openBuckets[b]
             return (
               <section key={b} aria-label={meta.label}>
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                   <h2 className="inline-flex items-center gap-2.5 text-card text-fg">
-                    {b === 'healthy' ? (
-                      <button
-                        type="button"
-                        onClick={() => setHealthyOpen(!healthyOpen)}
-                        aria-expanded={healthyOpen}
-                        className="inline-flex items-center gap-2 rounded-lg text-card text-fg transition-colors duration-150 hover:text-muted"
-                      >
-                        {healthyOpen ? (
-                          <ChevronDown className="h-4 w-4" aria-hidden="true" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4" aria-hidden="true" />
-                        )}
-                        {meta.label}
-                      </button>
-                    ) : (
-                      meta.label
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setOpenBuckets({ ...openBuckets, [b]: !openBuckets[b] })}
+                      aria-expanded={openBuckets[b]}
+                      className="inline-flex min-h-11 items-center gap-2 rounded-lg text-card text-fg transition-colors duration-150 hover:text-muted"
+                    >
+                      {openBuckets[b] ? (
+                        <ChevronDown className="h-4 w-4 text-muted" aria-hidden="true" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted" aria-hidden="true" />
+                      )}
+                      {meta.label}
+                    </button>
                     <Badge tone={meta.tone}>
                       <span className="tnum">{whole.length}</span>
                     </Badge>
