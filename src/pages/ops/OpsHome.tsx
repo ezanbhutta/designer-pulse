@@ -1,37 +1,31 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
 import {
-  ArrowRight,
-  ArrowUpRight,
-  Ban,
   CheckCircle2,
-  ChevronDown,
-  Clock,
   ExternalLink,
   Gauge,
-  Inbox,
-  Info,
-  OctagonAlert,
   PackagePlus,
   RotateCcw,
-  TriangleAlert,
-  UserCheck,
 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
-import { AnimatedCounter } from '../../components/ui/AnimatedCounter'
 import { Drawer } from '../../components/ui/Drawer'
-import { EmptyState } from '../../components/ui/EmptyState'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { InboxZeroReward } from '../../components/ui/InboxZeroReward'
 import { InfoTip } from '../../components/ui/InfoTip'
 import { StatTile } from '../../components/ui/StatTile'
-import { staggerContainer, staggerItem } from '../../components/ui/motion'
+import { staggerContainer } from '../../components/ui/motion'
 import { PageHeader } from '../../components/layout/PageHeader'
-import type { VerdictItem } from '../../components/ui/VerdictBlock'
-import { TaskCard } from '../../components/shared/TaskCard'
+import { DecisionCard, type Decision } from '../../components/ops/DecisionCard'
 import { TaskTrail } from '../../components/shared/TaskTrail'
+import {
+  clearActed,
+  followUp,
+  loadActed,
+  markActed,
+  type ActedRecord,
+} from '../../lib/actedOn'
+import { buildDecisions } from './decisions'
 import {
   STALE_LIVE,
   clickupListUrl,
@@ -39,7 +33,7 @@ import {
   fetchCancelledTasks,
   qk,
 } from '../../lib/queries'
-import { fmtClock, fmtDate, fmtDurationLong, fmtPct, fmtShiftTime } from '../../lib/format'
+import { fmtClock, fmtDate, fmtPct } from '../../lib/format'
 import { addDays, pktInstant, pktToday } from '../../../shared/pkt'
 import {
   ageMinutes,
@@ -47,19 +41,16 @@ import {
   expectedQuotaOn,
   scheduleFor,
 } from '../../../shared/aggregate'
-import { STATUS_LABELS } from '../../../shared/statuses'
 import { isPerProject, type TaskState } from '../../../shared/types'
 import {
   closedOn,
   createdOn,
-  firstName,
   metricDelta,
   minutesSinceShiftStart,
   slotsFilledToday,
   useActiveDesigners,
   useAttendanceRange,
   useConfigValues,
-  useDesignerDrawer,
   useDesigners,
   useMetricsSince,
   useOpenAlerts,
@@ -67,34 +58,6 @@ import {
   useQuotaCtx,
   useTasksSince,
 } from './opsData'
-
-/** Severity → a11y label + the soft-tinted icon chip (color as a quiet accent
- *  on a small chip only — the substrate stays grayscale, §20.10). */
-const SEVERITY_META: Record<
-  VerdictItem['severity'],
-  { chip: string; label: string; fallback: LucideIcon }
-> = {
-  info: { chip: 'bg-brand-soft text-brand', label: 'For your awareness', fallback: Info },
-  warning: { chip: 'bg-warning-soft text-warning', label: 'Needs a look', fallback: TriangleAlert },
-  critical: { chip: 'bg-danger-soft text-danger', label: 'Urgent', fallback: OctagonAlert },
-}
-
-/** A distinct glyph per KIND — so a stuck task, a lost order and an attendance
- *  flag never read as one grey wall of identical icons. */
-type InboxKind = 'stuck' | 'cancelled' | 'cancelled-group' | 'attendance' | 'capacity'
-const KIND_ICON: Record<InboxKind, LucideIcon> = {
-  stuck: Clock,
-  cancelled: Ban,
-  'cancelled-group': Ban,
-  attendance: UserCheck,
-  capacity: Inbox,
-}
-
-interface InboxItem extends VerdictItem {
-  kind: InboxKind
-  /** For 'cancelled-group': the individual lost orders, revealed on expand. */
-  children?: Array<VerdictItem & { kind: InboxKind }>
-}
 
 /**
  * THE ACTION INBOX (manifesto pillar 6, adapted to real data): the page exists
@@ -106,7 +69,6 @@ interface InboxItem extends VerdictItem {
  */
 export default function OpsHome() {
   const navigate = useNavigate()
-  const openDesigner = useDesignerDrawer()
   const cfg = useConfigValues()
   const reduced = useReducedMotion()
   // Minute tick so an unattended cockpit rolls over PKT midnight and task
@@ -135,7 +97,6 @@ export default function OpsHome() {
   const recentCancelled = useMemo(() => (cancelledQ.data ?? []).slice(0, 50), [cancelledQ.data])
 
   const [trailTask, setTrailTask] = useState<TaskState | null>(null)
-  const [cancelsOpen, setCancelsOpen] = useState(false)
 
   const designers = useActiveDesigners()
   const designerById = useMemo(
@@ -222,143 +183,50 @@ export default function OpsHome() {
     }
   }, [recentTasks, designers, openTasks, ctx, cfg, today, yesterday, now])
 
-  // ── Inbox items, ranked (§20.1) ─────────────────────────────────────────────
-  const verdictItems = useMemo(() => {
-    const items: InboxItem[] = []
-    const alerts = alertsQ.data ?? []
+  // ── The decisions ───────────────────────────────────────────────────────────
+  // Everything the app notices is a candidate. Only what it can fully explain
+  // (urgency, reason, impact, one next step) becomes a decision and earns a
+  // place at the top; the rest of what it knows lives below as evidence.
+  const [acted, setActed] = useState<Record<string, ActedRecord>>(() => loadActed())
 
-    // 1. Assignment gaps past shift-start + offset (fired by the pulse cron).
-    for (const a of alerts.filter((x) => x.alert_type === 'assignment_gap' && x.status === 'open')) {
-      const d = a.designer_id ? designerById.get(a.designer_id) : undefined
-      const row = derived.rows.find((r) => r.designer.id === a.designer_id)
-      const href = d ? clickupListUrl(d.clickup_list_id) : null
-      // ONE source of truth for "slots open": expected minus filled from the
-      // SAME live row the detail reads. The stored alert message is a snapshot
-      // from when it fired; if a project was handed out since, the count must
-      // shrink to match "X of Y", never sit stale (e.g. "2 open" beside "3 of 4").
-      // If the gap has closed entirely, drop the item — the pulse cron resolves it.
-      const slots = row ? Math.max(0, row.expected - row.filled) : null
-      if (slots === 0) continue
-      items.push({
-        id: `gap-${a.id}`,
-        kind: 'capacity',
-        severity: 'warning',
-        text:
-          slots != null
-            ? `${slots} slot${slots === 1 ? '' : 's'} open — open ${d ? `${d.name}'s` : 'the'} list in ClickUp`
-            : (a.message ?? `${d?.name ?? 'A designer'} has room for a few more projects today`),
-        detail: row
-          ? `They have ${row.filled} of ${row.expected} projects due today. Handing out the work is the team lead's job, not theirs.`
-          : undefined,
-        action: href
-          ? { label: `Open ${d ? firstName(d.name) : 'the'} list`, href }
-          : { label: 'Open Alerts', onClick: () => navigate('/ops/alerts') },
-      })
-    }
-
-    // 2. Aging open tasks, worst first. Client-owned waits are never here
-    // (waiting for a reply is normal). Designer-owned stalls read as "stuck";
-    // team-owned (revision complete) reads as "ready to send", on the team lead.
-    for (const { task, age, threshold, owner } of derived.agingTasks.slice(0, 5)) {
-      const d = task.designer_id ? designerById.get(task.designer_id) : undefined
-      const href = clickupTaskUrl(task.task_id)
-      items.push({
-        id: `age-${task.task_id}`,
-        kind: 'stuck',
-        severity: age >= threshold * 2 ? 'critical' : 'warning',
-        text:
-          owner === 'team'
-            ? `"${task.name ?? task.task_id}" has been ready to send to the client for ${fmtDurationLong(age)}`
-            : `"${task.name ?? task.task_id}" has been stuck in ${
-                task.current_status ? STATUS_LABELS[task.current_status] : 'one stage'
-              } for ${fmtDurationLong(age)}`,
-        detail:
-          owner === 'team'
-            ? `Finished by ${d?.name ?? 'the designer'} — waiting on the team lead to send it to the client, flagged after ${Math.round(threshold / (24 * 60))} days`
-            : `${d?.name ?? 'No one yet'}, flagged after ${Math.round(threshold / (24 * 60))} days without moving`,
-        action: href ? { label: 'Open in ClickUp', href } : undefined,
-      })
-    }
-
-    // 3. Fresh cancellations — designer-fault terminal loss (last 24h).
-    // Collapsed into ONE expandable row when there are several: seven identical
-    // "lost because of a design problem" sentences is noise, not information
-    // (delete-30% / minimal-cognitive-load). The explanation is said once on
-    // the header; each order opens its own history on expand.
-    const dayAgo = Date.now() - 24 * 3600_000
-    const cancelTasks = recentCancelled.filter((x) => {
-      const at = x.closed_at ?? x.last_event_at
+  const cancelledToday = useMemo(() => {
+    const dayAgo = now.getTime() - 24 * 3600_000
+    return recentCancelled.filter((t) => {
+      const at = t.closed_at ?? t.last_event_at
       return at != null && new Date(at).getTime() >= dayAgo
     })
-    if (cancelTasks.length === 1) {
-      const t = cancelTasks[0]
-      const d = t.designer_id ? designerById.get(t.designer_id) : undefined
-      items.push({
-        id: `cancel-${t.task_id}`,
-        kind: 'cancelled',
-        severity: 'critical',
-        text: `Order lost: "${t.name ?? t.task_id}"${d ? `, handled by ${d.name}` : ''}`,
-        detail: 'This order was lost because of a design problem. Please open its history before judging anyone.',
-        action: { label: 'See what happened', onClick: () => setTrailTask(t) },
-      })
-    } else if (cancelTasks.length > 1) {
-      items.push({
-        id: 'cancel-group',
-        kind: 'cancelled-group',
-        severity: 'critical',
-        text: `${cancelTasks.length} orders lost today`,
-        detail: 'Each was lost because of a design problem. Open one to read its full history before judging anyone.',
-        children: cancelTasks.map((t) => {
-          const d = t.designer_id ? designerById.get(t.designer_id) : undefined
-          return {
-            id: `cancel-${t.task_id}`,
-            kind: 'cancelled' as const,
-            severity: 'critical' as const,
-            text: `"${t.name ?? t.task_id}"${d ? `, handled by ${d.name}` : ''}`,
-            action: { label: 'See what happened', onClick: () => setTrailTask(t) },
-          }
-        }),
-      })
-    }
+  }, [recentCancelled, now])
 
-    // 4. Forgotten checkouts / needs-review attendance.
-    for (const row of (attendanceQ.data ?? []).filter((a) => a.needs_review)) {
-      const d = designerById.get(row.designer_id)
-      items.push({
-        id: `review-${row.id}`,
-        kind: 'attendance',
-        severity: 'info',
-        text: `Please take another look at ${d?.name ?? 'a designer'}'s day. The system closed it because they forgot to press Check out.`,
-        detail: 'They never pressed Check out, and there was no sign of work afterward. Please confirm the day before it counts.',
-        action: { label: 'Open Attendance', onClick: () => navigate('/ops/attendance') },
-      })
-    }
+  const { decisions, heldBack } = useMemo(
+    () =>
+      buildDecisions({
+        rows: derived.rows,
+        agingTasks: derived.agingTasks,
+        alerts: alertsQ.data ?? [],
+        attendance: attendanceQ.data ?? [],
+        cancelledToday,
+        designerById,
+        gapOffsetMin: cfg.assignment_gap_check_offset_min,
+        clickupTaskUrl,
+        clickupListUrl,
+        openTaskTrail: setTrailTask,
+        goToAttendance: () => navigate('/ops/attendance'),
+      }),
+    [derived, alertsQ.data, attendanceQ.data, cancelledToday, designerById, cfg, navigate],
+  )
 
-    // 5. Spare-capacity insight: under quota now, shift running, no alert yet.
-    const alertedIds = new Set(
-      alerts.filter((x) => x.alert_type === 'assignment_gap' && x.status === 'open').map((x) => x.designer_id),
-    )
-    for (const r of derived.rows) {
-      if (r.expected <= 0 || alertedIds.has(r.designer.id)) continue
-      if (r.sinceShift == null || r.sinceShift < cfg.assignment_gap_check_offset_min) continue
-      const slots = r.expected - r.filled
-      if (slots <= 0) continue
-      const href = clickupListUrl(r.designer.clickup_list_id)
-      items.push({
-        id: `slots-${r.designer.id}`,
-        kind: 'capacity',
-        severity: 'info',
-        text: `${r.designer.name} has room for ${slots} more project${slots === 1 ? '' : 's'} today`,
-        detail: `They have ${r.filled} of ${r.expected} projects due today, and their day started at ${
-          r.schedule ? fmtShiftTime(r.schedule.shift_start) : '—'
-        } Pakistan time`,
-        action: href ? { label: 'Open their list', href } : undefined,
-      })
-    }
+  // Studio Pulse cannot close anything in ClickUp, so the honest follow up is
+  // to watch what happened after the manager went there. A decision that has
+  // left the live list entirely is one that cleared.
+  const liveIds = useMemo(() => new Set(decisions.map((d) => d.id)), [decisions])
+  const clearedSinceActing = useMemo(
+    () => Object.values(acted).filter((r) => !liveIds.has(r.id)),
+    [acted, liveIds],
+  )
 
-    const rank = { critical: 0, warning: 1, info: 2 } as const
-    return items.sort((a, b) => rank[a.severity] - rank[b.severity])
-  }, [alertsQ.data, recentCancelled, attendanceQ.data, derived, designerById, cfg, navigate])
+  const onAct = (d: Decision) =>
+    setActed(markActed({ id: d.id, signature: d.signature, context: d.context }))
+  const onDismissResolved = (id: string) => setActed(clearActed(id))
 
   // ── Today's tiles ───────────────────────────────────────────────────────────
   const underQuotaCount = derived.rows.filter(
@@ -396,38 +264,27 @@ export default function OpsHome() {
     .filter((r) => r.util != null)
     .sort((a, b) => (b.util ?? 0) - (a.util ?? 0))[0]
 
-  const spareRows = derived.rows
-    .filter((r) => r.expected > 0)
-    .sort((a, b) => b.spare - a.spare)
-  const anySpare = spareRows.some((r) => r.spare > 0)
-
   const loading = openTasksQ.isLoading || tasksQ.isLoading
   const inboxLoading = loading || alertsQ.isLoading
-
-  // The hover-revealed 1-click action (manifesto pillar 6): parked invisible on
-  // pointer screens until the row is hovered or focused; always visible on
-  // touch. High-contrast neutral (bg-fg) — brand stays reserved.
-  const actionCls =
-    'ml-auto inline-flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-surface px-3.5 text-caption font-medium text-muted transition-colors duration-150 ease-out group-hover:border-transparent group-hover:bg-fg group-hover:text-bg hover:border-transparent hover:bg-fg hover:text-bg focus-visible:border-transparent focus-visible:bg-fg focus-visible:text-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg motion-safe:active:scale-[0.97]'
 
   return (
     <div className="mx-auto w-full max-w-[1000px] space-y-16">
       <PageHeader
-        breadcrumbs={['Ops', 'Today']}
-        title="Today"
+        breadcrumbs={['Ops', 'Command Center']}
+        title="Command Center"
         titleAccessory={
-          <InfoTip text="A live picture of today: what needs you, today's numbers, who has room for more work, and what has gone quiet." />
+          <InfoTip text="What needs a person right now, with the reason, what it costs to leave it, and the one next step. Today's numbers sit below as the evidence behind those calls." />
         }
         history={
           inboxLoading
-            ? `${fmtDate(today)}. All times are shown in Pakistan time, and we are checking the board…`
-            : verdictItems.length === 0
-              ? `${fmtDate(today)}. All times are shown in Pakistan time, and nothing needs a human, with ${openTasks.length} project${
+            ? `${fmtDate(today)}. All times are shown in Pakistan time, and we are working out what needs you…`
+            : decisions.length === 0
+              ? `${fmtDate(today)}. All times are shown in Pakistan time, and nothing needs you, with ${openTasks.length} project${
                   openTasks.length === 1 ? '' : 's'
                 } moving along on their own.`
-              : `${fmtDate(today)}. All times are shown in Pakistan time, and ${verdictItems.length} thing${
-                  verdictItems.length === 1 ? '' : 's'
-                } need${verdictItems.length === 1 ? 's' : ''} a human, with ${openTasks.length} project${
+              : `${fmtDate(today)}. All times are shown in Pakistan time, and ${decisions.length} decision${
+                  decisions.length === 1 ? '' : 's'
+                } need${decisions.length === 1 ? 's' : ''} you, with ${openTasks.length} project${
                   openTasks.length === 1 ? '' : 's'
                 } in motion.`
         }
@@ -446,51 +303,44 @@ export default function OpsHome() {
       )}
 
       {/* ── 1 · THE INBOX — the reason this page exists ─────────────────────── */}
-      <section aria-label="Action inbox">
+      <section aria-label="Decisions that need you">
         <div className="mb-6 flex items-baseline justify-between gap-4">
           <h2 className="inline-flex items-center gap-2.5 text-card text-fg">
-            Needs a human
-            {!inboxLoading && verdictItems.length > 0 && (
-              <span className="tnum inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-surface-2 px-2 text-caption font-semibold text-fg ring-1 ring-border">
-                <AnimatedCounter value={verdictItems.length} />
-              </span>
-            )}
-            <InfoTip text="Everything that needs a human right now, most urgent first. Each row comes with its own next step, one tap away." />
+            {inboxLoading || decisions.length === 0
+              ? 'Decisions'
+              : `${decisions.length} decision${decisions.length === 1 ? '' : 's'} need${decisions.length === 1 ? 's' : ''} you`}
+            <InfoTip text="The things a person has to settle right now. Each one says why it is happening, what it costs to leave it, and the single next step. Everything else on this page is evidence, not a task." />
           </h2>
-          <p className="text-label uppercase text-muted">worst first</p>
+          <p className="text-label uppercase text-muted">most costly first</p>
         </div>
 
-        {/* One quiet announcement for screen readers as the inbox changes. */}
+        {/* One quiet announcement for screen readers as the list changes. */}
         <div aria-live="polite" className="sr-only">
           {inboxLoading
-            ? 'Checking what needs attention'
-            : verdictItems.length === 0
+            ? 'Working out what needs you'
+            : decisions.length === 0
               ? 'Nothing needs you right now'
-              : `${verdictItems.length} item${verdictItems.length === 1 ? '' : 's'} need attention`}
+              : `${decisions.length} decision${decisions.length === 1 ? '' : 's'} need attention`}
         </div>
 
         {inboxLoading ? (
-          // Skeleton mirrors the final list — same card, same row anatomy.
-          <div
-            className="card divide-y divide-border/60"
-            role="status"
-            aria-label="Loading the inbox"
-          >
+          <div className="card divide-y divide-border/60" role="status" aria-label="Loading decisions">
             {[0, 1, 2].map((i) => (
               <div key={i} className="flex items-start gap-4 p-6">
                 <div className="skeleton h-10 w-10 rounded-full" />
                 <div className="min-w-0 flex-1 space-y-2.5 py-1">
                   <div className="skeleton h-4 w-3/4" />
                   <div className="skeleton h-3.5 w-1/2" />
+                  <div className="skeleton h-3.5 w-2/3" />
                 </div>
                 <div className="skeleton h-11 w-36 rounded-xl" />
               </div>
             ))}
           </div>
-        ) : verdictItems.length === 0 ? (
+        ) : decisions.length === 0 ? (
           <InboxZeroReward
-            title="All clear"
-            message="Nothing needs you right now. Everyone has enough work and nothing has gone quiet. New things will show up here the moment the app notices them."
+            title="Nothing needs you"
+            message="Every project is moving, everyone has work in front of them, and no day is waiting to be confirmed. Anything that changes will appear here on its own."
           />
         ) : (
           <motion.ul
@@ -499,103 +349,57 @@ export default function OpsHome() {
             animate="show"
             className="card divide-y divide-border/60 overflow-hidden"
           >
-            {verdictItems.map((item) => {
-              // The expandable "N orders lost" cluster — one calm header, the
-              // individual orders on demand (collapse repetition, not detail).
-              if (item.kind === 'cancelled-group' && item.children) {
-                const KindIcon = KIND_ICON[item.kind]
-                return (
-                  <motion.li key={item.id} variants={staggerItem}>
-                    <button
-                      type="button"
-                      onClick={() => setCancelsOpen((v) => !v)}
-                      aria-expanded={cancelsOpen}
-                      className="group flex w-full items-center gap-4 p-5 text-left transition-colors duration-150 ease-out hover:bg-surface-2/50 sm:p-6"
-                    >
-                      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${SEVERITY_META[item.severity].chip}`}>
-                        <KindIcon className="h-5 w-5" aria-hidden="true" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-caption font-semibold leading-snug text-fg">
-                          <span className="sr-only">{SEVERITY_META[item.severity].label}: </span>
-                          {item.text}
-                        </p>
-                        {item.detail && (
-                          <p className="mt-1 max-w-prose text-caption leading-snug text-muted">{item.detail}</p>
-                        )}
-                      </div>
-                      <span className="ml-auto inline-flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3.5 text-caption font-medium text-muted transition-colors group-hover:border-transparent group-hover:bg-fg group-hover:text-bg">
-                        {cancelsOpen ? 'Hide' : 'Review each'}
-                        <ChevronDown
-                          className={`h-4 w-4 transition-transform duration-200 ${cancelsOpen ? 'rotate-180' : ''}`}
-                          aria-hidden="true"
-                        />
-                      </span>
-                    </button>
-                    {cancelsOpen && (
-                      <ul className="divide-y divide-border/50 border-t border-border/50 bg-surface-2/30">
-                        {item.children.map((child) => (
-                          <li
-                            key={child.id}
-                            className="group flex items-center gap-4 py-3.5 pl-[4.5rem] pr-5 transition-colors duration-150 hover:bg-surface-2/60 sm:pr-6"
-                          >
-                            <p className="min-w-0 flex-1 truncate text-caption text-fg" title={child.text}>
-                              {child.text}
-                            </p>
-                            {child.action?.onClick && (
-                              <button type="button" onClick={child.action.onClick} className={actionCls}>
-                                {child.action.label}
-                                <ArrowUpRight className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
-                              </button>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </motion.li>
-                )
-              }
-
-              const KindIcon = KIND_ICON[item.kind]
-              return (
-                <motion.li
-                  key={item.id}
-                  variants={staggerItem}
-                  className="group flex flex-wrap items-center gap-x-4 gap-y-3 p-5 transition-colors duration-150 ease-out hover:bg-surface-2/50 sm:p-6"
-                >
-                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${SEVERITY_META[item.severity].chip}`}>
-                    <KindIcon className="h-5 w-5" aria-hidden="true" />
-                  </span>
-                  {/* flex-basis lets the action drop to its own line on narrow
-                      screens instead of crushing the sentence into a sliver. */}
-                  <div className="min-w-0 flex-[1_1_16rem]">
-                    <p className="text-caption font-semibold leading-snug text-fg">
-                      <span className="sr-only">{SEVERITY_META[item.severity].label}: </span>
-                      {item.text}
-                    </p>
-                    {item.detail && (
-                      <p className="mt-1 max-w-prose text-caption leading-snug text-muted">
-                        {item.detail}
-                      </p>
-                    )}
-                  </div>
-                  {item.action &&
-                    (item.action.href ? (
-                      <a href={item.action.href} target="_blank" rel="noreferrer" className={actionCls}>
-                        {item.action.label}
-                        <ExternalLink className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
-                        <span className="sr-only">(opens in new tab)</span>
-                      </a>
-                    ) : (
-                      <button type="button" onClick={item.action.onClick} className={actionCls}>
-                        {item.action.label}
-                        <ArrowUpRight className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
-                      </button>
-                    ))}
-                </motion.li>
-              )
-            })}
+            {decisions.map((d) => (
+              <DecisionCard
+                key={d.id}
+                decision={d}
+                followUp={followUp(acted, d.id, d.signature)}
+                now={now}
+                onAct={onAct}
+                onDismissResolved={onDismissResolved}
+              />
+            ))}
           </motion.ul>
+        )}
+
+        {/* What cleared after the manager went to ClickUp. Studio Pulse cannot
+            close anything there, so this is how it closes the loop honestly. */}
+        {clearedSinceActing.length > 0 && (
+          <ul className="mt-4 space-y-1.5">
+            {clearedSinceActing.map((r) => (
+              <li
+                key={r.id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-success-soft/50 px-4 py-2.5"
+              >
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+                <p className="min-w-0 flex-1 text-caption text-fg">
+                  Cleared since you acted: {r.context}.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onDismissResolved(r.id)}
+                  className="rounded-lg px-2 py-1 text-label font-medium text-muted underline-offset-2 transition-colors duration-150 hover:text-fg hover:underline"
+                >
+                  Clear it
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Never silently truncate: if candidates were held back, say so. */}
+        {!inboxLoading && heldBack > 0 && (
+          <p className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-label font-normal leading-relaxed tracking-normal text-muted">
+            {heldBack} smaller thing{heldBack === 1 ? '' : 's'} did not make the list, so the most
+            costly ones stay readable.
+            <button
+              type="button"
+              onClick={() => navigate('/ops/alerts')}
+              className="rounded-lg text-label font-medium text-brand underline-offset-2 transition-colors duration-150 hover:underline"
+            >
+              See everything
+            </button>
+          </p>
         )}
       </section>
 
@@ -682,130 +486,11 @@ export default function OpsHome() {
         </div>
       </section>
 
-      {/* ── 3 · Context panels ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
-        {/* ── Spare capacity right now (§20.11 hidden insight) ── */}
-        <section className="card p-6 md:p-8">
-          <div className="flex items-baseline justify-between gap-3">
-            <h2 className="inline-flex items-center gap-2 text-card text-fg">
-              Who has room for more
-              <InfoTip text="People who can take more projects today. Only projects due today fill a plate, whatever their status. Giving them the work is the team lead's job, not theirs." />
-            </h2>
-            <span className="text-label uppercase text-muted">most free first</span>
-          </div>
-          <div className="mt-6 space-y-1">
-            {loading ? (
-              [0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-14" />)
-            ) : spareRows.length === 0 ? (
-              <EmptyState
-                icon={Inbox}
-                title="No one is scheduled to work today"
-                hint="This happens on holidays, days off and leave."
-              />
-            ) : !anySpare ? (
-              <EmptyState
-                icon={CheckCircle2}
-                title="Everyone's plate is full"
-                hint="Everyone has reached their target for today. Extra work will need to wait or be shared out differently."
-              />
-            ) : (
-              spareRows.map((r) => {
-                const href = clickupListUrl(r.designer.clickup_list_id)
-                return (
-                  <div
-                    key={r.designer.id}
-                    className="flex items-center gap-3 rounded-xl px-3 py-2 transition-colors duration-150 ease-out hover:bg-surface-2"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => openDesigner(r.designer.id)}
-                      className="min-h-11 min-w-0 flex-1 text-left"
-                      aria-label={`Open ${r.designer.name}'s details`}
-                    >
-                      <p className="truncate text-caption font-medium text-fg">
-                        {r.designer.name}
-                        <span className="ml-2 text-label font-normal tracking-normal text-muted">
-                          {r.designer.team}
-                        </span>
-                      </p>
-                      <p className="tnum text-label font-normal tracking-normal text-muted">
-                        {r.filled} due today, target {r.expected}
-                        {r.spare > 0
-                          ? `, room for ${r.spare} more`
-                          : r.spare < 0
-                            ? `, ${-r.spare} over their target`
-                            : ', right at their target'}
-                      </p>
-                    </button>
-                    <span
-                      className={`tnum text-caption font-medium ${
-                        r.spare > 0 ? 'text-success' : r.spare < 0 ? 'text-danger' : 'text-muted'
-                      }`}
-                    >
-                      {fmtPct(r.util)}
-                    </span>
-                    {href && (
-                      <a
-                        href={href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex h-11 w-11 items-center justify-center rounded-xl text-brand transition-colors duration-150 ease-out hover:bg-brand-soft motion-safe:active:scale-95"
-                        aria-label={`Open ${r.designer.name}'s list in ClickUp`}
-                        title="Open list in ClickUp"
-                      >
-                        <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                      </a>
-                    )}
-                  </div>
-                )
-              })
-            )}
-          </div>
-        </section>
-
-        {/* ── Aging preview ── */}
-        <section className="card p-6 md:p-8">
-          <div className="flex items-baseline justify-between gap-3">
-            <h2 className="inline-flex items-center gap-2 text-card text-fg">
-              Stuck projects
-              <InfoTip text="Projects that have not moved in a while. A gentle nudge is usually all it takes to get them going again." />
-            </h2>
-            <Link
-              to="/ops/board"
-              className="inline-flex items-center gap-1 text-caption font-medium text-brand hover:underline"
-            >
-              Open the board <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
-          </div>
-          <div className="mt-6 space-y-2">
-            {openTasksQ.isLoading ? (
-              [0, 1, 2].map((i) => <div key={i} className="skeleton h-20" />)
-            ) : derived.agingTasks.length === 0 ? (
-              <EmptyState
-                icon={CheckCircle2}
-                title="Nothing is stuck"
-                hint={`Nothing designer-owned has been waiting more than ${cfg.aging_days_default} days. Waiting on the client, and work that is ready to send, are never counted as stuck.`}
-              />
-            ) : (
-              derived.agingTasks.slice(0, 5).map(({ task }) => (
-                <TaskCard
-                  key={task.task_id}
-                  task={task}
-                  designerName={
-                    task.designer_id ? designerById.get(task.designer_id)?.name : undefined
-                  }
-                  onOpen={() => setTrailTask(task)}
-                />
-              ))
-            )}
-            {derived.agingTasks.length > 5 && (
-              <p className="text-label font-normal tracking-normal text-muted">
-                +{derived.agingTasks.length - 5} more on the Board page
-              </p>
-            )}
-          </div>
-        </section>
-      </div>
+      {/* The two panels that used to sit here ("Who has room for more" and
+          "Stuck projects") listed the very same people and projects the
+          decisions above already call out, one screen apart. Repeating a call
+          to action as a table is the habit this redesign exists to break, so
+          the decisions keep it and the full lists live on Board and Roster. */}
 
       <Drawer
         open={trailTask != null}

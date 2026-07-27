@@ -49,7 +49,7 @@ export default function OpsLayout() {
   }
 
   const nav: NavItem[] = [
-    { to: '/ops', label: 'Home', icon: Home },
+    { to: '/ops', label: 'Command Center', icon: Home },
     { to: '/ops/board', label: 'Board', icon: Kanban },
     { to: '/ops/roster', label: 'Roster', icon: Users },
     { to: '/ops/attendance', label: 'Attendance', icon: UserCheck },
@@ -62,7 +62,7 @@ export default function OpsLayout() {
   const commands: Command[] = useMemo(() => {
     const go = (path: string) => () => navigate(path)
     const pages: Command[] = [
-      { id: 'nav-home', label: 'Go to Home', hint: 'what needs you right now', keywords: 'home attention verdict today', run: go('/ops') },
+      { id: 'nav-home', label: 'Go to Command Center', hint: 'what needs you right now', keywords: 'home command center attention verdict today decisions', run: go('/ops') },
       { id: 'nav-board', label: 'Go to Board', hint: 'every open project and its stage', keywords: 'board kanban tasks status live', run: go('/ops/board') },
       { id: 'nav-roster', label: 'Go to Roster', hint: 'people, daily targets, work hours', keywords: 'roster designers schedule quota shift', run: go('/ops/roster') },
       { id: 'nav-attendance', label: 'Go to Attendance', hint: 'who is in and when they started', keywords: 'attendance presence check-in warmup', run: go('/ops/attendance') },
